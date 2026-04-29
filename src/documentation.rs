@@ -53,6 +53,12 @@ pub fn validate_chinese_markdown(
                 reason: "文档包含明显乱码标记".to_string(),
             });
         }
+        if contains_emoji(&contents) {
+            violations.push(DocumentationViolation {
+                path: file.clone(),
+                reason: "文档包含 Emoji".to_string(),
+            });
+        }
     }
 
     if violations.is_empty() {
@@ -143,4 +149,13 @@ fn contains_mojibake(contents: &str) -> bool {
     const MARKERS: [&str; 10] = ["鐗", "浣", "锛", "銆", "鈫", "圥", "坒", "闅", "绯", "璁"];
 
     MARKERS.iter().any(|marker| contents.contains(marker))
+}
+
+fn contains_emoji(contents: &str) -> bool {
+    contents.chars().any(|character| {
+        matches!(
+            character,
+            '\u{1f000}'..='\u{1faff}' | '\u{2600}'..='\u{27bf}' | '\u{fe0f}'
+        )
+    })
 }

@@ -145,6 +145,7 @@ impl SelfForge {
     fn required_files(&self) -> Vec<PathBuf> {
         let archive_file = self.archive_file_name();
         let mut files = vec![
+            self.root.join("README.md"),
             self.root.join("runtime").join("README.md"),
             self.root.join("supervisor").join("README.md"),
             self.workspace_path().join("README.md"),
@@ -167,6 +168,10 @@ impl SelfForge {
         let archive_file = self.archive_file_name();
         let workspace_name = self.workspace_name();
         let mut files = vec![
+            SeedFile {
+                path: self.root.join("README.md"),
+                contents: root_readme(&self.version, &workspace_name),
+            },
             SeedFile {
                 path: self.root.join("runtime").join("README.md"),
                 contents: RUNTIME_README.to_string(),
@@ -369,6 +374,12 @@ const WORKSPACE_ROOT_FILES: &[&str] = &[
 ];
 
 const WORKSPACE_GITIGNORE: &str = "# SelfForge 工作区忽略规则\n\n/logs/*\n!/logs/README.md\n/sandbox/runs/\n/sandbox/tmp/\n/artifacts/tmp/\n";
+
+fn root_readme(version: &str, workspace_name: &str) -> String {
+    format!(
+        "# SelfForge\n\nSelfForge 是一个受控自进化软件系统，用于生成、验证、记录、提升和回滚版本。\n\n# 当前状态\n\n- 当前版本：{version}\n- 核心语言：Rust\n- 状态文件：`state/state.json`\n- 归档目录：`forge/`\n- 工作区：`workspaces/{workspace_name}/`\n\n# 常用命令\n\n```txt\ncargo run -- validate\ncargo test\ncargo run -- advance \"目标\"\ncargo run -- cycle\n```\n\n# 约束\n\n所有文档必须使用中文，禁止使用 Emoji。小版本记录追加到 `forge/*/{workspace_name}.md`，工作区复用 `workspaces/{workspace_name}/`。\n"
+    )
+}
 
 fn workspace_readme(workspace_name: &str) -> String {
     format!(
