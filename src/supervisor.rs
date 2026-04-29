@@ -2,7 +2,7 @@ use crate::evolution::{
     CycleReport, EvolutionEngine, EvolutionError, EvolutionReport, PromotionReport, RollbackReport,
 };
 use crate::layout::{BootstrapReport, ForgeError, SelfForge, ValidationReport};
-use crate::runtime::Runtime;
+use crate::runtime::{ExecutionError, ExecutionReport, Runtime};
 use crate::version::VersionBump;
 use std::path::Path;
 
@@ -31,6 +31,17 @@ impl Supervisor {
 
     pub fn verify_version(&self, version: impl AsRef<str>) -> Result<ValidationReport, ForgeError> {
         self.runtime.verify_layout_for_version(version)
+    }
+
+    pub fn execute_in_workspace(
+        &self,
+        version: impl AsRef<str>,
+        program: impl AsRef<str>,
+        args: &[String],
+        timeout_ms: u64,
+    ) -> Result<ExecutionReport, ExecutionError> {
+        self.runtime
+            .execute_in_workspace(version, program, args, timeout_ms)
     }
 
     pub fn prepare_next_version(&self, goal: &str) -> Result<EvolutionReport, EvolutionError> {

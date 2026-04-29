@@ -1,4 +1,4 @@
-use self_forge::{CycleResult, Supervisor, VersionBump};
+use self_forge::{CURRENT_VERSION, CycleResult, ForgeState, Supervisor, VersionBump};
 use std::env;
 use std::error::Error;
 use std::process;
@@ -38,34 +38,7 @@ fn main() {
                 report.checked_paths.len()
             )
         })),
-        "evolve" => {
-            let mut bump = VersionBump::Patch;
-            let mut goal_parts = Vec::new();
-            for argument in args {
-                match argument.as_str() {
-                    "--patch" => bump = VersionBump::Patch,
-                    "--minor" => bump = VersionBump::Minor,
-                    "--major" => bump = VersionBump::Major,
-                    _ => goal_parts.push(argument),
-                }
-            }
-            let goal = goal_parts.join(" ");
-            let goal = if goal.trim().is_empty() {
-                "prepare next controlled self-evolution candidate"
-            } else {
-                goal.trim()
-            };
-            boxed(supervisor.prepare_next_version_with_bump(goal, bump).map(|report| {
-                format!(
-                    "SelfForge prepared {} from {}: {} paths checked, workspace {}, commit version {}",
-                    report.next_version,
-                    report.current_version,
-                    report.candidate_validation.checked_paths.len(),
-                    report.workspace.display(),
-                    report.next_version
-                )
-            }))
-        }
+        "evolve" => evolve(&supervisor, args.collect()),
         "promote" => boxed(supervisor.promote_candidate().map(|report| {
             format!(
                 "SelfForge promoted {} from {}, current workspace {}",
@@ -102,17 +75,36 @@ fn main() {
                     ),
                 }),
         ),
+        "run" => {
+            let run = match parse_run_args(args.collect()) {
+                Ok(run) => run,
+                Err(error) => exit_with_error(error),
+            };
+            boxed(supervisor.execute_in_workspace(
+                &run.version,
+                &run.program,
+                &run.args,
+                run.timeout_ms,
+            )
+            .map(|report| {
+                format!(
+                    "SelfForge run {} in {}: exit {:?}, timed_out {}, stdout {} bytes, stderr {} bytes",
+                    report.program,
+                    report.workspace.display(),
+                    report.exit_code,
+                    report.timed_out,
+                    report.stdout.len(),
+                    report.stderr.len()
+                )
+            }))
+        }
         "help" | "-h" | "--help" => {
-            println!(
-                "SelfForge commands: init, validate, status, promote, rollback [reason], cycle, evolve [--patch|--minor|--major] [goal]"
-            );
+            println!("{}", help_text());
             return;
         }
         other => {
             eprintln!("unknown command: {other}");
-            eprintln!(
-                "SelfForge commands: init, validate, status, promote, rollback [reason], cycle, evolve [--patch|--minor|--major] [goal]"
-            );
+            eprintln!("{}", help_text());
             process::exit(2);
         }
     };
@@ -124,6 +116,109 @@ fn main() {
             process::exit(1);
         }
     }
+}
+
+fn evolve(supervisor: &Supervisor, arguments: Vec<String>) -> Result<String, Box<dyn Error>> {
+    let mut bump = VersionBump::Patch;
+    let mut goal_parts = Vec::new();
+    for argument in arguments {
+        match argument.as_str() {
+            "--patch" => bump = VersionBump::Patch,
+            "--minor" => bump = VersionBump::Minor,
+            "--major" => bump = VersionBump::Major,
+            _ => goal_parts.push(argument),
+        }
+    }
+    let goal = goal_parts.join(" ");
+    let goal = if goal.trim().is_empty() {
+        "prepare next controlled self-evolution candidate"
+    } else {
+        goal.trim()
+    };
+    boxed(
+        supervisor
+            .prepare_next_version_with_bump(goal, bump)
+            .map(|report| {
+                format!(
+                    "SelfForge prepared {} from {}: {} paths checked, workspace {}, commit version {}",
+                    report.next_version,
+                    report.current_version,
+                    report.candidate_validation.checked_paths.len(),
+                    report.workspace.display(),
+                    report.next_version
+                )
+            }),
+    )
+}
+
+struct RunArgs {
+    version: String,
+    program: String,
+    args: Vec<String>,
+    timeout_ms: u64,
+}
+
+fn parse_run_args(arguments: Vec<String>) -> Result<RunArgs, Box<dyn Error>> {
+    let state = ForgeState::load(env::current_dir()?)?;
+    let mut version = CURRENT_VERSION.to_string();
+    let mut timeout_ms = 30_000;
+    let mut command_start = None;
+    let mut index = 0;
+
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "--" => {
+                command_start = Some(index + 1);
+                break;
+            }
+            "--current" => {
+                version = state.current_version.clone();
+                index += 1;
+            }
+            "--candidate" => {
+                version = state.candidate_version.clone().ok_or("当前没有候选版本")?;
+                index += 1;
+            }
+            "--version" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--version 需要版本号".into());
+                };
+                version = value.clone();
+                index += 2;
+            }
+            "--timeout-ms" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--timeout-ms 需要毫秒数".into());
+                };
+                timeout_ms = value.parse::<u64>()?;
+                index += 2;
+            }
+            _ => {
+                command_start = Some(index);
+                break;
+            }
+        }
+    }
+
+    let start = command_start.ok_or("run 需要命令")?;
+    let program = arguments.get(start).ok_or("run 需要命令")?.clone();
+    let args = arguments[start + 1..].to_vec();
+
+    Ok(RunArgs {
+        version,
+        program,
+        args,
+        timeout_ms,
+    })
+}
+
+fn help_text() -> &'static str {
+    "SelfForge commands: init, validate, status, promote, rollback [reason], cycle, run [--current|--candidate|--version VERSION] [--timeout-ms N] -- PROGRAM [ARGS...], evolve [--patch|--minor|--major] [goal]"
+}
+
+fn exit_with_error(error: Box<dyn Error>) -> ! {
+    eprintln!("{error}");
+    process::exit(1);
 }
 
 fn boxed<E>(result: Result<String, E>) -> Result<String, Box<dyn Error>>

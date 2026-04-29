@@ -145,6 +145,8 @@ forge/versions/vMAJOR.MINOR.md
 
 最小运行闭环必须优先使用 `cycle` 命令：它负责验证当前稳定版本和候选版本，候选验证成功则提升，候选验证失败则回滚并保留当前稳定版本。需要人工放弃候选时，使用 `rollback [reason]`，并在错误记录或记忆中写明原因。
 
+最小 Runtime 执行必须优先使用 `run` 命令：`run [--current|--candidate|--version VERSION] [--timeout-ms N] -- PROGRAM [ARGS...]`。该命令必须直接启动明确程序，禁止隐式 shell 包装；执行目录必须固定为目标版本工作区；必须记录退出码、标准输出、标准错误和是否超时。
+
 ---
 
 # 八、Git 提交规范
