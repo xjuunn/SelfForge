@@ -25,12 +25,20 @@ pub struct EvolutionReport {
     pub state: ForgeState,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PromotionReport {
+    pub previous_version: String,
+    pub promoted_version: String,
+    pub state: ForgeState,
+}
+
 #[derive(Debug)]
 pub enum EvolutionError {
     State(StateError),
     Forge(ForgeError),
     Version(VersionError),
     CandidateAlreadyPrepared { version: String },
+    MissingCandidate,
     Io { path: PathBuf, source: io::Error },
 }
 
@@ -94,6 +102,36 @@ impl EvolutionEngine {
             state,
         })
     }
+
+    pub fn promote_candidate(&self) -> Result<PromotionReport, EvolutionError> {
+        let mut state = ForgeState::load(&self.root)?;
+        let Some(candidate_version) = state.candidate_version.clone() else {
+            return Err(EvolutionError::MissingCandidate);
+        };
+        let Some(candidate_workspace) = state.candidate_workspace.clone() else {
+            return Err(EvolutionError::MissingCandidate);
+        };
+
+        let runtime = Runtime::new(&self.root);
+        runtime.verify_layout_for_version(&candidate_version)?;
+
+        let previous_version = state.current_version.clone();
+        state.parent_version = Some(previous_version.clone());
+        state.current_version = candidate_version.clone();
+        state.workspace = candidate_workspace;
+        state.status = "active".to_string();
+        state.last_verified = Some(format!("promoted:{candidate_version}"));
+        state.candidate_version = None;
+        state.candidate_workspace = None;
+        state.version_scheme = Some("semantic:vMAJOR.MINOR.PATCH".to_string());
+        state.save(&self.root)?;
+
+        Ok(PromotionReport {
+            previous_version,
+            promoted_version: candidate_version,
+            state,
+        })
+    }
 }
 
 impl fmt::Display for EvolutionError {
@@ -104,6 +142,9 @@ impl fmt::Display for EvolutionError {
             EvolutionError::Version(error) => write!(formatter, "{error}"),
             EvolutionError::CandidateAlreadyPrepared { version } => {
                 write!(formatter, "candidate version {version} is already prepared")
+            }
+            EvolutionError::MissingCandidate => {
+                write!(formatter, "no candidate version is prepared")
             }
             EvolutionError::Io { path, source } => {
                 write!(formatter, "{}: {}", path.display(), source)
@@ -119,6 +160,7 @@ impl Error for EvolutionError {
             EvolutionError::Forge(error) => Some(error),
             EvolutionError::Version(error) => Some(error),
             EvolutionError::CandidateAlreadyPrepared { .. } => None,
+            EvolutionError::MissingCandidate => None,
             EvolutionError::Io { source, .. } => Some(source),
         }
     }
@@ -217,13 +259,13 @@ fn memory_document(
     timestamp: &str,
 ) -> String {
     format!(
-        "# 版本信息\n- 版本号：{next_version}\n- 时间：{timestamp}\n- 父版本：{current_version}\n\n# 目标\n\n{goal}\n\n# 计划（Plan）\n\n1. 读取最近版本记忆和持久化状态。\n2. 验证当前稳定版本仍可运行。\n3. 计算下一候选版本号。\n4. 生成候选 workspace 与 forge 归档文档。\n5. 验证候选版本布局完整性。\n6. 将 state/state.json 更新为 candidate_prepared。\n7. 保持 current_version 指向稳定版本，等待后续版本实现进程启动、切换和回滚。\n\n# 执行过程\n\n已生成候选版本骨架，尚未执行版本切换。\n\n# 代码变更\n\n- 新增 evolution 模块，生成下一候选版本。\n- 新增 state 模块，使用 JSON 结构化读写持久化状态。\n- CLI 新增 evolve 命令。\n\n# 测试结果\n\n待本轮最终验证后补充。\n\n# 错误总结\n\n待本轮最终验证后补充。\n\n# 评估\n\n候选版本生成能力已具备最小闭环，当前仍以稳定优先，不自动替换运行版本。\n\n# 优化建议\n\n下一步实现候选版本进程启动、并行验证和失败回滚状态迁移。\n\n# 可复用经验\n\n自我进化应先生成候选并持久化审计记录，再进入运行时验证与版本切换。\n"
+        "# 版本信息\n- 版本号：{next_version}\n- 时间：{timestamp}\n- 父版本：{current_version}\n\n# 目标\n\n{goal}\n\n# 计划（Plan）\n\n1. 读取最近版本记忆和持久化状态。\n2. 验证当前稳定版本仍可运行。\n3. 按语义化版本规则计算下一候选版本。\n4. 生成候选工作区与 forge 归档文档。\n5. 验证候选版本布局和中文文档规范。\n6. 将 state/state.json 更新为 candidate_prepared。\n7. 保持当前稳定版本不变，等待提升或回滚。\n\n# 执行过程\n\n已生成候选版本骨架，尚未执行版本提升。\n\n# 代码变更\n\n待最终验证后补充。\n\n# 测试结果\n\n待最终验证后补充。\n\n# 错误总结\n\n待最终验证后补充。\n\n# 评估\n\n候选版本生成完成后仍需通过验证与提升流程才能成为当前版本。\n\n# 优化建议\n\n继续完善沙箱执行、资源限制和并行验证。\n\n# 可复用经验\n\n候选版本文档已存在时必须保留，不能覆盖前序计划。\n"
     )
 }
 
 fn task_document(current_version: &str, next_version: &str, goal: &str) -> String {
     format!(
-        "# 任务来源\n\n用户要求优先推进 SelfForge 自我进化能力。\n\n# 任务描述\n\n从当前稳定版本 {current_version} 生成下一候选版本 {next_version}，但不切换当前稳定版本。\n\n# 输入\n\n- 当前稳定版本：{current_version}\n- 用户目标：{goal}\n- 状态文件：state/state.json\n\n# 输出\n\n- workspaces/{next_version}\n- forge/memory/{next_version}.md\n- forge/errors/{next_version}\n- forge/versions/{next_version}.md\n- 更新后的 state/state.json\n\n# 计划（Plan）\n\n1. 读取状态。\n2. 验证当前稳定版本。\n3. 计算下一版本号。\n4. 生成候选版本目录和文档。\n5. 验证候选版本。\n6. 持久化候选状态。\n"
+        "# 任务来源\n\nSelfForge 受控进化流程。\n\n# 任务描述\n\n从当前稳定版本 {current_version} 生成下一候选版本 {next_version}，默认只递增 patch。\n\n# 输入\n\n- 当前稳定版本：{current_version}\n- 用户目标：{goal}\n- 状态文件：state/state.json\n\n# 输出\n\n- workspaces/{next_version}\n- forge/memory/{next_version}.md\n- forge/errors/{next_version}\n- forge/versions/{next_version}.md\n- 更新后的 state/state.json\n\n# 计划（Plan）\n\n1. 读取状态。\n2. 验证当前稳定版本。\n3. 计算下一 patch 版本。\n4. 生成候选版本目录和文档。\n5. 验证候选版本。\n6. 持久化候选状态。\n"
     )
 }
 
@@ -235,6 +277,6 @@ fn errors_readme(next_version: &str) -> String {
 
 fn version_document(current_version: &str, next_version: &str) -> String {
     format!(
-        "# {next_version}\n\n# 版本变化\n\n- 从 {current_version} 生成 {next_version} 候选版本。\n- 新增候选 workspace 与 forge 归档文档。\n- state/state.json 保持 current_version 为 {current_version}，并记录 candidate_version 为 {next_version}。\n\n# 新增功能\n\n- 自我进化候选版本生成。\n- 结构化状态读写。\n- evolve CLI 入口。\n\n# 修复内容\n\n- 暂无。\n"
+        "# {next_version}\n\n# 版本变化\n\n- 从 {current_version} 生成 {next_version} 候选版本。\n- 新增候选工作区与 forge 归档文档。\n- state/state.json 保持 current_version 为 {current_version}，并记录 candidate_version 为 {next_version}。\n\n# 新增功能\n\n- 候选版本生成。\n- 中文文档规范验证。\n\n# 修复内容\n\n- 暂无。\n"
     )
 }

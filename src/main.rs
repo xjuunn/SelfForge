@@ -66,16 +66,22 @@ fn main() {
                 )
             }))
         }
+        "promote" => boxed(supervisor.promote_candidate().map(|report| {
+            format!(
+                "SelfForge promoted {} from {}, current workspace {}",
+                report.promoted_version, report.previous_version, report.state.workspace
+            )
+        })),
         "help" | "-h" | "--help" => {
             println!(
-                "SelfForge commands: init, validate, status, evolve [--patch|--minor|--major] [goal]"
+                "SelfForge commands: init, validate, status, promote, evolve [--patch|--minor|--major] [goal]"
             );
             return;
         }
         other => {
             eprintln!("unknown command: {other}");
             eprintln!(
-                "SelfForge commands: init, validate, status, evolve [--patch|--minor|--major] [goal]"
+                "SelfForge commands: init, validate, status, promote, evolve [--patch|--minor|--major] [goal]"
             );
             process::exit(2);
         }

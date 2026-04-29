@@ -1,4 +1,4 @@
-use crate::evolution::{EvolutionEngine, EvolutionError, EvolutionReport};
+use crate::evolution::{EvolutionEngine, EvolutionError, EvolutionReport, PromotionReport};
 use crate::layout::{BootstrapReport, ForgeError, SelfForge, ValidationReport};
 use crate::runtime::Runtime;
 use crate::version::VersionBump;
@@ -41,5 +41,9 @@ impl Supervisor {
         bump: VersionBump,
     ) -> Result<EvolutionReport, EvolutionError> {
         EvolutionEngine::new(self.forge.root()).prepare_next_version_with_bump(goal, bump)
+    }
+
+    pub fn promote_candidate(&self) -> Result<PromotionReport, EvolutionError> {
+        EvolutionEngine::new(self.forge.root()).promote_candidate()
     }
 }

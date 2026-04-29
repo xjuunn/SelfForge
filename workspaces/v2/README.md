@@ -1,3 +1,5 @@
-# SelfForge v2 Workspace
+# SelfForge v2 工作区
 
-This directory is the isolated workspace for controlled generation v2.
+该目录是历史候选版本 `v2` 的隔离工作区，保留用于审计和回溯。
+
+新版本规则已经迁移为 `vMAJOR.MINOR.PATCH`，后续候选版本使用 `v0.1.2` 这类命名。

@@ -1,3 +1,5 @@
-# SelfForge v1 Workspace
+# SelfForge v1 工作区
 
-This directory is the isolated workspace for the first controlled generation.
+该目录是历史代际版本 `v1` 的隔离工作区，保留用于审计和回溯。
+
+新版本规则已经迁移为 `vMAJOR.MINOR.PATCH`，后续不再使用 `v1/v2` 作为新增版本命名。

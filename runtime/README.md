@@ -1,3 +1,5 @@
-# Runtime
+# 运行时边界
 
-SelfForge Runtime is the protected execution boundary for generated work. In v1 it validates the persisted project layout before later versions add sandboxed execution.
+SelfForge 运行时是受保护的执行边界，负责验证版本工作区、文档归档、状态文件和后续沙箱执行结果。
+
+当前阶段运行时以验证为主，后续将逐步加入沙箱执行、资源限制和文件访问限制。

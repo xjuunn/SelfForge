@@ -1,3 +1,5 @@
-# Supervisor
+# 监督器边界
 
-SelfForge Supervisor is the protected process-control boundary. In v1 it initializes and verifies the current version through the Rust runtime layer.
+SelfForge 监督器负责管理候选版本生命周期，包括候选生成、验证、提升、回滚和状态迁移。
+
+当前阶段监督器已经具备候选生成和状态提升的基础入口，后续将扩展为进程级监督。

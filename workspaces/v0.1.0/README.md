@@ -1,3 +1,5 @@
-# SelfForge v0.1.0 Workspace
+# SelfForge v0.1.0 工作区
 
-This directory is the isolated workspace for controlled generation v0.1.0.
+该目录是语义化版本规则下的稳定基线工作区。
+
+`v0.1.0` 用于承接历史 `v1/v2` 版本线索，并作为后续 patch 版本的父版本。

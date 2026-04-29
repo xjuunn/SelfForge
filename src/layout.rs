@@ -1,6 +1,5 @@
-#![allow(dead_code)]
-
 use crate::CURRENT_VERSION;
+use crate::documentation::{DocumentationError, validate_chinese_markdown};
 use std::error::Error;
 use std::fmt;
 use std::fs;
@@ -30,6 +29,7 @@ pub struct ValidationReport {
 pub enum ForgeError {
     Io { path: PathBuf, source: io::Error },
     Validation { missing_paths: Vec<PathBuf> },
+    Documentation { source: DocumentationError },
 }
 
 impl SelfForge {
@@ -92,14 +92,17 @@ impl SelfForge {
             }
         }
 
-        if missing_paths.is_empty() {
-            Ok(ValidationReport {
-                version: self.version.clone(),
-                checked_paths,
-            })
-        } else {
-            Err(ForgeError::Validation { missing_paths })
+        if !missing_paths.is_empty() {
+            return Err(ForgeError::Validation { missing_paths });
         }
+
+        validate_chinese_markdown(&self.root)
+            .map_err(|source| ForgeError::Documentation { source })?;
+
+        Ok(ValidationReport {
+            version: self.version.clone(),
+            checked_paths,
+        })
     }
 
     fn required_directories(&self) -> Vec<PathBuf> {
@@ -171,7 +174,7 @@ impl SelfForge {
                     .join("forge")
                     .join("memory")
                     .join(format!("{}.md", self.version)),
-                contents: memory_template(&self.version, "none"),
+                contents: memory_template(&self.version, "无"),
             },
             SeedFile {
                 path: self
@@ -209,9 +212,7 @@ impl SelfForge {
 impl fmt::Display for ForgeError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ForgeError::Io { path, source } => {
-                write!(formatter, "{}: {}", path.display(), source)
-            }
+            ForgeError::Io { path, source } => write!(formatter, "{}: {}", path.display(), source),
             ForgeError::Validation { missing_paths } => {
                 write!(formatter, "missing required paths: ")?;
                 for (index, path) in missing_paths.iter().enumerate() {
@@ -222,6 +223,7 @@ impl fmt::Display for ForgeError {
                 }
                 Ok(())
             }
+            ForgeError::Documentation { source } => write!(formatter, "{source}"),
         }
     }
 }
@@ -231,6 +233,7 @@ impl Error for ForgeError {
         match self {
             ForgeError::Io { source, .. } => Some(source),
             ForgeError::Validation { .. } => None,
+            ForgeError::Documentation { source } => Some(source),
         }
     }
 }
@@ -301,26 +304,14 @@ fn relative_display(path: &Path) -> String {
     parts[start..].join("/")
 }
 
-const RUNTIME_README: &str = "# Runtime\n\nSelfForge Runtime is the protected execution boundary for generated work. In v1 it validates the persisted project layout before later versions add sandboxed execution.\n";
+const RUNTIME_README: &str = "# 运行时边界\n\nSelfForge 运行时是受保护的执行边界，负责验证工作区、文档归档和后续沙箱执行结果。\n";
 
-const SUPERVISOR_README: &str = "# Supervisor\n\nSelfForge Supervisor is the protected process-control boundary. In v1 it initializes and verifies the current version through the Rust runtime layer.\n";
-
-#[allow(dead_code)]
-const WORKSPACE_README: &str = "# SelfForge v1 Workspace\n\nThis directory is the isolated workspace for the first controlled generation.\n";
-
-const MEMORY_TEMPLATE: &str = "# 版本信息\n- 版本号：v1\n- 时间：2026-04-29\n- 父版本：无\n\n# 目标\n\n建立 SelfForge 的最基础架构。\n\n# 计划（Plan）\n\n1. 建立标准目录结构。\n2. 实现 Rust CLI、Runtime 验证层与 Supervisor 编排层。\n3. 写入持久化状态与 forge 文档。\n4. 编写并执行测试。\n5. 记录版本与提交。\n\n# 执行过程\n\n待最终验证后补充。\n\n# 代码变更\n\n待最终验证后补充。\n\n# 测试结果\n\n待最终验证后补充。\n\n# 错误总结\n\n待最终验证后补充。\n\n# 评估\n\n待最终验证后补充。\n\n# 优化建议\n\n待最终验证后补充。\n\n# 可复用经验\n\n待最终验证后补充。\n";
-
-const TASK_TEMPLATE: &str = "# 任务来源\n\n用户指定第一个任务：完成 SelfForge 系统的最基础架构。\n\n# 任务描述\n\n建立最小可运行、可验证、可审计的 SelfForge v1 基础骨架。\n\n# 输入\n\n- 顶层 SelfForge 系统提示词与项目约束\n- 当前 Rust crate\n\n# 输出\n\n- 标准目录结构\n- 持久化状态\n- forge 文档归档\n- Rust CLI 与测试\n";
-
-const ERRORS_README: &str = "# v1 错误记录\n\n当前版本没有已确认的未解决错误。若出现错误，必须在本目录新增 error-XXX.md，并包含错误信息、出现阶段、原因分析、解决方案、是否已解决。\n";
-
-const VERSION_TEMPLATE: &str = "# v1\n\n# 版本变化\n\n- 建立 SelfForge v1 基础架构。\n\n# 新增功能\n\n- Rust CLI 初始化、验证与状态查看。\n- Runtime 验证层。\n- Supervisor 编排层。\n- forge 文档归档入口。\n\n# 修复内容\n\n- 无。\n";
-
-const STATE_JSON: &str = "{\n  \"current_version\": \"v1\",\n  \"parent_version\": null,\n  \"status\": \"initialized\",\n  \"workspace\": \"workspaces/v1\",\n  \"last_verified\": null\n}\n";
+const SUPERVISOR_README: &str =
+    "# 监督器边界\n\nSelfForge 监督器负责管理候选版本生命周期、验证流程、提升与回滚状态迁移。\n";
 
 fn workspace_readme(version: &str) -> String {
     format!(
-        "# SelfForge {version} Workspace\n\nThis directory is the isolated workspace for controlled generation {version}.\n"
+        "# SelfForge {version} 工作区\n\n该目录是 {version} 的隔离工作区，只允许放置本版本受控生成与验证所需的文件。\n"
     )
 }
 
@@ -332,7 +323,7 @@ fn memory_template(version: &str, parent_version: &str) -> String {
 
 fn task_template(version: &str) -> String {
     format!(
-        "# 任务来源\n\nSelfForge 受控进化流程。\n\n# 任务描述\n\n生成并验证 {version} 的最小候选版本归档。\n\n# 输入\n\n- 当前状态文件\n- 最近版本记忆\n\n# 输出\n\n- {version} workspace\n- {version} forge 文档\n- 更新后的持久化状态\n\n# 计划（Plan）\n\n1. 验证当前稳定版本。\n2. 生成候选版本目录和文档。\n3. 持久化候选版本状态。\n4. 执行测试与验证。\n"
+        "# 任务来源\n\nSelfForge 受控进化流程。\n\n# 任务描述\n\n生成并验证 {version} 的最小候选版本归档。\n\n# 输入\n\n- 当前状态文件\n- 最近版本记忆\n\n# 输出\n\n- {version} 工作区\n- {version} forge 文档\n- 更新后的持久化状态\n\n# 计划（Plan）\n\n1. 验证当前稳定版本。\n2. 生成候选版本目录和文档。\n3. 持久化候选版本状态。\n4. 执行测试与验证。\n"
     )
 }
 
@@ -350,6 +341,6 @@ fn version_template(version: &str) -> String {
 
 fn state_json(version: &str) -> String {
     format!(
-        "{{\n  \"current_version\": \"{version}\",\n  \"parent_version\": null,\n  \"status\": \"initialized\",\n  \"workspace\": \"workspaces/{version}\",\n  \"last_verified\": null\n}}\n"
+        "{{\n  \"current_version\": \"{version}\",\n  \"parent_version\": null,\n  \"status\": \"initialized\",\n  \"workspace\": \"workspaces/{version}\",\n  \"last_verified\": null,\n  \"version_scheme\": \"semantic:vMAJOR.MINOR.PATCH\"\n}}\n"
     )
 }
