@@ -18,6 +18,13 @@ SelfForge 的目录结构必须让人类和 AI 都能安全扩展：入口清晰
   /supervisor/
   /workspaces/
     /v0/                 # v0 大版本聚合工作区，小版本不再建目录
+      README.md
+      .gitignore
+      /source/           # 受控生成或待验证源码
+      /tests/            # 工作区测试、样例和夹具
+      /sandbox/          # 临时执行目录，按 run id 分层
+      /artifacts/        # 可保留产物，按任务或模块分层
+      /logs/             # 本地原始日志，摘要写入 forge
   /forge/
     /memory/v0.md        # v0 大版本聚合记忆
     /tasks/v0.md         # v0 大版本聚合任务
@@ -54,8 +61,10 @@ SelfForge 的目录结构必须让人类和 AI 都能安全扩展：入口清晰
 6. forge 文档必须记录每次演进的任务、记忆、错误和版本变化。
 7. 工作区按 major 聚合：`v0.1.7` 必须复用 `workspaces/v0/`，禁止创建 `workspaces/v0.1.7/`。
 8. forge 归档按 major 聚合：patch 和 minor 更新只追加到 `forge/memory/vMAJOR.md`、`forge/tasks/vMAJOR.md`、`forge/errors/vMAJOR.md`、`forge/versions/vMAJOR.md`。
-9. 只有 major 版本变化时，才允许创建新的 major 工作区和 major 归档文件。
-10. 大规模目录搬迁必须拆成多个 patch，先建立新入口，再迁移调用，最后清理旧入口。
+9. workspace 根目录只允许固定入口文件和固定一级目录，禁止直接堆放生成文件。
+10. workspace 内部固定目录必须按职责使用：源码进入 `source/`，测试进入 `tests/`，临时执行进入 `sandbox/`，产物进入 `artifacts/`，日志进入 `logs/`。
+11. 只有 major 版本变化时，才允许创建新的 major 工作区和 major 归档文件。
+12. 大规模目录搬迁必须拆成多个 patch，先建立新入口，再迁移调用，最后清理旧入口。
 
 # 最小可运行闭环
 

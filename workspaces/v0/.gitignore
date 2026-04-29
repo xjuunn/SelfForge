@@ -1,0 +1,7 @@
+# SelfForge 工作区忽略规则
+
+/logs/*
+!/logs/README.md
+/sandbox/runs/
+/sandbox/tmp/
+/artifacts/tmp/

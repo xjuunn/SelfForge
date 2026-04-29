@@ -30,6 +30,7 @@ pub struct ValidationReport {
 pub enum ForgeError {
     Io { path: PathBuf, source: io::Error },
     Validation { missing_paths: Vec<PathBuf> },
+    WorkspaceRoot { unexpected_paths: Vec<PathBuf> },
     Documentation { source: DocumentationError },
 }
 
@@ -109,6 +110,8 @@ impl SelfForge {
             return Err(ForgeError::Validation { missing_paths });
         }
 
+        self.validate_workspace_root()?;
+
         validate_chinese_markdown(&self.root)
             .map_err(|source| ForgeError::Documentation { source })?;
 
@@ -119,7 +122,7 @@ impl SelfForge {
     }
 
     fn required_directories(&self) -> Vec<PathBuf> {
-        vec![
+        let mut directories = vec![
             self.root.join("runtime"),
             self.root.join("supervisor"),
             self.root.join("workspaces"),
@@ -130,27 +133,40 @@ impl SelfForge {
             self.root.join("forge").join("errors"),
             self.root.join("forge").join("versions"),
             self.root.join("state"),
-        ]
+        ];
+        directories.extend(
+            WORKSPACE_ROOT_DIRECTORIES
+                .iter()
+                .map(|directory| self.workspace_path().join(directory)),
+        );
+        directories
     }
 
     fn required_files(&self) -> Vec<PathBuf> {
         let archive_file = self.archive_file_name();
-        vec![
+        let mut files = vec![
             self.root.join("runtime").join("README.md"),
             self.root.join("supervisor").join("README.md"),
             self.workspace_path().join("README.md"),
+            self.workspace_path().join(".gitignore"),
             self.root.join("forge").join("memory").join(&archive_file),
             self.root.join("forge").join("tasks").join(&archive_file),
             self.root.join("forge").join("errors").join(&archive_file),
             self.root.join("forge").join("versions").join(&archive_file),
             self.root.join("state").join("state.json"),
-        ]
+        ];
+        files.extend(
+            WORKSPACE_ROOT_DIRECTORIES
+                .iter()
+                .map(|directory| self.workspace_path().join(directory).join("README.md")),
+        );
+        files
     }
 
     fn seed_files(&self) -> Vec<SeedFile> {
         let archive_file = self.archive_file_name();
         let workspace_name = self.workspace_name();
-        vec![
+        let mut files = vec![
             SeedFile {
                 path: self.root.join("runtime").join("README.md"),
                 contents: RUNTIME_README.to_string(),
@@ -162,6 +178,10 @@ impl SelfForge {
             SeedFile {
                 path: self.workspace_path().join("README.md"),
                 contents: workspace_readme(&workspace_name),
+            },
+            SeedFile {
+                path: self.workspace_path().join(".gitignore"),
+                contents: WORKSPACE_GITIGNORE.to_string(),
             },
             SeedFile {
                 path: self.root.join("forge").join("memory").join(&archive_file),
@@ -183,7 +203,39 @@ impl SelfForge {
                 path: self.root.join("state").join("state.json"),
                 contents: state_json(&self.version, &workspace_name),
             },
-        ]
+        ];
+        files.extend(WORKSPACE_ROOT_DIRECTORIES.iter().map(|directory| SeedFile {
+            path: self.workspace_path().join(directory).join("README.md"),
+            contents: workspace_area_readme(directory),
+        }));
+        files
+    }
+
+    fn validate_workspace_root(&self) -> Result<(), ForgeError> {
+        let workspace_path = self.workspace_path();
+        let mut unexpected_paths = Vec::new();
+
+        let entries = fs::read_dir(&workspace_path).map_err(|source| ForgeError::Io {
+            path: workspace_path.clone(),
+            source,
+        })?;
+
+        for entry in entries {
+            let entry = entry.map_err(|source| ForgeError::Io {
+                path: workspace_path.clone(),
+                source,
+            })?;
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if !is_allowed_workspace_root_entry(&name) {
+                unexpected_paths.push(entry.path());
+            }
+        }
+
+        if !unexpected_paths.is_empty() {
+            return Err(ForgeError::WorkspaceRoot { unexpected_paths });
+        }
+
+        Ok(())
     }
 }
 
@@ -201,6 +253,16 @@ impl fmt::Display for ForgeError {
                 }
                 Ok(())
             }
+            ForgeError::WorkspaceRoot { unexpected_paths } => {
+                write!(formatter, "unexpected workspace root entries: ")?;
+                for (index, path) in unexpected_paths.iter().enumerate() {
+                    if index > 0 {
+                        write!(formatter, ", ")?;
+                    }
+                    write!(formatter, "{}", relative_display(path))?;
+                }
+                Ok(())
+            }
             ForgeError::Documentation { source } => write!(formatter, "{source}"),
         }
     }
@@ -211,6 +273,7 @@ impl Error for ForgeError {
         match self {
             ForgeError::Io { source, .. } => Some(source),
             ForgeError::Validation { .. } => None,
+            ForgeError::WorkspaceRoot { .. } => None,
             ForgeError::Documentation { source } => Some(source),
         }
     }
@@ -296,10 +359,36 @@ const RUNTIME_README: &str =
 const SUPERVISOR_README: &str =
     "# 监督器边界\n\nSelfForge 监督器负责管理候选版本生命周期、验证流程、提升与回滚状态迁移。\n";
 
+const WORKSPACE_ROOT_DIRECTORIES: &[&str] = &["source", "tests", "sandbox", "artifacts", "logs"];
+const WORKSPACE_ROOT_FILES: &[&str] = &[
+    "README.md",
+    ".gitignore",
+    ".DS_Store",
+    "Thumbs.db",
+    "desktop.ini",
+];
+
+const WORKSPACE_GITIGNORE: &str = "# SelfForge 工作区忽略规则\n\n/logs/*\n!/logs/README.md\n/sandbox/runs/\n/sandbox/tmp/\n/artifacts/tmp/\n";
+
 fn workspace_readme(workspace_name: &str) -> String {
     format!(
-        "# SelfForge {workspace_name} 工作区\n\n本目录按 major 版本聚合工作区内容。小版本更新不再创建新的工作区目录，只在 forge 聚合文件中追加记录。\n"
+        "# SelfForge {workspace_name} 工作区\n\n本目录按 major 版本聚合工作区内容。小版本更新不再创建新的工作区目录，只在 forge 聚合文件中追加记录。\n\n# 顶层结构\n\n- `source/`：存放受控生成或待验证的源码。\n- `tests/`：存放工作区内的测试、样例和夹具。\n- `sandbox/`：存放运行时临时执行目录，运行记录按 run id 分层。\n- `artifacts/`：存放可保留的构建产物和验证产物。\n- `logs/`：存放本地原始日志，摘要必须写入 forge。\n\n# 约束\n\n- 根目录只允许固定入口文件和固定一级目录。\n- 禁止将生成文件直接堆放在工作区根目录。\n- 认知类记录必须写入 forge，不允许散落在 workspace。\n"
     )
+}
+
+fn workspace_area_readme(area: &str) -> String {
+    match area {
+        "source" => "# source 源码区\n\n本目录存放受控生成或待验证的源码。新增内容必须继续按模块分层，禁止把大量源码文件直接堆在本目录根部。\n".to_string(),
+        "tests" => "# tests 测试区\n\n本目录存放工作区内的测试、样例和夹具。测试应按功能或模块分层，测试结论必须同步记录到 forge 记忆。\n".to_string(),
+        "sandbox" => "# sandbox 沙箱区\n\n本目录存放运行时临时执行目录。每次执行应使用独立 run id 分层，临时内容不得作为长期记忆保存。\n".to_string(),
+        "artifacts" => "# artifacts 产物区\n\n本目录存放需要保留的构建产物、验证产物或导出物。产物必须按任务或模块分层，禁止直接堆在根部。\n".to_string(),
+        "logs" => "# logs 日志区\n\n本目录存放本地原始日志。日志摘要、错误分析和结论必须写入 forge，避免日志成为唯一审计来源。\n".to_string(),
+        _ => format!("# {area} 工作区目录\n\n本目录属于 SelfForge 工作区固定骨架，内容必须按职责继续分层。\n"),
+    }
+}
+
+fn is_allowed_workspace_root_entry(name: &str) -> bool {
+    WORKSPACE_ROOT_FILES.contains(&name) || WORKSPACE_ROOT_DIRECTORIES.contains(&name)
 }
 
 fn memory_template(major: &str) -> String {

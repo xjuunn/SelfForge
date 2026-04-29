@@ -58,6 +58,13 @@ SelfForge 必须能够：
 
 ```txt
 workspaces/vMAJOR/
+  README.md
+  .gitignore
+  source/                 # 受控生成或待验证源码
+  tests/                  # 工作区测试、样例和夹具
+  sandbox/                # 临时执行目录，按 run id 分层
+  artifacts/              # 可保留产物，按任务或模块分层
+  logs/                   # 本地原始日志，摘要写入 forge
 forge/memory/vMAJOR.md
 forge/tasks/vMAJOR.md
 forge/errors/vMAJOR.md
@@ -67,6 +74,8 @@ forge/versions/vMAJOR.md
 小版本记录采用大版本聚合策略：同一个 major 下的 minor 和 patch 更新都必须追加到同一个 major 文件中，例如 `v0.1.1`、`v0.1.2`、`v0.2.0` 都写入 `forge/memory/v0.md`、`forge/tasks/v0.md`、`forge/errors/v0.md`、`forge/versions/v0.md`，并复用 `workspaces/v0/`。只有 major 变化时，才允许创建新的 `workspaces/vMAJOR/` 和 `forge/*/vMAJOR.md`。
 
 禁止为每个小版本创建新的工作区目录、记忆文件、任务文件、错误目录或版本文件。旧版历史目录和文件在未完成迁移确认前视为只读遗留资料，不得被新流程继续引用或扩增。
+
+workspace 根目录必须保持极简，只允许 `README.md`、`.gitignore` 和固定一级目录：`source/`、`tests/`、`sandbox/`、`artifacts/`、`logs/`。任何生成源码、测试、运行临时文件、产物或日志都必须进入对应目录继续分层，禁止直接堆放在 `workspaces/vMAJOR/` 根目录。
 
 错误文件必须独立记录，结构为：
 
