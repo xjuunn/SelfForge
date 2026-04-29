@@ -20,10 +20,10 @@ pub use state::{ForgeState, StateError};
 pub use supervisor::Supervisor;
 pub use version::{
     ForgeVersion, VersionBump, VersionError, next_version_after, next_version_after_with_bump,
-    version_series_file_name,
+    version_major_file_name, version_major_key,
 };
 
-pub const CURRENT_VERSION: &str = "v0.1.5";
+pub const CURRENT_VERSION: &str = "v0.1.7";
 
 #[cfg(test)]
 mod tests {
@@ -58,21 +58,11 @@ mod tests {
         assert!(report.created_paths.len() >= 10);
         assert!(root.join("runtime").is_dir());
         assert!(root.join("supervisor").is_dir());
-        assert!(root.join("workspaces").join("v0.1.5").is_dir());
-        assert!(
-            root.join("forge")
-                .join("memory")
-                .join("v0.1.5.md")
-                .is_file()
-        );
-        assert!(root.join("forge").join("tasks").join("v0.1.5.md").is_file());
-        assert!(root.join("forge").join("errors").join("v0.1.5").is_dir());
-        assert!(
-            root.join("forge")
-                .join("versions")
-                .join("v0.1.md")
-                .is_file()
-        );
+        assert!(root.join("workspaces").join("v0").is_dir());
+        assert!(root.join("forge").join("memory").join("v0.md").is_file());
+        assert!(root.join("forge").join("tasks").join("v0.md").is_file());
+        assert!(root.join("forge").join("errors").join("v0.md").is_file());
+        assert!(root.join("forge").join("versions").join("v0.md").is_file());
         assert!(root.join("state").join("state.json").is_file());
 
         cleanup(&root);
@@ -128,55 +118,66 @@ mod tests {
             .prepare_next_version("prepare the next controlled candidate")
             .expect("evolution should prepare a candidate version");
 
-        assert_eq!(report.current_version, "v0.1.5");
-        assert_eq!(report.next_version, "v0.1.6");
-        assert!(root.join("workspaces").join("v0.1.6").is_dir());
-        assert!(
-            root.join("forge")
-                .join("memory")
-                .join("v0.1.6.md")
-                .is_file()
-        );
-        assert!(root.join("forge").join("tasks").join("v0.1.6.md").is_file());
-        assert!(root.join("forge").join("errors").join("v0.1.6").is_dir());
-        assert!(
-            root.join("forge")
-                .join("versions")
-                .join("v0.1.md")
-                .is_file()
-        );
+        assert_eq!(report.current_version, "v0.1.7");
+        assert_eq!(report.next_version, "v0.1.8");
+        assert!(root.join("workspaces").join("v0").is_dir());
+        assert!(!root.join("workspaces").join("v0.1.8").exists());
+        assert!(root.join("forge").join("memory").join("v0.md").is_file());
+        assert!(root.join("forge").join("tasks").join("v0.md").is_file());
+        assert!(root.join("forge").join("errors").join("v0.md").is_file());
+        assert!(root.join("forge").join("versions").join("v0.md").is_file());
         assert!(
             !root
                 .join("forge")
                 .join("versions")
-                .join("v0.1.6.md")
+                .join("v0.1.8.md")
                 .exists()
         );
-        let version_record =
-            fs::read_to_string(root.join("forge").join("versions").join("v0.1.md"))
-                .expect("series version record should be readable");
-        assert!(version_record.contains("## v0.1.6"));
-        assert_eq!(report.state.current_version, "v0.1.5");
+        let version_record = fs::read_to_string(root.join("forge").join("versions").join("v0.md"))
+            .expect("major version record should be readable");
+        assert!(version_record.contains("## v0.1.8"));
+        assert_eq!(report.state.current_version, "v0.1.7");
         assert_eq!(report.state.status, "candidate_prepared");
         assert_eq!(
             report.state.version_scheme.as_deref(),
             Some("semantic:vMAJOR.MINOR.PATCH")
         );
-        assert_eq!(report.state.candidate_version.as_deref(), Some("v0.1.6"));
+        assert_eq!(report.state.candidate_version.as_deref(), Some("v0.1.8"));
         assert_eq!(
             report.state.candidate_workspace.as_deref(),
-            Some("workspaces/v0.1.6")
+            Some("workspaces/v0")
         );
 
         supervisor
-            .verify_version("v0.1.6")
+            .verify_version("v0.1.8")
             .expect("candidate layout should validate");
 
         cleanup(&root);
     }
 
     #[test]
-    fn evolution_preserves_existing_candidate_task_document() {
+    fn evolution_normalizes_legacy_current_workspace_to_major_workspace() {
+        let root = temp_root("normalize-workspace");
+        let supervisor = Supervisor::new(&root);
+
+        supervisor
+            .initialize_current_version()
+            .expect("bootstrap should succeed before evolution");
+        let mut state = ForgeState::load(&root).expect("state should be readable");
+        state.workspace = "workspaces/v0.1.7".to_string();
+        state.save(&root).expect("state should be writable");
+
+        let report = supervisor
+            .prepare_next_version("normalize legacy workspace")
+            .expect("evolution should normalize the current workspace");
+
+        assert_eq!(report.state.workspace, "workspaces/v0");
+
+        cleanup(&root);
+    }
+
+    #[test]
+    fn evolution_appends_candidate_task_document_without_overwriting_existing_content() {
         let root = temp_root("preserve-task");
         let supervisor = Supervisor::new(&root);
 
@@ -186,8 +187,8 @@ mod tests {
         fs::create_dir_all(root.join("forge").join("tasks"))
             .expect("test should create task directory");
         fs::write(
-            root.join("forge").join("tasks").join("v0.1.6.md"),
-            "人工任务计划",
+            root.join("forge").join("tasks").join("v0.md"),
+            "人工任务计划\n",
         )
         .expect("test should write existing candidate task");
 
@@ -195,9 +196,10 @@ mod tests {
             .prepare_next_version("prepare the next controlled candidate")
             .expect("evolution should prepare a candidate version");
 
-        let task = fs::read_to_string(root.join("forge").join("tasks").join("v0.1.6.md"))
+        let task = fs::read_to_string(root.join("forge").join("tasks").join("v0.md"))
             .expect("task should remain readable");
-        assert_eq!(task, "人工任务计划");
+        assert!(task.contains("人工任务计划"));
+        assert!(task.contains("## v0.1.8"));
 
         cleanup(&root);
     }
@@ -210,11 +212,11 @@ mod tests {
     }
 
     #[test]
-    fn semantic_version_patch_records_share_minor_series_file() {
-        let file = version_series_file_name("v0.1.9")
-            .expect("semantic version should resolve a series file");
+    fn semantic_version_small_records_share_major_file() {
+        let file = version_major_file_name("v0.1.9")
+            .expect("semantic version should resolve a major file");
 
-        assert_eq!(file, "v0.1.md");
+        assert_eq!(file, "v0.md");
     }
 
     #[test]
@@ -233,10 +235,10 @@ mod tests {
             .promote_candidate()
             .expect("candidate should promote after validation");
 
-        assert_eq!(report.previous_version, "v0.1.5");
-        assert_eq!(report.promoted_version, "v0.1.6");
-        assert_eq!(report.state.current_version, "v0.1.6");
-        assert_eq!(report.state.parent_version.as_deref(), Some("v0.1.5"));
+        assert_eq!(report.previous_version, "v0.1.7");
+        assert_eq!(report.promoted_version, "v0.1.8");
+        assert_eq!(report.state.current_version, "v0.1.8");
+        assert_eq!(report.state.parent_version.as_deref(), Some("v0.1.7"));
         assert_eq!(report.state.candidate_version, None);
         assert_eq!(report.state.status, "active");
 
@@ -259,12 +261,12 @@ mod tests {
             .run_candidate_cycle()
             .expect("valid candidate should complete the cycle");
 
-        assert_eq!(report.previous_version, "v0.1.5");
-        assert_eq!(report.candidate_version, "v0.1.6");
+        assert_eq!(report.previous_version, "v0.1.7");
+        assert_eq!(report.candidate_version, "v0.1.8");
         assert_eq!(report.result, CycleResult::Promoted);
         assert!(report.candidate_validation.is_some());
         assert_eq!(report.failure, None);
-        assert_eq!(report.state.current_version, "v0.1.6");
+        assert_eq!(report.state.current_version, "v0.1.8");
         assert_eq!(report.state.candidate_version, None);
         assert_eq!(report.state.status, "active");
 
@@ -287,12 +289,12 @@ mod tests {
             .rollback_candidate("测试回滚")
             .expect("rollback should clear candidate state");
 
-        assert_eq!(report.current_version, "v0.1.5");
-        assert_eq!(report.rolled_back_version, "v0.1.6");
+        assert_eq!(report.current_version, "v0.1.7");
+        assert_eq!(report.rolled_back_version, "v0.1.8");
         assert_eq!(report.state.status, "rolled_back");
-        assert_eq!(report.state.current_version, "v0.1.5");
+        assert_eq!(report.state.current_version, "v0.1.7");
         assert_eq!(report.state.candidate_version, None);
-        assert!(root.join("workspaces").join("v0.1.6").is_dir());
+        assert!(root.join("workspaces").join("v0").is_dir());
 
         cleanup(&root);
     }
@@ -308,19 +310,21 @@ mod tests {
         supervisor
             .prepare_next_version("prepare candidate")
             .expect("candidate should be prepared");
-        fs::remove_file(root.join("workspaces").join("v0.1.6").join("README.md"))
-            .expect("test should be able to break candidate workspace");
+        let mut state = ForgeState::load(&root).expect("state should be readable");
+        state.candidate_version = Some("v9.0.0".to_string());
+        state.candidate_workspace = Some("workspaces/v9".to_string());
+        state.save(&root).expect("state should be writable");
 
         let report = supervisor
             .run_candidate_cycle()
             .expect("invalid candidate should roll back without promoting");
 
-        assert_eq!(report.previous_version, "v0.1.5");
-        assert_eq!(report.candidate_version, "v0.1.6");
+        assert_eq!(report.previous_version, "v0.1.7");
+        assert_eq!(report.candidate_version, "v9.0.0");
         assert_eq!(report.result, CycleResult::RolledBack);
         assert!(report.candidate_validation.is_none());
         assert!(report.failure.is_some());
-        assert_eq!(report.state.current_version, "v0.1.5");
+        assert_eq!(report.state.current_version, "v0.1.7");
         assert_eq!(report.state.candidate_version, None);
         assert_eq!(report.state.status, "rolled_back");
 
@@ -341,10 +345,10 @@ mod tests {
             .expect("advance should prepare a candidate when none exists");
 
         assert_eq!(report.outcome, MinimalLoopOutcome::Prepared);
-        assert_eq!(report.starting_version, "v0.1.5");
-        assert_eq!(report.stable_version, "v0.1.5");
-        assert_eq!(report.candidate_version.as_deref(), Some("v0.1.6"));
-        assert_eq!(report.next_expected_version.as_deref(), Some("v0.1.7"));
+        assert_eq!(report.starting_version, "v0.1.7");
+        assert_eq!(report.stable_version, "v0.1.7");
+        assert_eq!(report.candidate_version.as_deref(), Some("v0.1.8"));
+        assert_eq!(report.next_expected_version.as_deref(), Some("v0.1.9"));
 
         cleanup(&root);
     }
@@ -366,10 +370,10 @@ mod tests {
             .expect("advance should promote valid candidate and prepare the next one");
 
         assert_eq!(report.outcome, MinimalLoopOutcome::PromotedAndPrepared);
-        assert_eq!(report.starting_version, "v0.1.5");
-        assert_eq!(report.stable_version, "v0.1.6");
-        assert_eq!(report.candidate_version.as_deref(), Some("v0.1.7"));
-        assert_eq!(report.next_expected_version.as_deref(), Some("v0.1.8"));
+        assert_eq!(report.starting_version, "v0.1.7");
+        assert_eq!(report.stable_version, "v0.1.8");
+        assert_eq!(report.candidate_version.as_deref(), Some("v0.1.9"));
+        assert_eq!(report.next_expected_version.as_deref(), Some("v0.1.10"));
 
         cleanup(&root);
     }
@@ -385,17 +389,19 @@ mod tests {
         app.supervisor()
             .prepare_next_version("prepare candidate")
             .expect("candidate should be prepared before app advance");
-        fs::remove_file(root.join("workspaces").join("v0.1.6").join("README.md"))
-            .expect("test should be able to break candidate workspace");
+        let mut state = ForgeState::load(&root).expect("state should be readable");
+        state.candidate_version = Some("v9.0.0".to_string());
+        state.candidate_workspace = Some("workspaces/v9".to_string());
+        state.save(&root).expect("state should be writable");
 
         let report = app
             .advance("继续推进")
             .expect("advance should roll back invalid candidate");
 
         assert_eq!(report.outcome, MinimalLoopOutcome::RolledBack);
-        assert_eq!(report.starting_version, "v0.1.5");
-        assert_eq!(report.stable_version, "v0.1.5");
-        assert_eq!(report.candidate_version.as_deref(), Some("v0.1.6"));
+        assert_eq!(report.starting_version, "v0.1.7");
+        assert_eq!(report.stable_version, "v0.1.7");
+        assert_eq!(report.candidate_version.as_deref(), Some("v9.0.0"));
         assert_eq!(report.next_expected_version, None);
         assert!(report.failure.is_some());
 
@@ -421,7 +427,7 @@ mod tests {
             .expect("runtime should execute direct command inside workspace");
 
         assert_eq!(report.version, CURRENT_VERSION);
-        assert!(report.workspace.ends_with(CURRENT_VERSION));
+        assert!(report.workspace.ends_with("v0"));
         assert_eq!(report.exit_code, Some(0));
         assert!(!report.timed_out);
         assert!(!report.stdout.is_empty() || !report.stderr.is_empty());
@@ -501,9 +507,7 @@ mod tests {
             .initialize_current_version()
             .expect("bootstrap should succeed before doc audit");
         fs::write(
-            root.join("workspaces")
-                .join(CURRENT_VERSION)
-                .join("english.md"),
+            root.join("workspaces").join("v0").join("english.md"),
             "# English\n\nOnly ASCII text.\n",
         )
         .expect("test should write non-Chinese document");

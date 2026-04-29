@@ -1,9 +1,7 @@
-use crate::layout::{BootstrapReport, ForgeError, SelfForge, ValidationReport};
+use crate::layout::{BootstrapReport, ForgeError, SelfForge, ValidationReport, major_file_name};
 use crate::runtime::Runtime;
 use crate::state::{ForgeState, StateError};
-use crate::version::{
-    VersionBump, VersionError, next_version_after_with_bump, version_series_file_name,
-};
+use crate::version::{VersionBump, VersionError, next_version_after_with_bump, version_major_key};
 use std::error::Error;
 use std::fmt;
 use std::fs;
@@ -95,6 +93,7 @@ impl EvolutionEngine {
 
         let current_version = state.current_version.clone();
         let next_version = next_version_after_with_bump(&current_version, bump)?;
+        let current_workspace = format!("workspaces/{}", version_major_key(&current_version)?);
 
         let runtime = Runtime::new(&self.root);
         runtime.verify_layout_for_version(&current_version)?;
@@ -108,9 +107,10 @@ impl EvolutionEngine {
         write_candidate_documents(&self.root, &current_version, &next_version, goal)?;
 
         let candidate_validation = runtime.verify_layout_for_version(&next_version)?;
-        let candidate_workspace = format!("workspaces/{next_version}");
+        let candidate_workspace = format!("workspaces/{}", version_major_key(&next_version)?);
 
         state.status = "candidate_prepared".to_string();
+        state.workspace = current_workspace;
         state.version_scheme = Some("semantic:vMAJOR.MINOR.PATCH".to_string());
         state.candidate_version = Some(next_version.clone());
         state.candidate_workspace = Some(candidate_workspace.clone());
@@ -274,38 +274,34 @@ fn write_candidate_documents(
     goal: &str,
 ) -> Result<(), EvolutionError> {
     let timestamp = timestamp();
-    write_document_if_missing(
-        &root
-            .join("forge")
-            .join("memory")
-            .join(format!("{next_version}.md")),
+    append_archive_record(
+        root,
+        "memory",
+        next_version,
         &memory_document(current_version, next_version, goal, &timestamp),
     )?;
-    write_document_if_missing(
-        &root
-            .join("forge")
-            .join("tasks")
-            .join(format!("{next_version}.md")),
+    append_archive_record(
+        root,
+        "tasks",
+        next_version,
         &task_document(current_version, next_version, goal),
     )?;
-    write_document_if_missing(
-        &root
-            .join("forge")
-            .join("errors")
-            .join(next_version)
-            .join("README.md"),
-        &errors_readme(next_version),
-    )?;
+    append_archive_record(root, "errors", next_version, &errors_document(next_version))?;
     append_version_record(root, current_version, next_version)?;
     Ok(())
 }
 
-fn write_document_if_missing(path: &Path, contents: &str) -> Result<(), EvolutionError> {
-    if path.exists() {
-        return Ok(());
-    }
-
-    write_document(path, contents)
+fn append_archive_record(
+    root: &Path,
+    area: &str,
+    next_version: &str,
+    entry: &str,
+) -> Result<(), EvolutionError> {
+    let path = root
+        .join("forge")
+        .join(area)
+        .join(major_file_name(next_version));
+    append_record(&path, next_version, entry)
 }
 
 fn append_version_record(
@@ -313,18 +309,20 @@ fn append_version_record(
     current_version: &str,
     next_version: &str,
 ) -> Result<(), EvolutionError> {
-    let series_file_name = version_series_file_name(next_version)?;
-    let series = series_file_name
-        .strip_suffix(".md")
-        .unwrap_or(&series_file_name)
-        .to_string();
-    let path = root.join("forge").join("versions").join(&series_file_name);
+    let path = root
+        .join("forge")
+        .join("versions")
+        .join(major_file_name(next_version));
     let entry = version_document(current_version, next_version);
-    let marker = format!("## {next_version}");
+    append_record(&path, next_version, &entry)
+}
+
+fn append_record(path: &Path, version: &str, entry: &str) -> Result<(), EvolutionError> {
+    let marker = format!("## {version}");
 
     if path.exists() {
-        let mut contents = fs::read_to_string(&path).map_err(|source| EvolutionError::Io {
-            path: path.clone(),
+        let mut contents = fs::read_to_string(path).map_err(|source| EvolutionError::Io {
+            path: path.to_path_buf(),
             source,
         })?;
         if contents.contains(&marker) {
@@ -338,7 +336,7 @@ fn append_version_record(
         return write_document(&path, &contents);
     }
 
-    write_document(&path, &version_series_document(&series, &entry))
+    write_document(path, entry)
 }
 
 fn write_document(path: &Path, contents: &str) -> Result<(), EvolutionError> {
@@ -368,41 +366,30 @@ fn memory_document(
     goal: &str,
     timestamp: &str,
 ) -> String {
-    let document = format!(
-        "# 版本信息\n- 版本号：{next_version}\n- 时间：{timestamp}\n- 父版本：{current_version}\n\n# 目标\n\n{goal}\n\n# 计划（Plan）\n\n1. 读取最近版本记忆和持久化状态。\n2. 验证当前稳定版本仍可运行。\n3. 按语义化版本规则计算下一候选版本。\n4. 生成候选工作区与 forge 归档文档。\n5. 验证候选版本布局和中文文档规范。\n6. 将 state/state.json 更新为 candidate_prepared。\n7. 保持当前稳定版本不变，等待提升或回滚。\n\n# 执行过程\n\n已生成候选版本骨架，尚未执行版本提升。\n\n# 代码变更\n\n待最终验证后补充。\n\n# 测试结果\n\n待最终验证后补充。\n\n# 错误总结\n\n待最终验证后补充。\n\n# 评估\n\n候选版本生成完成后仍需通过验证与提升流程才能成为当前版本。\n\n# 优化建议\n\n继续完善沙箱执行、资源限制和并行验证。\n\n# 可复用经验\n\n候选版本文档已存在时必须保留，不能覆盖前序计划。\n"
-    );
-    if !document.is_empty() {
-        return document;
-    }
-
     format!(
-        "# 版本信息\n- 版本号：{next_version}\n- 时间：{timestamp}\n- 父版本：{current_version}\n\n# 目标\n\n{goal}\n\n# 计划（Plan）\n\n1. 读取最近版本记忆和持久化状态。\n2. 验证当前稳定版本仍可运行。\n3. 按语义化版本规则计算下一候选版本。\n4. 生成候选工作区与 forge 归档文档。\n5. 验证候选版本布局和中文文档规范。\n6. 将 state/state.json 更新为 candidate_prepared。\n7. 保持当前稳定版本不变，等待提升或回滚。\n\n# 执行过程\n\n已生成候选版本骨架，尚未执行版本提升。\n\n# 代码变更\n\n待最终验证后补充。\n\n# 测试结果\n\n待最终验证后补充。\n\n# 错误总结\n\n待最终验证后补充。\n\n# 评估\n\n候选版本生成完成后仍需通过验证与提升流程才能成为当前版本。\n\n# 优化建议\n\n继续完善沙箱执行、资源限制和并行验证。\n\n# 可复用经验\n\n候选版本文档已存在时必须保留，不能覆盖前序计划。\n"
+        "## {next_version}\n\n# 版本信息\n- 版本号：{next_version}\n- 时间：{timestamp}\n- 父版本：{current_version}\n\n# 目标\n\n{goal}\n\n# 计划（Plan）\n\n1. 读取最近版本记忆和持久化状态。\n2. 验证当前稳定版本仍可运行。\n3. 生成或复用 major 工作区与聚合归档文件。\n4. 追加候选版本记忆、任务、错误和版本记录。\n5. 验证候选版本布局和中文文档规范。\n6. 将 state/state.json 更新为 candidate_prepared。\n\n# 执行过程\n\n已按 major 聚合规则生成候选记录，未创建新的小版本工作区目录。\n\n# 代码变更\n\n待最终验证后补充。\n\n# 测试结果\n\n待最终验证后补充。\n\n# 错误总结\n\n待最终验证后补充。\n\n# 评估\n\n候选版本生成完成后仍需通过验证与提升流程才能成为当前版本。\n\n# 优化建议\n\n继续减少小版本碎片化文件和目录。\n\n# 可复用经验\n\n小版本记录应追加到 major 聚合文件，避免目录数量随 patch 增长。\n"
     )
 }
 
 fn task_document(current_version: &str, next_version: &str, goal: &str) -> String {
-    let version_file =
-        version_series_file_name(next_version).unwrap_or_else(|_| format!("{next_version}.md"));
+    let archive_file = major_file_name(next_version);
+    let workspace = version_major_key(next_version).unwrap_or_else(|_| next_version.to_string());
 
     format!(
-        "# 任务来源\n\nSelfForge 受控进化流程。\n\n# 任务描述\n\n从当前稳定版本 {current_version} 生成下一候选版本 {next_version}，默认只递增 patch。\n\n# 输入\n\n- 当前稳定版本：{current_version}\n- 用户目标：{goal}\n- 状态文件：state/state.json\n\n# 输出\n\n- workspaces/{next_version}\n- forge/memory/{next_version}.md\n- forge/errors/{next_version}\n- forge/versions/{version_file}\n- 更新后的 state/state.json\n\n# 计划（Plan）\n\n1. 读取状态。\n2. 验证当前稳定版本。\n3. 计算下一 patch 版本。\n4. 生成候选版本目录和文档。\n5. 验证候选版本。\n6. 持久化候选状态。\n"
+        "## {next_version}\n\n# 任务来源\n\nSelfForge 受控进化流程。\n\n# 任务描述\n\n从当前稳定版本 {current_version} 生成下一候选版本 {next_version}，并按 major 聚合规则追加归档。\n\n# 输入\n\n- 当前稳定版本：{current_version}\n- 用户目标：{goal}\n- 状态文件：state/state.json\n\n# 输出\n\n- workspaces/{workspace}\n- forge/memory/{archive_file}\n- forge/tasks/{archive_file}\n- forge/errors/{archive_file}\n- forge/versions/{archive_file}\n- 更新后的 state/state.json\n\n# 计划（Plan）\n\n1. 读取状态。\n2. 验证当前稳定版本。\n3. 计算下一 patch 版本。\n4. 复用 major 工作区并追加聚合文档。\n5. 验证候选版本。\n6. 持久化候选状态。\n"
     )
 }
 
-fn errors_readme(next_version: &str) -> String {
+fn errors_document(next_version: &str) -> String {
     format!(
-        "# {next_version} 错误记录\n\n每个错误必须独立记录为 error-XXX.md，并包含错误信息、出现阶段、原因分析、解决方案、是否已解决。\n"
-    )
-}
-
-fn version_series_document(series: &str, first_entry: &str) -> String {
-    format!(
-        "# {series} 版本记录\n\n# 记录规则\n\n- 本文件集中记录 {series}.x 的 patch 更新，避免为每次小版本生成独立版本文件。\n- minor 或 major 版本变化时，才创建新的版本系列文件。\n\n{first_entry}"
+        "## {next_version}\n\n# 错误信息\n\n本候选生成阶段暂无错误。\n\n# 出现阶段\n\n候选生成。\n\n# 原因分析\n\n暂无。\n\n# 解决方案\n\n暂无。\n\n# 是否已解决\n\n是。\n"
     )
 }
 
 fn version_document(current_version: &str, next_version: &str) -> String {
+    let workspace = version_major_key(next_version).unwrap_or_else(|_| next_version.to_string());
+
     format!(
-        "## {next_version}\n\n# 版本变化\n\n- 从 {current_version} 生成 {next_version} 候选版本。\n- 新增候选工作区与 forge 归档文档。\n- state/state.json 保持 current_version 为 {current_version}，并记录 candidate_version 为 {next_version}。\n\n# 新增功能\n\n- 候选版本生成。\n- 中文文档规范验证。\n\n# 修复内容\n\n- 暂无。\n"
+        "## {next_version}\n\n# 版本变化\n\n- 从 {current_version} 生成 {next_version} 候选版本。\n- 复用 major 工作区 `workspaces/{workspace}`，不再创建小版本工作区目录。\n- 小版本记忆、任务、错误、版本记录均追加到 major 聚合文件。\n- state/state.json 保持 current_version 为 {current_version}，并记录 candidate_version 为 {next_version}。\n\n# 新增功能\n\n- major 聚合工作区规则。\n- major 聚合 forge 文档规则。\n\n# 修复内容\n\n- 减少小版本目录和文件爆炸。\n"
     )
 }

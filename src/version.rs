@@ -35,12 +35,12 @@ impl ForgeVersion {
         self.patch
     }
 
-    pub fn series(&self) -> String {
-        format!("v{}.{}", self.major, self.minor)
+    pub fn major_key(&self) -> String {
+        format!("v{}", self.major)
     }
 
-    pub fn series_file_name(&self) -> String {
-        format!("{}.md", self.series())
+    pub fn major_file_name(&self) -> String {
+        format!("{}.md", self.major_key())
     }
 
     pub fn bump(&self, bump: VersionBump) -> Result<Self, VersionError> {
@@ -124,8 +124,12 @@ pub fn next_version_after_with_bump(
     Ok(ForgeVersion::from_str(version)?.bump(bump)?.to_string())
 }
 
-pub fn version_series_file_name(version: &str) -> Result<String, VersionError> {
-    Ok(ForgeVersion::from_str(version)?.series_file_name())
+pub fn version_major_key(version: &str) -> Result<String, VersionError> {
+    Ok(ForgeVersion::from_str(version)?.major_key())
+}
+
+pub fn version_major_file_name(version: &str) -> Result<String, VersionError> {
+    Ok(ForgeVersion::from_str(version)?.major_file_name())
 }
 
 fn parse_part(full_version: &str, part: &str) -> Result<u64, VersionError> {

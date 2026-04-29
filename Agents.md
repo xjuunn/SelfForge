@@ -38,7 +38,7 @@ SelfForge 必须能够：
 ```txt
 /runtime/                 # 受保护运行时边界
 /supervisor/              # 受保护监督器边界
-/workspaces/              # 每个版本独立工作区
+/workspaces/              # 每个 major 版本一个工作区
 /forge/                   # 统一归档目录
   /memory/                # 记忆系统
   /tasks/                 # 任务记录
@@ -54,16 +54,19 @@ SelfForge 必须能够：
 
 所有认知类数据必须集中写入 `forge/`。
 
-每个版本必须包含：
+每个 major 版本必须包含一组聚合归档：
 
 ```txt
-forge/memory/vMAJOR.MINOR.PATCH.md
-forge/tasks/vMAJOR.MINOR.PATCH.md
-forge/errors/vMAJOR.MINOR.PATCH/
-forge/versions/vMAJOR.MINOR.md
+workspaces/vMAJOR/
+forge/memory/vMAJOR.md
+forge/tasks/vMAJOR.md
+forge/errors/vMAJOR.md
+forge/versions/vMAJOR.md
 ```
 
-版本记录采用小版本系列单文件策略：同一个 minor 系列内的 patch 更新必须追加到同一个 `forge/versions/vMAJOR.MINOR.md` 文件中，例如 `v0.1.1`、`v0.1.2`、`v0.1.3` 都写入 `forge/versions/v0.1.md`。只有 minor 或 major 变化时，才允许创建新的版本系列文件。旧的 patch 级版本文件在内容合并后应删除，避免产生大量无效版本文件。
+小版本记录采用大版本聚合策略：同一个 major 下的 minor 和 patch 更新都必须追加到同一个 major 文件中，例如 `v0.1.1`、`v0.1.2`、`v0.2.0` 都写入 `forge/memory/v0.md`、`forge/tasks/v0.md`、`forge/errors/v0.md`、`forge/versions/v0.md`，并复用 `workspaces/v0/`。只有 major 变化时，才允许创建新的 `workspaces/vMAJOR/` 和 `forge/*/vMAJOR.md`。
+
+禁止为每个小版本创建新的工作区目录、记忆文件、任务文件、错误目录或版本文件。旧版历史目录和文件在未完成迁移确认前视为只读遗留资料，不得被新流程继续引用或扩增。
 
 错误文件必须独立记录，结构为：
 
@@ -118,7 +121,7 @@ forge/versions/vMAJOR.MINOR.md
 4. major 只能用于明确的不兼容架构阶段变化，非必要禁止升级。
 5. commit 信息必须包含本轮版本号。
 6. 状态文件必须区分当前稳定版本与候选版本。
-7. patch 更新的版本记录必须写入当前 minor 系列文件，例如 `forge/versions/v0.1.md`，禁止为每个 patch 创建独立版本文件。
+7. patch 和 minor 更新的记录必须写入当前 major 聚合文件，例如 `forge/versions/v0.md`，禁止为每个小版本创建独立目录或文件。
 
 ---
 

@@ -1,4 +1,4 @@
-use crate::layout::{ForgeError, SelfForge, ValidationReport};
+use crate::layout::{ForgeError, SelfForge, ValidationReport, workspace_name};
 use std::error::Error;
 use std::fmt;
 use std::io;
@@ -140,7 +140,7 @@ impl Runtime {
                 path: self.forge.root().join("workspaces"),
                 source,
             })?;
-        let workspace = workspaces_root.join(version);
+        let workspace = workspaces_root.join(workspace_name(version));
         let canonical_workspace =
             workspace
                 .canonicalize()

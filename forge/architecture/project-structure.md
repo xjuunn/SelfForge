@@ -17,7 +17,12 @@ SelfForge 的目录结构必须让人类和 AI 都能安全扩展：入口清晰
   /runtime/
   /supervisor/
   /workspaces/
+    /v0/                 # v0 大版本聚合工作区，小版本不再建目录
   /forge/
+    /memory/v0.md        # v0 大版本聚合记忆
+    /tasks/v0.md         # v0 大版本聚合任务
+    /errors/v0.md        # v0 大版本聚合错误
+    /versions/v0.md      # v0 大版本聚合版本记录
   /state/
 ```
 
@@ -47,8 +52,10 @@ SelfForge 的目录结构必须让人类和 AI 都能安全扩展：入口清晰
 4. Evolution 只负责版本状态机，禁止直接执行外部命令。
 5. State 只负责持久化状态读写，禁止保存进程内临时状态。
 6. forge 文档必须记录每次演进的任务、记忆、错误和版本变化。
-7. patch 更新只写入 `forge/versions/vMAJOR.MINOR.md`，禁止新增 patch 级版本记录文件。
-8. 大规模目录搬迁必须拆成多个 patch，先建立新入口，再迁移调用，最后清理旧入口。
+7. 工作区按 major 聚合：`v0.1.7` 必须复用 `workspaces/v0/`，禁止创建 `workspaces/v0.1.7/`。
+8. forge 归档按 major 聚合：patch 和 minor 更新只追加到 `forge/memory/vMAJOR.md`、`forge/tasks/vMAJOR.md`、`forge/errors/vMAJOR.md`、`forge/versions/vMAJOR.md`。
+9. 只有 major 版本变化时，才允许创建新的 major 工作区和 major 归档文件。
+10. 大规模目录搬迁必须拆成多个 patch，先建立新入口，再迁移调用，最后清理旧入口。
 
 # 最小可运行闭环
 

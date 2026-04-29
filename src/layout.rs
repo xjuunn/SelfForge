@@ -1,6 +1,6 @@
 use crate::CURRENT_VERSION;
 use crate::documentation::{DocumentationError, validate_chinese_markdown};
-use crate::version::version_series_file_name;
+use crate::version::{version_major_file_name, version_major_key};
 use std::error::Error;
 use std::fmt;
 use std::fs;
@@ -51,6 +51,18 @@ impl SelfForge {
 
     pub fn version(&self) -> &str {
         &self.version
+    }
+
+    pub fn workspace_name(&self) -> String {
+        workspace_name(&self.version)
+    }
+
+    pub fn workspace_path(&self) -> PathBuf {
+        self.root.join("workspaces").join(self.workspace_name())
+    }
+
+    pub fn archive_file_name(&self) -> String {
+        major_file_name(&self.version)
     }
 
     pub fn bootstrap(&self) -> Result<BootstrapReport, ForgeError> {
@@ -111,47 +123,33 @@ impl SelfForge {
             self.root.join("runtime"),
             self.root.join("supervisor"),
             self.root.join("workspaces"),
-            self.root.join("workspaces").join(&self.version),
+            self.workspace_path(),
             self.root.join("forge"),
             self.root.join("forge").join("memory"),
             self.root.join("forge").join("tasks"),
             self.root.join("forge").join("errors"),
-            self.root.join("forge").join("errors").join(&self.version),
             self.root.join("forge").join("versions"),
             self.root.join("state"),
         ]
     }
 
     fn required_files(&self) -> Vec<PathBuf> {
+        let archive_file = self.archive_file_name();
         vec![
             self.root.join("runtime").join("README.md"),
             self.root.join("supervisor").join("README.md"),
-            self.root
-                .join("workspaces")
-                .join(&self.version)
-                .join("README.md"),
-            self.root
-                .join("forge")
-                .join("memory")
-                .join(format!("{}.md", self.version)),
-            self.root
-                .join("forge")
-                .join("tasks")
-                .join(format!("{}.md", self.version)),
-            self.root
-                .join("forge")
-                .join("errors")
-                .join(&self.version)
-                .join("README.md"),
-            self.root
-                .join("forge")
-                .join("versions")
-                .join(version_record_file_name(&self.version)),
+            self.workspace_path().join("README.md"),
+            self.root.join("forge").join("memory").join(&archive_file),
+            self.root.join("forge").join("tasks").join(&archive_file),
+            self.root.join("forge").join("errors").join(&archive_file),
+            self.root.join("forge").join("versions").join(&archive_file),
             self.root.join("state").join("state.json"),
         ]
     }
 
     fn seed_files(&self) -> Vec<SeedFile> {
+        let archive_file = self.archive_file_name();
+        let workspace_name = self.workspace_name();
         vec![
             SeedFile {
                 path: self.root.join("runtime").join("README.md"),
@@ -162,49 +160,28 @@ impl SelfForge {
                 contents: SUPERVISOR_README.to_string(),
             },
             SeedFile {
-                path: self
-                    .root
-                    .join("workspaces")
-                    .join(&self.version)
-                    .join("README.md"),
-                contents: workspace_readme(&self.version),
+                path: self.workspace_path().join("README.md"),
+                contents: workspace_readme(&workspace_name),
             },
             SeedFile {
-                path: self
-                    .root
-                    .join("forge")
-                    .join("memory")
-                    .join(format!("{}.md", self.version)),
-                contents: memory_template(&self.version, "无"),
+                path: self.root.join("forge").join("memory").join(&archive_file),
+                contents: memory_template(&workspace_name),
             },
             SeedFile {
-                path: self
-                    .root
-                    .join("forge")
-                    .join("tasks")
-                    .join(format!("{}.md", self.version)),
-                contents: task_template(&self.version),
+                path: self.root.join("forge").join("tasks").join(&archive_file),
+                contents: task_template(&workspace_name),
             },
             SeedFile {
-                path: self
-                    .root
-                    .join("forge")
-                    .join("errors")
-                    .join(&self.version)
-                    .join("README.md"),
-                contents: errors_readme(&self.version),
+                path: self.root.join("forge").join("errors").join(&archive_file),
+                contents: errors_template(&workspace_name),
             },
             SeedFile {
-                path: self
-                    .root
-                    .join("forge")
-                    .join("versions")
-                    .join(version_record_file_name(&self.version)),
-                contents: version_template(&self.version),
+                path: self.root.join("forge").join("versions").join(&archive_file),
+                contents: version_template(&workspace_name),
             },
             SeedFile {
                 path: self.root.join("state").join("state.json"),
-                contents: state_json(&self.version),
+                contents: state_json(&self.version, &workspace_name),
             },
         ]
     }
@@ -288,6 +265,14 @@ fn ensure_file(
     Ok(())
 }
 
+pub fn workspace_name(version: &str) -> String {
+    version_major_key(version).unwrap_or_else(|_| version.to_string())
+}
+
+pub fn major_file_name(version: &str) -> String {
+    version_major_file_name(version).unwrap_or_else(|_| format!("{version}.md"))
+}
+
 fn relative_display(path: &Path) -> String {
     let parts: Vec<String> = path
         .components()
@@ -305,52 +290,44 @@ fn relative_display(path: &Path) -> String {
     parts[start..].join("/")
 }
 
-fn version_record_file_name(version: &str) -> String {
-    version_series_file_name(version).unwrap_or_else(|_| format!("{version}.md"))
-}
-
-const RUNTIME_README: &str = "# 运行时边界\n\nSelfForge 运行时是受保护的执行边界，负责验证工作区、文档归档和后续沙箱执行结果。\n";
+const RUNTIME_README: &str =
+    "# 运行时边界\n\nSelfForge 运行时负责验证工作区、执行受控命令并记录可审计结果。\n";
 
 const SUPERVISOR_README: &str =
     "# 监督器边界\n\nSelfForge 监督器负责管理候选版本生命周期、验证流程、提升与回滚状态迁移。\n";
 
-fn workspace_readme(version: &str) -> String {
+fn workspace_readme(workspace_name: &str) -> String {
     format!(
-        "# SelfForge {version} 工作区\n\n该目录是 {version} 的隔离工作区，只允许放置本版本受控生成与验证所需的文件。\n"
+        "# SelfForge {workspace_name} 工作区\n\n本目录按 major 版本聚合工作区内容。小版本更新不再创建新的工作区目录，只在 forge 聚合文件中追加记录。\n"
     )
 }
 
-fn memory_template(version: &str, parent_version: &str) -> String {
+fn memory_template(major: &str) -> String {
     format!(
-        "# 版本信息\n- 版本号：{version}\n- 时间：待验证后补充\n- 父版本：{parent_version}\n\n# 目标\n\n待计划生成后补充。\n\n# 计划（Plan）\n\n1. 读取历史记忆。\n2. 确定目标。\n3. 生成候选版本。\n4. 执行测试与验证。\n5. 记录结果。\n\n# 执行过程\n\n待验证后补充。\n\n# 代码变更\n\n待验证后补充。\n\n# 测试结果\n\n待验证后补充。\n\n# 错误总结\n\n待验证后补充。\n\n# 评估\n\n待验证后补充。\n\n# 优化建议\n\n待验证后补充。\n\n# 可复用经验\n\n待验证后补充。\n"
+        "# {major} 记忆记录\n\n# 记录规则\n\n- 本文件集中记录 {major} 大版本下的小版本记忆。\n- 每次 patch 或 minor 更新只追加一个版本小节，禁止创建新的小版本记忆文件。\n"
     )
 }
 
-fn task_template(version: &str) -> String {
+fn task_template(major: &str) -> String {
     format!(
-        "# 任务来源\n\nSelfForge 受控进化流程。\n\n# 任务描述\n\n生成并验证 {version} 的最小候选版本归档。\n\n# 输入\n\n- 当前状态文件\n- 最近版本记忆\n\n# 输出\n\n- {version} 工作区\n- {version} forge 文档\n- 更新后的持久化状态\n\n# 计划（Plan）\n\n1. 验证当前稳定版本。\n2. 生成候选版本目录和文档。\n3. 持久化候选版本状态。\n4. 执行测试与验证。\n"
+        "# {major} 任务记录\n\n# 记录规则\n\n- 本文件集中记录 {major} 大版本下的小版本任务。\n- 每次 patch 或 minor 更新只追加一个任务小节，禁止创建新的小版本任务文件。\n"
     )
 }
 
-fn errors_readme(version: &str) -> String {
+fn errors_template(major: &str) -> String {
     format!(
-        "# {version} 错误记录\n\n若出现错误，必须在本目录新增 error-XXX.md，并包含错误信息、出现阶段、原因分析、解决方案、是否已解决。\n"
+        "# {major} 错误记录\n\n# 记录规则\n\n- 本文件集中记录 {major} 大版本下的小版本错误。\n- 每个错误仍需包含错误信息、出现阶段、原因分析、解决方案、是否已解决。\n- 小版本更新只追加错误小节，禁止创建新的小版本错误目录。\n"
     )
 }
 
-fn version_template(version: &str) -> String {
-    let series = version_series_file_name(version)
-        .ok()
-        .and_then(|file_name| file_name.strip_suffix(".md").map(ToOwned::to_owned))
-        .unwrap_or_else(|| version.to_string());
-
+fn version_template(major: &str) -> String {
     format!(
-        "# {series} 版本记录\n\n# 记录规则\n\n- 本文件集中记录 {series}.x 的 patch 更新，避免为每次小版本生成独立版本文件。\n- minor 或 major 版本变化时，才创建新的版本系列文件。\n\n## {version}\n\n# 版本变化\n\n- 初始化 {version} 候选版本归档。\n\n# 新增功能\n\n- 待验证后补充。\n\n# 修复内容\n\n- 待验证后补充。\n"
+        "# {major} 版本记录\n\n# 记录规则\n\n- 本文件集中记录 {major} 大版本下的小版本变化。\n- 小版本更新只追加到本文件，禁止创建新的小版本版本文件。\n"
     )
 }
 
-fn state_json(version: &str) -> String {
+fn state_json(version: &str, workspace_name: &str) -> String {
     format!(
-        "{{\n  \"current_version\": \"{version}\",\n  \"parent_version\": null,\n  \"status\": \"initialized\",\n  \"workspace\": \"workspaces/{version}\",\n  \"last_verified\": null,\n  \"version_scheme\": \"semantic:vMAJOR.MINOR.PATCH\"\n}}\n"
+        "{{\n  \"current_version\": \"{version}\",\n  \"parent_version\": null,\n  \"status\": \"initialized\",\n  \"workspace\": \"workspaces/{workspace_name}\",\n  \"last_verified\": null,\n  \"version_scheme\": \"semantic:vMAJOR.MINOR.PATCH\"\n}}\n"
     )
 }
