@@ -1,4 +1,4 @@
-use self_forge::Supervisor;
+use self_forge::{Supervisor, VersionBump};
 use std::env;
 use std::error::Error;
 use std::process;
@@ -39,29 +39,44 @@ fn main() {
             )
         })),
         "evolve" => {
-            let goal = args.collect::<Vec<_>>().join(" ");
+            let mut bump = VersionBump::Patch;
+            let mut goal_parts = Vec::new();
+            for argument in args {
+                match argument.as_str() {
+                    "--patch" => bump = VersionBump::Patch,
+                    "--minor" => bump = VersionBump::Minor,
+                    "--major" => bump = VersionBump::Major,
+                    _ => goal_parts.push(argument),
+                }
+            }
+            let goal = goal_parts.join(" ");
             let goal = if goal.trim().is_empty() {
                 "prepare next controlled self-evolution candidate"
             } else {
                 goal.trim()
             };
-            boxed(supervisor.prepare_next_version(goal).map(|report| {
+            boxed(supervisor.prepare_next_version_with_bump(goal, bump).map(|report| {
                 format!(
-                    "SelfForge prepared {} from {}: {} paths checked, workspace {}",
+                    "SelfForge prepared {} from {}: {} paths checked, workspace {}, commit version {}",
                     report.next_version,
                     report.current_version,
                     report.candidate_validation.checked_paths.len(),
-                    report.workspace.display()
+                    report.workspace.display(),
+                    report.next_version
                 )
             }))
         }
         "help" | "-h" | "--help" => {
-            println!("SelfForge commands: init, validate, status, evolve [goal]");
+            println!(
+                "SelfForge commands: init, validate, status, evolve [--patch|--minor|--major] [goal]"
+            );
             return;
         }
         other => {
             eprintln!("unknown command: {other}");
-            eprintln!("SelfForge commands: init, validate, status, evolve [goal]");
+            eprintln!(
+                "SelfForge commands: init, validate, status, evolve [--patch|--minor|--major] [goal]"
+            );
             process::exit(2);
         }
     };

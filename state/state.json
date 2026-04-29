@@ -1,9 +1,14 @@
 {
-  "current_version": "v1",
+  "current_version": "v0.1.0",
   "parent_version": null,
   "status": "candidate_prepared",
-  "workspace": "workspaces/v1",
-  "last_verified": "candidate:v2",
-  "candidate_version": "v2",
-  "candidate_workspace": "workspaces/v2"
+  "workspace": "workspaces/v0.1.0",
+  "last_verified": "candidate:v0.1.1",
+  "version_scheme": "semantic:vMAJOR.MINOR.PATCH",
+  "candidate_version": "v0.1.1",
+  "candidate_workspace": "workspaces/v0.1.1",
+  "legacy_versions": [
+    "v1",
+    "v2"
+  ]
 }

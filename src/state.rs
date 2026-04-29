@@ -13,9 +13,13 @@ pub struct ForgeState {
     pub workspace: String,
     pub last_verified: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version_scheme: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub candidate_version: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub candidate_workspace: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub legacy_versions: Vec<String>,
 }
 
 #[derive(Debug)]

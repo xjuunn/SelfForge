@@ -1,6 +1,7 @@
 use crate::layout::{BootstrapReport, ForgeError, SelfForge, ValidationReport};
 use crate::runtime::Runtime;
 use crate::state::{ForgeState, StateError};
+use crate::version::{VersionBump, VersionError, next_version_after_with_bump};
 use std::error::Error;
 use std::fmt;
 use std::fs;
@@ -28,7 +29,7 @@ pub struct EvolutionReport {
 pub enum EvolutionError {
     State(StateError),
     Forge(ForgeError),
-    InvalidVersion { version: String },
+    Version(VersionError),
     CandidateAlreadyPrepared { version: String },
     Io { path: PathBuf, source: io::Error },
 }
@@ -41,6 +42,14 @@ impl EvolutionEngine {
     }
 
     pub fn prepare_next_version(&self, goal: &str) -> Result<EvolutionReport, EvolutionError> {
+        self.prepare_next_version_with_bump(goal, VersionBump::Patch)
+    }
+
+    pub fn prepare_next_version_with_bump(
+        &self,
+        goal: &str,
+        bump: VersionBump,
+    ) -> Result<EvolutionReport, EvolutionError> {
         let mut state = ForgeState::load(&self.root)?;
 
         if let Some(version) = &state.candidate_version {
@@ -52,7 +61,7 @@ impl EvolutionEngine {
         }
 
         let current_version = state.current_version.clone();
-        let next_version = next_version_after(&current_version)?;
+        let next_version = next_version_after_with_bump(&current_version, bump)?;
 
         let runtime = Runtime::new(&self.root);
         runtime.verify_layout_for_version(&current_version)?;
@@ -69,6 +78,7 @@ impl EvolutionEngine {
         let candidate_workspace = format!("workspaces/{next_version}");
 
         state.status = "candidate_prepared".to_string();
+        state.version_scheme = Some("semantic:vMAJOR.MINOR.PATCH".to_string());
         state.candidate_version = Some(next_version.clone());
         state.candidate_workspace = Some(candidate_workspace.clone());
         state.last_verified = Some(format!("candidate:{next_version}"));
@@ -86,39 +96,12 @@ impl EvolutionEngine {
     }
 }
 
-pub fn next_version_after(version: &str) -> Result<String, EvolutionError> {
-    let Some(number) = version.strip_prefix('v') else {
-        return Err(EvolutionError::InvalidVersion {
-            version: version.to_string(),
-        });
-    };
-
-    if number.is_empty() || !number.chars().all(|character| character.is_ascii_digit()) {
-        return Err(EvolutionError::InvalidVersion {
-            version: version.to_string(),
-        });
-    }
-
-    let parsed = number
-        .parse::<u64>()
-        .map_err(|_| EvolutionError::InvalidVersion {
-            version: version.to_string(),
-        })?;
-
-    Ok(format!("v{}", parsed + 1))
-}
-
 impl fmt::Display for EvolutionError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             EvolutionError::State(error) => write!(formatter, "{error}"),
             EvolutionError::Forge(error) => write!(formatter, "{error}"),
-            EvolutionError::InvalidVersion { version } => {
-                write!(
-                    formatter,
-                    "invalid version '{version}', expected format v<number>"
-                )
-            }
+            EvolutionError::Version(error) => write!(formatter, "{error}"),
             EvolutionError::CandidateAlreadyPrepared { version } => {
                 write!(formatter, "candidate version {version} is already prepared")
             }
@@ -134,7 +117,7 @@ impl Error for EvolutionError {
         match self {
             EvolutionError::State(error) => Some(error),
             EvolutionError::Forge(error) => Some(error),
-            EvolutionError::InvalidVersion { .. } => None,
+            EvolutionError::Version(error) => Some(error),
             EvolutionError::CandidateAlreadyPrepared { .. } => None,
             EvolutionError::Io { source, .. } => Some(source),
         }
@@ -153,6 +136,12 @@ impl From<ForgeError> for EvolutionError {
     }
 }
 
+impl From<VersionError> for EvolutionError {
+    fn from(error: VersionError) -> Self {
+        EvolutionError::Version(error)
+    }
+}
+
 fn write_candidate_documents(
     root: &Path,
     current_version: &str,
@@ -160,21 +149,21 @@ fn write_candidate_documents(
     goal: &str,
 ) -> Result<(), EvolutionError> {
     let timestamp = timestamp();
-    write_document(
+    write_document_if_missing(
         &root
             .join("forge")
             .join("memory")
             .join(format!("{next_version}.md")),
         &memory_document(current_version, next_version, goal, &timestamp),
     )?;
-    write_document(
+    write_document_if_missing(
         &root
             .join("forge")
             .join("tasks")
             .join(format!("{next_version}.md")),
         &task_document(current_version, next_version, goal),
     )?;
-    write_document(
+    write_document_if_missing(
         &root
             .join("forge")
             .join("errors")
@@ -182,7 +171,7 @@ fn write_candidate_documents(
             .join("README.md"),
         &errors_readme(next_version),
     )?;
-    write_document(
+    write_document_if_missing(
         &root
             .join("forge")
             .join("versions")
@@ -190,6 +179,14 @@ fn write_candidate_documents(
         &version_document(current_version, next_version),
     )?;
     Ok(())
+}
+
+fn write_document_if_missing(path: &Path, contents: &str) -> Result<(), EvolutionError> {
+    if path.exists() {
+        return Ok(());
+    }
+
+    write_document(path, contents)
 }
 
 fn write_document(path: &Path, contents: &str) -> Result<(), EvolutionError> {

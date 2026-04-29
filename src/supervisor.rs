@@ -1,6 +1,7 @@
 use crate::evolution::{EvolutionEngine, EvolutionError, EvolutionReport};
 use crate::layout::{BootstrapReport, ForgeError, SelfForge, ValidationReport};
 use crate::runtime::Runtime;
+use crate::version::VersionBump;
 use std::path::Path;
 
 #[derive(Debug, Clone)]
@@ -32,5 +33,13 @@ impl Supervisor {
 
     pub fn prepare_next_version(&self, goal: &str) -> Result<EvolutionReport, EvolutionError> {
         EvolutionEngine::new(self.forge.root()).prepare_next_version(goal)
+    }
+
+    pub fn prepare_next_version_with_bump(
+        &self,
+        goal: &str,
+        bump: VersionBump,
+    ) -> Result<EvolutionReport, EvolutionError> {
+        EvolutionEngine::new(self.forge.root()).prepare_next_version_with_bump(goal, bump)
     }
 }

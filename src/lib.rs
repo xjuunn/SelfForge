@@ -3,14 +3,18 @@ pub mod layout;
 pub mod runtime;
 pub mod state;
 pub mod supervisor;
+pub mod version;
 
-pub use evolution::{EvolutionEngine, EvolutionError, EvolutionReport, next_version_after};
+pub use evolution::{EvolutionEngine, EvolutionError, EvolutionReport};
 pub use layout::{BootstrapReport, ForgeError, SelfForge, ValidationReport};
 pub use runtime::Runtime;
 pub use state::{ForgeState, StateError};
 pub use supervisor::Supervisor;
+pub use version::{
+    ForgeVersion, VersionBump, VersionError, next_version_after, next_version_after_with_bump,
+};
 
-pub const CURRENT_VERSION: &str = "v1";
+pub const CURRENT_VERSION: &str = "v0.1.0";
 
 #[cfg(test)]
 mod tests {
@@ -45,11 +49,21 @@ mod tests {
         assert!(report.created_paths.len() >= 10);
         assert!(root.join("runtime").is_dir());
         assert!(root.join("supervisor").is_dir());
-        assert!(root.join("workspaces").join("v1").is_dir());
-        assert!(root.join("forge").join("memory").join("v1.md").is_file());
-        assert!(root.join("forge").join("tasks").join("v1.md").is_file());
-        assert!(root.join("forge").join("errors").join("v1").is_dir());
-        assert!(root.join("forge").join("versions").join("v1.md").is_file());
+        assert!(root.join("workspaces").join("v0.1.0").is_dir());
+        assert!(
+            root.join("forge")
+                .join("memory")
+                .join("v0.1.0.md")
+                .is_file()
+        );
+        assert!(root.join("forge").join("tasks").join("v0.1.0.md").is_file());
+        assert!(root.join("forge").join("errors").join("v0.1.0").is_dir());
+        assert!(
+            root.join("forge")
+                .join("versions")
+                .join("v0.1.0.md")
+                .is_file()
+        );
         assert!(root.join("state").join("state.json").is_file());
 
         cleanup(&root);
@@ -105,33 +119,85 @@ mod tests {
             .prepare_next_version("prepare the next controlled candidate")
             .expect("evolution should prepare a candidate version");
 
-        assert_eq!(report.current_version, "v1");
-        assert_eq!(report.next_version, "v2");
-        assert!(root.join("workspaces").join("v2").is_dir());
-        assert!(root.join("forge").join("memory").join("v2.md").is_file());
-        assert!(root.join("forge").join("tasks").join("v2.md").is_file());
-        assert!(root.join("forge").join("errors").join("v2").is_dir());
-        assert!(root.join("forge").join("versions").join("v2.md").is_file());
-        assert_eq!(report.state.current_version, "v1");
+        assert_eq!(report.current_version, "v0.1.0");
+        assert_eq!(report.next_version, "v0.1.1");
+        assert!(root.join("workspaces").join("v0.1.1").is_dir());
+        assert!(
+            root.join("forge")
+                .join("memory")
+                .join("v0.1.1.md")
+                .is_file()
+        );
+        assert!(root.join("forge").join("tasks").join("v0.1.1.md").is_file());
+        assert!(root.join("forge").join("errors").join("v0.1.1").is_dir());
+        assert!(
+            root.join("forge")
+                .join("versions")
+                .join("v0.1.1.md")
+                .is_file()
+        );
+        assert_eq!(report.state.current_version, "v0.1.0");
         assert_eq!(report.state.status, "candidate_prepared");
-        assert_eq!(report.state.candidate_version.as_deref(), Some("v2"));
+        assert_eq!(
+            report.state.version_scheme.as_deref(),
+            Some("semantic:vMAJOR.MINOR.PATCH")
+        );
+        assert_eq!(report.state.candidate_version.as_deref(), Some("v0.1.1"));
         assert_eq!(
             report.state.candidate_workspace.as_deref(),
-            Some("workspaces/v2")
+            Some("workspaces/v0.1.1")
         );
 
         supervisor
-            .verify_version("v2")
+            .verify_version("v0.1.1")
             .expect("candidate layout should validate");
 
         cleanup(&root);
     }
 
     #[test]
-    fn evolution_version_boundary_advances_large_version() {
-        let next = next_version_after("v999").expect("large version should advance");
+    fn evolution_preserves_existing_candidate_task_document() {
+        let root = temp_root("preserve-task");
+        let supervisor = Supervisor::new(&root);
 
-        assert_eq!(next, "v1000");
+        supervisor
+            .initialize_current_version()
+            .expect("bootstrap should succeed before evolution");
+        fs::create_dir_all(root.join("forge").join("tasks"))
+            .expect("test should create task directory");
+        fs::write(
+            root.join("forge").join("tasks").join("v0.1.1.md"),
+            "manual task plan",
+        )
+        .expect("test should write existing candidate task");
+
+        supervisor
+            .prepare_next_version("prepare the next controlled candidate")
+            .expect("evolution should prepare a candidate version");
+
+        let task = fs::read_to_string(root.join("forge").join("tasks").join("v0.1.1.md"))
+            .expect("task should remain readable");
+        assert_eq!(task, "manual task plan");
+
+        cleanup(&root);
+    }
+
+    #[test]
+    fn semantic_version_patch_bump_is_default() {
+        let next = next_version_after("v0.1.0").expect("patch version should advance");
+
+        assert_eq!(next, "v0.1.1");
+    }
+
+    #[test]
+    fn semantic_version_supports_explicit_minor_and_major_bumps() {
+        let minor = next_version_after_with_bump("v0.1.9", VersionBump::Minor)
+            .expect("minor bump should reset patch");
+        let major = next_version_after_with_bump("v0.9.9", VersionBump::Major)
+            .expect("major bump should reset minor and patch");
+
+        assert_eq!(minor, "v0.2.0");
+        assert_eq!(major, "v1.0.0");
     }
 
     #[test]
@@ -141,7 +207,7 @@ mod tests {
         fs::create_dir_all(root.join("state")).expect("test should create state directory");
         fs::write(
             root.join("state").join("state.json"),
-            "{\n  \"current_version\": \"latest\",\n  \"parent_version\": null,\n  \"status\": \"initialized\",\n  \"workspace\": \"workspaces/latest\",\n  \"last_verified\": null\n}\n",
+            "{\n  \"current_version\": \"v1\",\n  \"parent_version\": null,\n  \"status\": \"initialized\",\n  \"workspace\": \"workspaces/v1\",\n  \"last_verified\": null\n}\n",
         )
         .expect("test should write invalid state");
 
