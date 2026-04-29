@@ -16,4 +16,11 @@ impl Runtime {
     pub fn verify_layout(&self) -> Result<ValidationReport, ForgeError> {
         self.forge.validate()
     }
+
+    pub fn verify_layout_for_version(
+        &self,
+        version: impl AsRef<str>,
+    ) -> Result<ValidationReport, ForgeError> {
+        SelfForge::for_version(self.forge.root(), version.as_ref()).validate()
+    }
 }

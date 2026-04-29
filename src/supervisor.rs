@@ -1,3 +1,4 @@
+use crate::evolution::{EvolutionEngine, EvolutionError, EvolutionReport};
 use crate::layout::{BootstrapReport, ForgeError, SelfForge, ValidationReport};
 use crate::runtime::Runtime;
 use std::path::Path;
@@ -23,5 +24,13 @@ impl Supervisor {
 
     pub fn verify_current_version(&self) -> Result<ValidationReport, ForgeError> {
         self.runtime.verify_layout()
+    }
+
+    pub fn verify_version(&self, version: impl AsRef<str>) -> Result<ValidationReport, ForgeError> {
+        self.runtime.verify_layout_for_version(version)
+    }
+
+    pub fn prepare_next_version(&self, goal: &str) -> Result<EvolutionReport, EvolutionError> {
+        EvolutionEngine::new(self.forge.root()).prepare_next_version(goal)
     }
 }

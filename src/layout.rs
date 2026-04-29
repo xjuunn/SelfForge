@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::CURRENT_VERSION;
 use std::error::Error;
 use std::fmt;
@@ -32,9 +34,13 @@ pub enum ForgeError {
 
 impl SelfForge {
     pub fn new(root: impl AsRef<Path>) -> Self {
+        Self::for_version(root, CURRENT_VERSION)
+    }
+
+    pub fn for_version(root: impl AsRef<Path>, version: impl Into<String>) -> Self {
         Self {
             root: root.as_ref().to_path_buf(),
-            version: CURRENT_VERSION.to_string(),
+            version: version.into(),
         }
     }
 
@@ -57,7 +63,7 @@ impl SelfForge {
         for file in self.seed_files() {
             ensure_file(
                 &file.path,
-                file.contents,
+                &file.contents,
                 &mut created_paths,
                 &mut existing_paths,
             )?;
@@ -145,11 +151,11 @@ impl SelfForge {
         vec![
             SeedFile {
                 path: self.root.join("runtime").join("README.md"),
-                contents: RUNTIME_README,
+                contents: RUNTIME_README.to_string(),
             },
             SeedFile {
                 path: self.root.join("supervisor").join("README.md"),
-                contents: SUPERVISOR_README,
+                contents: SUPERVISOR_README.to_string(),
             },
             SeedFile {
                 path: self
@@ -157,7 +163,7 @@ impl SelfForge {
                     .join("workspaces")
                     .join(&self.version)
                     .join("README.md"),
-                contents: WORKSPACE_README,
+                contents: workspace_readme(&self.version),
             },
             SeedFile {
                 path: self
@@ -165,7 +171,7 @@ impl SelfForge {
                     .join("forge")
                     .join("memory")
                     .join(format!("{}.md", self.version)),
-                contents: MEMORY_TEMPLATE,
+                contents: memory_template(&self.version, "none"),
             },
             SeedFile {
                 path: self
@@ -173,7 +179,7 @@ impl SelfForge {
                     .join("forge")
                     .join("tasks")
                     .join(format!("{}.md", self.version)),
-                contents: TASK_TEMPLATE,
+                contents: task_template(&self.version),
             },
             SeedFile {
                 path: self
@@ -182,7 +188,7 @@ impl SelfForge {
                     .join("errors")
                     .join(&self.version)
                     .join("README.md"),
-                contents: ERRORS_README,
+                contents: errors_readme(&self.version),
             },
             SeedFile {
                 path: self
@@ -190,11 +196,11 @@ impl SelfForge {
                     .join("forge")
                     .join("versions")
                     .join(format!("{}.md", self.version)),
-                contents: VERSION_TEMPLATE,
+                contents: version_template(&self.version),
             },
             SeedFile {
                 path: self.root.join("state").join("state.json"),
-                contents: STATE_JSON,
+                contents: state_json(&self.version),
             },
         ]
     }
@@ -231,7 +237,7 @@ impl Error for ForgeError {
 
 struct SeedFile {
     path: PathBuf,
-    contents: &'static str,
+    contents: String,
 }
 
 fn ensure_directory(
@@ -299,6 +305,7 @@ const RUNTIME_README: &str = "# Runtime\n\nSelfForge Runtime is the protected ex
 
 const SUPERVISOR_README: &str = "# Supervisor\n\nSelfForge Supervisor is the protected process-control boundary. In v1 it initializes and verifies the current version through the Rust runtime layer.\n";
 
+#[allow(dead_code)]
 const WORKSPACE_README: &str = "# SelfForge v1 Workspace\n\nThis directory is the isolated workspace for the first controlled generation.\n";
 
 const MEMORY_TEMPLATE: &str = "# 版本信息\n- 版本号：v1\n- 时间：2026-04-29\n- 父版本：无\n\n# 目标\n\n建立 SelfForge 的最基础架构。\n\n# 计划（Plan）\n\n1. 建立标准目录结构。\n2. 实现 Rust CLI、Runtime 验证层与 Supervisor 编排层。\n3. 写入持久化状态与 forge 文档。\n4. 编写并执行测试。\n5. 记录版本与提交。\n\n# 执行过程\n\n待最终验证后补充。\n\n# 代码变更\n\n待最终验证后补充。\n\n# 测试结果\n\n待最终验证后补充。\n\n# 错误总结\n\n待最终验证后补充。\n\n# 评估\n\n待最终验证后补充。\n\n# 优化建议\n\n待最终验证后补充。\n\n# 可复用经验\n\n待最终验证后补充。\n";
@@ -310,3 +317,39 @@ const ERRORS_README: &str = "# v1 错误记录\n\n当前版本没有已确认的
 const VERSION_TEMPLATE: &str = "# v1\n\n# 版本变化\n\n- 建立 SelfForge v1 基础架构。\n\n# 新增功能\n\n- Rust CLI 初始化、验证与状态查看。\n- Runtime 验证层。\n- Supervisor 编排层。\n- forge 文档归档入口。\n\n# 修复内容\n\n- 无。\n";
 
 const STATE_JSON: &str = "{\n  \"current_version\": \"v1\",\n  \"parent_version\": null,\n  \"status\": \"initialized\",\n  \"workspace\": \"workspaces/v1\",\n  \"last_verified\": null\n}\n";
+
+fn workspace_readme(version: &str) -> String {
+    format!(
+        "# SelfForge {version} Workspace\n\nThis directory is the isolated workspace for controlled generation {version}.\n"
+    )
+}
+
+fn memory_template(version: &str, parent_version: &str) -> String {
+    format!(
+        "# 版本信息\n- 版本号：{version}\n- 时间：待验证后补充\n- 父版本：{parent_version}\n\n# 目标\n\n待计划生成后补充。\n\n# 计划（Plan）\n\n1. 读取历史记忆。\n2. 确定目标。\n3. 生成候选版本。\n4. 执行测试与验证。\n5. 记录结果。\n\n# 执行过程\n\n待验证后补充。\n\n# 代码变更\n\n待验证后补充。\n\n# 测试结果\n\n待验证后补充。\n\n# 错误总结\n\n待验证后补充。\n\n# 评估\n\n待验证后补充。\n\n# 优化建议\n\n待验证后补充。\n\n# 可复用经验\n\n待验证后补充。\n"
+    )
+}
+
+fn task_template(version: &str) -> String {
+    format!(
+        "# 任务来源\n\nSelfForge 受控进化流程。\n\n# 任务描述\n\n生成并验证 {version} 的最小候选版本归档。\n\n# 输入\n\n- 当前状态文件\n- 最近版本记忆\n\n# 输出\n\n- {version} workspace\n- {version} forge 文档\n- 更新后的持久化状态\n\n# 计划（Plan）\n\n1. 验证当前稳定版本。\n2. 生成候选版本目录和文档。\n3. 持久化候选版本状态。\n4. 执行测试与验证。\n"
+    )
+}
+
+fn errors_readme(version: &str) -> String {
+    format!(
+        "# {version} 错误记录\n\n若出现错误，必须在本目录新增 error-XXX.md，并包含错误信息、出现阶段、原因分析、解决方案、是否已解决。\n"
+    )
+}
+
+fn version_template(version: &str) -> String {
+    format!(
+        "# {version}\n\n# 版本变化\n\n- 初始化 {version} 候选版本归档。\n\n# 新增功能\n\n- 待验证后补充。\n\n# 修复内容\n\n- 待验证后补充。\n"
+    )
+}
+
+fn state_json(version: &str) -> String {
+    format!(
+        "{{\n  \"current_version\": \"{version}\",\n  \"parent_version\": null,\n  \"status\": \"initialized\",\n  \"workspace\": \"workspaces/{version}\",\n  \"last_verified\": null\n}}\n"
+    )
+}

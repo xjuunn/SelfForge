@@ -1,0 +1,243 @@
+use crate::layout::{BootstrapReport, ForgeError, SelfForge, ValidationReport};
+use crate::runtime::Runtime;
+use crate::state::{ForgeState, StateError};
+use std::error::Error;
+use std::fmt;
+use std::fs;
+use std::io;
+use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+#[derive(Debug, Clone)]
+pub struct EvolutionEngine {
+    root: PathBuf,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EvolutionReport {
+    pub current_version: String,
+    pub next_version: String,
+    pub workspace: PathBuf,
+    pub created_paths: Vec<PathBuf>,
+    pub existing_paths: Vec<PathBuf>,
+    pub candidate_validation: ValidationReport,
+    pub state: ForgeState,
+}
+
+#[derive(Debug)]
+pub enum EvolutionError {
+    State(StateError),
+    Forge(ForgeError),
+    InvalidVersion { version: String },
+    CandidateAlreadyPrepared { version: String },
+    Io { path: PathBuf, source: io::Error },
+}
+
+impl EvolutionEngine {
+    pub fn new(root: impl AsRef<Path>) -> Self {
+        Self {
+            root: root.as_ref().to_path_buf(),
+        }
+    }
+
+    pub fn prepare_next_version(&self, goal: &str) -> Result<EvolutionReport, EvolutionError> {
+        let mut state = ForgeState::load(&self.root)?;
+
+        if let Some(version) = &state.candidate_version {
+            if state.status == "candidate_prepared" {
+                return Err(EvolutionError::CandidateAlreadyPrepared {
+                    version: version.clone(),
+                });
+            }
+        }
+
+        let current_version = state.current_version.clone();
+        let next_version = next_version_after(&current_version)?;
+
+        let runtime = Runtime::new(&self.root);
+        runtime.verify_layout_for_version(&current_version)?;
+
+        let BootstrapReport {
+            created_paths,
+            existing_paths,
+            ..
+        } = SelfForge::for_version(&self.root, &next_version).bootstrap()?;
+
+        write_candidate_documents(&self.root, &current_version, &next_version, goal)?;
+
+        let candidate_validation = runtime.verify_layout_for_version(&next_version)?;
+        let candidate_workspace = format!("workspaces/{next_version}");
+
+        state.status = "candidate_prepared".to_string();
+        state.candidate_version = Some(next_version.clone());
+        state.candidate_workspace = Some(candidate_workspace.clone());
+        state.last_verified = Some(format!("candidate:{next_version}"));
+        state.save(&self.root)?;
+
+        Ok(EvolutionReport {
+            current_version,
+            next_version,
+            workspace: self.root.join(candidate_workspace),
+            created_paths,
+            existing_paths,
+            candidate_validation,
+            state,
+        })
+    }
+}
+
+pub fn next_version_after(version: &str) -> Result<String, EvolutionError> {
+    let Some(number) = version.strip_prefix('v') else {
+        return Err(EvolutionError::InvalidVersion {
+            version: version.to_string(),
+        });
+    };
+
+    if number.is_empty() || !number.chars().all(|character| character.is_ascii_digit()) {
+        return Err(EvolutionError::InvalidVersion {
+            version: version.to_string(),
+        });
+    }
+
+    let parsed = number
+        .parse::<u64>()
+        .map_err(|_| EvolutionError::InvalidVersion {
+            version: version.to_string(),
+        })?;
+
+    Ok(format!("v{}", parsed + 1))
+}
+
+impl fmt::Display for EvolutionError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            EvolutionError::State(error) => write!(formatter, "{error}"),
+            EvolutionError::Forge(error) => write!(formatter, "{error}"),
+            EvolutionError::InvalidVersion { version } => {
+                write!(
+                    formatter,
+                    "invalid version '{version}', expected format v<number>"
+                )
+            }
+            EvolutionError::CandidateAlreadyPrepared { version } => {
+                write!(formatter, "candidate version {version} is already prepared")
+            }
+            EvolutionError::Io { path, source } => {
+                write!(formatter, "{}: {}", path.display(), source)
+            }
+        }
+    }
+}
+
+impl Error for EvolutionError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            EvolutionError::State(error) => Some(error),
+            EvolutionError::Forge(error) => Some(error),
+            EvolutionError::InvalidVersion { .. } => None,
+            EvolutionError::CandidateAlreadyPrepared { .. } => None,
+            EvolutionError::Io { source, .. } => Some(source),
+        }
+    }
+}
+
+impl From<StateError> for EvolutionError {
+    fn from(error: StateError) -> Self {
+        EvolutionError::State(error)
+    }
+}
+
+impl From<ForgeError> for EvolutionError {
+    fn from(error: ForgeError) -> Self {
+        EvolutionError::Forge(error)
+    }
+}
+
+fn write_candidate_documents(
+    root: &Path,
+    current_version: &str,
+    next_version: &str,
+    goal: &str,
+) -> Result<(), EvolutionError> {
+    let timestamp = timestamp();
+    write_document(
+        &root
+            .join("forge")
+            .join("memory")
+            .join(format!("{next_version}.md")),
+        &memory_document(current_version, next_version, goal, &timestamp),
+    )?;
+    write_document(
+        &root
+            .join("forge")
+            .join("tasks")
+            .join(format!("{next_version}.md")),
+        &task_document(current_version, next_version, goal),
+    )?;
+    write_document(
+        &root
+            .join("forge")
+            .join("errors")
+            .join(next_version)
+            .join("README.md"),
+        &errors_readme(next_version),
+    )?;
+    write_document(
+        &root
+            .join("forge")
+            .join("versions")
+            .join(format!("{next_version}.md")),
+        &version_document(current_version, next_version),
+    )?;
+    Ok(())
+}
+
+fn write_document(path: &Path, contents: &str) -> Result<(), EvolutionError> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|source| EvolutionError::Io {
+            path: parent.to_path_buf(),
+            source,
+        })?;
+    }
+
+    fs::write(path, contents).map_err(|source| EvolutionError::Io {
+        path: path.to_path_buf(),
+        source,
+    })
+}
+
+fn timestamp() -> String {
+    match SystemTime::now().duration_since(UNIX_EPOCH) {
+        Ok(duration) => format!("unix:{}", duration.as_secs()),
+        Err(_) => "unix:0".to_string(),
+    }
+}
+
+fn memory_document(
+    current_version: &str,
+    next_version: &str,
+    goal: &str,
+    timestamp: &str,
+) -> String {
+    format!(
+        "# 版本信息\n- 版本号：{next_version}\n- 时间：{timestamp}\n- 父版本：{current_version}\n\n# 目标\n\n{goal}\n\n# 计划（Plan）\n\n1. 读取最近版本记忆和持久化状态。\n2. 验证当前稳定版本仍可运行。\n3. 计算下一候选版本号。\n4. 生成候选 workspace 与 forge 归档文档。\n5. 验证候选版本布局完整性。\n6. 将 state/state.json 更新为 candidate_prepared。\n7. 保持 current_version 指向稳定版本，等待后续版本实现进程启动、切换和回滚。\n\n# 执行过程\n\n已生成候选版本骨架，尚未执行版本切换。\n\n# 代码变更\n\n- 新增 evolution 模块，生成下一候选版本。\n- 新增 state 模块，使用 JSON 结构化读写持久化状态。\n- CLI 新增 evolve 命令。\n\n# 测试结果\n\n待本轮最终验证后补充。\n\n# 错误总结\n\n待本轮最终验证后补充。\n\n# 评估\n\n候选版本生成能力已具备最小闭环，当前仍以稳定优先，不自动替换运行版本。\n\n# 优化建议\n\n下一步实现候选版本进程启动、并行验证和失败回滚状态迁移。\n\n# 可复用经验\n\n自我进化应先生成候选并持久化审计记录，再进入运行时验证与版本切换。\n"
+    )
+}
+
+fn task_document(current_version: &str, next_version: &str, goal: &str) -> String {
+    format!(
+        "# 任务来源\n\n用户要求优先推进 SelfForge 自我进化能力。\n\n# 任务描述\n\n从当前稳定版本 {current_version} 生成下一候选版本 {next_version}，但不切换当前稳定版本。\n\n# 输入\n\n- 当前稳定版本：{current_version}\n- 用户目标：{goal}\n- 状态文件：state/state.json\n\n# 输出\n\n- workspaces/{next_version}\n- forge/memory/{next_version}.md\n- forge/errors/{next_version}\n- forge/versions/{next_version}.md\n- 更新后的 state/state.json\n\n# 计划（Plan）\n\n1. 读取状态。\n2. 验证当前稳定版本。\n3. 计算下一版本号。\n4. 生成候选版本目录和文档。\n5. 验证候选版本。\n6. 持久化候选状态。\n"
+    )
+}
+
+fn errors_readme(next_version: &str) -> String {
+    format!(
+        "# {next_version} 错误记录\n\n每个错误必须独立记录为 error-XXX.md，并包含错误信息、出现阶段、原因分析、解决方案、是否已解决。\n"
+    )
+}
+
+fn version_document(current_version: &str, next_version: &str) -> String {
+    format!(
+        "# {next_version}\n\n# 版本变化\n\n- 从 {current_version} 生成 {next_version} 候选版本。\n- 新增候选 workspace 与 forge 归档文档。\n- state/state.json 保持 current_version 为 {current_version}，并记录 candidate_version 为 {next_version}。\n\n# 新增功能\n\n- 自我进化候选版本生成。\n- 结构化状态读写。\n- evolve CLI 入口。\n\n# 修复内容\n\n- 暂无。\n"
+    )
+}
