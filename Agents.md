@@ -60,8 +60,10 @@ SelfForge 必须能够：
 forge/memory/vMAJOR.MINOR.PATCH.md
 forge/tasks/vMAJOR.MINOR.PATCH.md
 forge/errors/vMAJOR.MINOR.PATCH/
-forge/versions/vMAJOR.MINOR.PATCH.md
+forge/versions/vMAJOR.MINOR.md
 ```
+
+版本记录采用小版本系列单文件策略：同一个 minor 系列内的 patch 更新必须追加到同一个 `forge/versions/vMAJOR.MINOR.md` 文件中，例如 `v0.1.1`、`v0.1.2`、`v0.1.3` 都写入 `forge/versions/v0.1.md`。只有 minor 或 major 变化时，才允许创建新的版本系列文件。旧的 patch 级版本文件在内容合并后应删除，避免产生大量无效版本文件。
 
 错误文件必须独立记录，结构为：
 
@@ -116,6 +118,7 @@ forge/versions/vMAJOR.MINOR.PATCH.md
 4. major 只能用于明确的不兼容架构阶段变化，非必要禁止升级。
 5. commit 信息必须包含本轮版本号。
 6. 状态文件必须区分当前稳定版本与候选版本。
+7. patch 更新的版本记录必须写入当前 minor 系列文件，例如 `forge/versions/v0.1.md`，禁止为每个 patch 创建独立版本文件。
 
 ---
 

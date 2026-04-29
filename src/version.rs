@@ -23,6 +23,26 @@ pub enum VersionError {
 }
 
 impl ForgeVersion {
+    pub fn major(&self) -> u64 {
+        self.major
+    }
+
+    pub fn minor(&self) -> u64 {
+        self.minor
+    }
+
+    pub fn patch(&self) -> u64 {
+        self.patch
+    }
+
+    pub fn series(&self) -> String {
+        format!("v{}.{}", self.major, self.minor)
+    }
+
+    pub fn series_file_name(&self) -> String {
+        format!("{}.md", self.series())
+    }
+
     pub fn bump(&self, bump: VersionBump) -> Result<Self, VersionError> {
         match bump {
             VersionBump::Patch => Ok(Self {
@@ -102,6 +122,10 @@ pub fn next_version_after_with_bump(
     bump: VersionBump,
 ) -> Result<String, VersionError> {
     Ok(ForgeVersion::from_str(version)?.bump(bump)?.to_string())
+}
+
+pub fn version_series_file_name(version: &str) -> Result<String, VersionError> {
+    Ok(ForgeVersion::from_str(version)?.series_file_name())
 }
 
 fn parse_part(full_version: &str, part: &str) -> Result<u64, VersionError> {

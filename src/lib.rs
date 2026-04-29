@@ -16,9 +16,10 @@ pub use state::{ForgeState, StateError};
 pub use supervisor::Supervisor;
 pub use version::{
     ForgeVersion, VersionBump, VersionError, next_version_after, next_version_after_with_bump,
+    version_series_file_name,
 };
 
-pub const CURRENT_VERSION: &str = "v0.1.1";
+pub const CURRENT_VERSION: &str = "v0.1.2";
 
 #[cfg(test)]
 mod tests {
@@ -53,19 +54,19 @@ mod tests {
         assert!(report.created_paths.len() >= 10);
         assert!(root.join("runtime").is_dir());
         assert!(root.join("supervisor").is_dir());
-        assert!(root.join("workspaces").join("v0.1.1").is_dir());
+        assert!(root.join("workspaces").join("v0.1.2").is_dir());
         assert!(
             root.join("forge")
                 .join("memory")
-                .join("v0.1.1.md")
+                .join("v0.1.2.md")
                 .is_file()
         );
-        assert!(root.join("forge").join("tasks").join("v0.1.1.md").is_file());
-        assert!(root.join("forge").join("errors").join("v0.1.1").is_dir());
+        assert!(root.join("forge").join("tasks").join("v0.1.2.md").is_file());
+        assert!(root.join("forge").join("errors").join("v0.1.2").is_dir());
         assert!(
             root.join("forge")
                 .join("versions")
-                .join("v0.1.1.md")
+                .join("v0.1.md")
                 .is_file()
         );
         assert!(root.join("state").join("state.json").is_file());
@@ -123,37 +124,48 @@ mod tests {
             .prepare_next_version("prepare the next controlled candidate")
             .expect("evolution should prepare a candidate version");
 
-        assert_eq!(report.current_version, "v0.1.1");
-        assert_eq!(report.next_version, "v0.1.2");
-        assert!(root.join("workspaces").join("v0.1.2").is_dir());
+        assert_eq!(report.current_version, "v0.1.2");
+        assert_eq!(report.next_version, "v0.1.3");
+        assert!(root.join("workspaces").join("v0.1.3").is_dir());
         assert!(
             root.join("forge")
                 .join("memory")
-                .join("v0.1.2.md")
+                .join("v0.1.3.md")
                 .is_file()
         );
-        assert!(root.join("forge").join("tasks").join("v0.1.2.md").is_file());
-        assert!(root.join("forge").join("errors").join("v0.1.2").is_dir());
+        assert!(root.join("forge").join("tasks").join("v0.1.3.md").is_file());
+        assert!(root.join("forge").join("errors").join("v0.1.3").is_dir());
         assert!(
             root.join("forge")
                 .join("versions")
-                .join("v0.1.2.md")
+                .join("v0.1.md")
                 .is_file()
         );
-        assert_eq!(report.state.current_version, "v0.1.1");
+        assert!(
+            !root
+                .join("forge")
+                .join("versions")
+                .join("v0.1.3.md")
+                .exists()
+        );
+        let version_record =
+            fs::read_to_string(root.join("forge").join("versions").join("v0.1.md"))
+                .expect("series version record should be readable");
+        assert!(version_record.contains("## v0.1.3"));
+        assert_eq!(report.state.current_version, "v0.1.2");
         assert_eq!(report.state.status, "candidate_prepared");
         assert_eq!(
             report.state.version_scheme.as_deref(),
             Some("semantic:vMAJOR.MINOR.PATCH")
         );
-        assert_eq!(report.state.candidate_version.as_deref(), Some("v0.1.2"));
+        assert_eq!(report.state.candidate_version.as_deref(), Some("v0.1.3"));
         assert_eq!(
             report.state.candidate_workspace.as_deref(),
-            Some("workspaces/v0.1.2")
+            Some("workspaces/v0.1.3")
         );
 
         supervisor
-            .verify_version("v0.1.2")
+            .verify_version("v0.1.3")
             .expect("candidate layout should validate");
 
         cleanup(&root);
@@ -170,7 +182,7 @@ mod tests {
         fs::create_dir_all(root.join("forge").join("tasks"))
             .expect("test should create task directory");
         fs::write(
-            root.join("forge").join("tasks").join("v0.1.2.md"),
+            root.join("forge").join("tasks").join("v0.1.3.md"),
             "人工任务计划",
         )
         .expect("test should write existing candidate task");
@@ -179,7 +191,7 @@ mod tests {
             .prepare_next_version("prepare the next controlled candidate")
             .expect("evolution should prepare a candidate version");
 
-        let task = fs::read_to_string(root.join("forge").join("tasks").join("v0.1.2.md"))
+        let task = fs::read_to_string(root.join("forge").join("tasks").join("v0.1.3.md"))
             .expect("task should remain readable");
         assert_eq!(task, "人工任务计划");
 
@@ -191,6 +203,14 @@ mod tests {
         let next = next_version_after("v0.1.0").expect("patch version should advance");
 
         assert_eq!(next, "v0.1.1");
+    }
+
+    #[test]
+    fn semantic_version_patch_records_share_minor_series_file() {
+        let file = version_series_file_name("v0.1.9")
+            .expect("semantic version should resolve a series file");
+
+        assert_eq!(file, "v0.1.md");
     }
 
     #[test]
@@ -209,10 +229,10 @@ mod tests {
             .promote_candidate()
             .expect("candidate should promote after validation");
 
-        assert_eq!(report.previous_version, "v0.1.1");
-        assert_eq!(report.promoted_version, "v0.1.2");
-        assert_eq!(report.state.current_version, "v0.1.2");
-        assert_eq!(report.state.parent_version.as_deref(), Some("v0.1.1"));
+        assert_eq!(report.previous_version, "v0.1.2");
+        assert_eq!(report.promoted_version, "v0.1.3");
+        assert_eq!(report.state.current_version, "v0.1.3");
+        assert_eq!(report.state.parent_version.as_deref(), Some("v0.1.2"));
         assert_eq!(report.state.candidate_version, None);
         assert_eq!(report.state.status, "active");
 

@@ -1,5 +1,6 @@
 use crate::CURRENT_VERSION;
 use crate::documentation::{DocumentationError, validate_chinese_markdown};
+use crate::version::version_series_file_name;
 use std::error::Error;
 use std::fmt;
 use std::fs;
@@ -145,7 +146,7 @@ impl SelfForge {
             self.root
                 .join("forge")
                 .join("versions")
-                .join(format!("{}.md", self.version)),
+                .join(version_record_file_name(&self.version)),
             self.root.join("state").join("state.json"),
         ]
     }
@@ -198,7 +199,7 @@ impl SelfForge {
                     .root
                     .join("forge")
                     .join("versions")
-                    .join(format!("{}.md", self.version)),
+                    .join(version_record_file_name(&self.version)),
                 contents: version_template(&self.version),
             },
             SeedFile {
@@ -304,6 +305,10 @@ fn relative_display(path: &Path) -> String {
     parts[start..].join("/")
 }
 
+fn version_record_file_name(version: &str) -> String {
+    version_series_file_name(version).unwrap_or_else(|_| format!("{version}.md"))
+}
+
 const RUNTIME_README: &str = "# 运行时边界\n\nSelfForge 运行时是受保护的执行边界，负责验证工作区、文档归档和后续沙箱执行结果。\n";
 
 const SUPERVISOR_README: &str =
@@ -334,8 +339,13 @@ fn errors_readme(version: &str) -> String {
 }
 
 fn version_template(version: &str) -> String {
+    let series = version_series_file_name(version)
+        .ok()
+        .and_then(|file_name| file_name.strip_suffix(".md").map(ToOwned::to_owned))
+        .unwrap_or_else(|| version.to_string());
+
     format!(
-        "# {version}\n\n# 版本变化\n\n- 初始化 {version} 候选版本归档。\n\n# 新增功能\n\n- 待验证后补充。\n\n# 修复内容\n\n- 待验证后补充。\n"
+        "# {series} 版本记录\n\n# 记录规则\n\n- 本文件集中记录 {series}.x 的 patch 更新，避免为每次小版本生成独立版本文件。\n- minor 或 major 版本变化时，才创建新的版本系列文件。\n\n## {version}\n\n# 版本变化\n\n- 初始化 {version} 候选版本归档。\n\n# 新增功能\n\n- 待验证后补充。\n\n# 修复内容\n\n- 待验证后补充。\n"
     )
 }
 
