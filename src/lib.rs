@@ -1,3 +1,4 @@
+pub mod app;
 pub mod documentation;
 pub mod evolution;
 pub mod layout;
@@ -22,7 +23,7 @@ pub use version::{
     version_series_file_name,
 };
 
-pub const CURRENT_VERSION: &str = "v0.1.4";
+pub const CURRENT_VERSION: &str = "v0.1.5";
 
 #[cfg(test)]
 mod tests {
@@ -57,15 +58,15 @@ mod tests {
         assert!(report.created_paths.len() >= 10);
         assert!(root.join("runtime").is_dir());
         assert!(root.join("supervisor").is_dir());
-        assert!(root.join("workspaces").join("v0.1.4").is_dir());
+        assert!(root.join("workspaces").join("v0.1.5").is_dir());
         assert!(
             root.join("forge")
                 .join("memory")
-                .join("v0.1.4.md")
+                .join("v0.1.5.md")
                 .is_file()
         );
-        assert!(root.join("forge").join("tasks").join("v0.1.4.md").is_file());
-        assert!(root.join("forge").join("errors").join("v0.1.4").is_dir());
+        assert!(root.join("forge").join("tasks").join("v0.1.5.md").is_file());
+        assert!(root.join("forge").join("errors").join("v0.1.5").is_dir());
         assert!(
             root.join("forge")
                 .join("versions")
@@ -127,17 +128,17 @@ mod tests {
             .prepare_next_version("prepare the next controlled candidate")
             .expect("evolution should prepare a candidate version");
 
-        assert_eq!(report.current_version, "v0.1.4");
-        assert_eq!(report.next_version, "v0.1.5");
-        assert!(root.join("workspaces").join("v0.1.5").is_dir());
+        assert_eq!(report.current_version, "v0.1.5");
+        assert_eq!(report.next_version, "v0.1.6");
+        assert!(root.join("workspaces").join("v0.1.6").is_dir());
         assert!(
             root.join("forge")
                 .join("memory")
-                .join("v0.1.5.md")
+                .join("v0.1.6.md")
                 .is_file()
         );
-        assert!(root.join("forge").join("tasks").join("v0.1.5.md").is_file());
-        assert!(root.join("forge").join("errors").join("v0.1.5").is_dir());
+        assert!(root.join("forge").join("tasks").join("v0.1.6.md").is_file());
+        assert!(root.join("forge").join("errors").join("v0.1.6").is_dir());
         assert!(
             root.join("forge")
                 .join("versions")
@@ -148,27 +149,27 @@ mod tests {
             !root
                 .join("forge")
                 .join("versions")
-                .join("v0.1.5.md")
+                .join("v0.1.6.md")
                 .exists()
         );
         let version_record =
             fs::read_to_string(root.join("forge").join("versions").join("v0.1.md"))
                 .expect("series version record should be readable");
-        assert!(version_record.contains("## v0.1.5"));
-        assert_eq!(report.state.current_version, "v0.1.4");
+        assert!(version_record.contains("## v0.1.6"));
+        assert_eq!(report.state.current_version, "v0.1.5");
         assert_eq!(report.state.status, "candidate_prepared");
         assert_eq!(
             report.state.version_scheme.as_deref(),
             Some("semantic:vMAJOR.MINOR.PATCH")
         );
-        assert_eq!(report.state.candidate_version.as_deref(), Some("v0.1.5"));
+        assert_eq!(report.state.candidate_version.as_deref(), Some("v0.1.6"));
         assert_eq!(
             report.state.candidate_workspace.as_deref(),
-            Some("workspaces/v0.1.5")
+            Some("workspaces/v0.1.6")
         );
 
         supervisor
-            .verify_version("v0.1.5")
+            .verify_version("v0.1.6")
             .expect("candidate layout should validate");
 
         cleanup(&root);
@@ -185,7 +186,7 @@ mod tests {
         fs::create_dir_all(root.join("forge").join("tasks"))
             .expect("test should create task directory");
         fs::write(
-            root.join("forge").join("tasks").join("v0.1.5.md"),
+            root.join("forge").join("tasks").join("v0.1.6.md"),
             "人工任务计划",
         )
         .expect("test should write existing candidate task");
@@ -194,7 +195,7 @@ mod tests {
             .prepare_next_version("prepare the next controlled candidate")
             .expect("evolution should prepare a candidate version");
 
-        let task = fs::read_to_string(root.join("forge").join("tasks").join("v0.1.5.md"))
+        let task = fs::read_to_string(root.join("forge").join("tasks").join("v0.1.6.md"))
             .expect("task should remain readable");
         assert_eq!(task, "人工任务计划");
 
@@ -232,10 +233,10 @@ mod tests {
             .promote_candidate()
             .expect("candidate should promote after validation");
 
-        assert_eq!(report.previous_version, "v0.1.4");
-        assert_eq!(report.promoted_version, "v0.1.5");
-        assert_eq!(report.state.current_version, "v0.1.5");
-        assert_eq!(report.state.parent_version.as_deref(), Some("v0.1.4"));
+        assert_eq!(report.previous_version, "v0.1.5");
+        assert_eq!(report.promoted_version, "v0.1.6");
+        assert_eq!(report.state.current_version, "v0.1.6");
+        assert_eq!(report.state.parent_version.as_deref(), Some("v0.1.5"));
         assert_eq!(report.state.candidate_version, None);
         assert_eq!(report.state.status, "active");
 
@@ -258,12 +259,12 @@ mod tests {
             .run_candidate_cycle()
             .expect("valid candidate should complete the cycle");
 
-        assert_eq!(report.previous_version, "v0.1.4");
-        assert_eq!(report.candidate_version, "v0.1.5");
+        assert_eq!(report.previous_version, "v0.1.5");
+        assert_eq!(report.candidate_version, "v0.1.6");
         assert_eq!(report.result, CycleResult::Promoted);
         assert!(report.candidate_validation.is_some());
         assert_eq!(report.failure, None);
-        assert_eq!(report.state.current_version, "v0.1.5");
+        assert_eq!(report.state.current_version, "v0.1.6");
         assert_eq!(report.state.candidate_version, None);
         assert_eq!(report.state.status, "active");
 
@@ -286,12 +287,12 @@ mod tests {
             .rollback_candidate("测试回滚")
             .expect("rollback should clear candidate state");
 
-        assert_eq!(report.current_version, "v0.1.4");
-        assert_eq!(report.rolled_back_version, "v0.1.5");
+        assert_eq!(report.current_version, "v0.1.5");
+        assert_eq!(report.rolled_back_version, "v0.1.6");
         assert_eq!(report.state.status, "rolled_back");
-        assert_eq!(report.state.current_version, "v0.1.4");
+        assert_eq!(report.state.current_version, "v0.1.5");
         assert_eq!(report.state.candidate_version, None);
-        assert!(root.join("workspaces").join("v0.1.5").is_dir());
+        assert!(root.join("workspaces").join("v0.1.6").is_dir());
 
         cleanup(&root);
     }
@@ -307,21 +308,96 @@ mod tests {
         supervisor
             .prepare_next_version("prepare candidate")
             .expect("candidate should be prepared");
-        fs::remove_file(root.join("workspaces").join("v0.1.5").join("README.md"))
+        fs::remove_file(root.join("workspaces").join("v0.1.6").join("README.md"))
             .expect("test should be able to break candidate workspace");
 
         let report = supervisor
             .run_candidate_cycle()
             .expect("invalid candidate should roll back without promoting");
 
-        assert_eq!(report.previous_version, "v0.1.4");
-        assert_eq!(report.candidate_version, "v0.1.5");
+        assert_eq!(report.previous_version, "v0.1.5");
+        assert_eq!(report.candidate_version, "v0.1.6");
         assert_eq!(report.result, CycleResult::RolledBack);
         assert!(report.candidate_validation.is_none());
         assert!(report.failure.is_some());
-        assert_eq!(report.state.current_version, "v0.1.4");
+        assert_eq!(report.state.current_version, "v0.1.5");
         assert_eq!(report.state.candidate_version, None);
         assert_eq!(report.state.status, "rolled_back");
+
+        cleanup(&root);
+    }
+
+    #[test]
+    fn app_advance_prepares_candidate_when_none_exists() {
+        let root = temp_root("app-prepare");
+        let app = SelfForgeApp::new(&root);
+
+        app.supervisor()
+            .initialize_current_version()
+            .expect("bootstrap should succeed before app advance");
+
+        let report = app
+            .advance("推进最小闭环")
+            .expect("advance should prepare a candidate when none exists");
+
+        assert_eq!(report.outcome, MinimalLoopOutcome::Prepared);
+        assert_eq!(report.starting_version, "v0.1.5");
+        assert_eq!(report.stable_version, "v0.1.5");
+        assert_eq!(report.candidate_version.as_deref(), Some("v0.1.6"));
+        assert_eq!(report.next_expected_version.as_deref(), Some("v0.1.7"));
+
+        cleanup(&root);
+    }
+
+    #[test]
+    fn app_advance_promotes_candidate_and_prepares_next_candidate() {
+        let root = temp_root("app-promote-prepare");
+        let app = SelfForgeApp::new(&root);
+
+        app.supervisor()
+            .initialize_current_version()
+            .expect("bootstrap should succeed before app advance");
+        app.supervisor()
+            .prepare_next_version("prepare candidate")
+            .expect("candidate should be prepared before app advance");
+
+        let report = app
+            .advance("继续推进")
+            .expect("advance should promote valid candidate and prepare the next one");
+
+        assert_eq!(report.outcome, MinimalLoopOutcome::PromotedAndPrepared);
+        assert_eq!(report.starting_version, "v0.1.5");
+        assert_eq!(report.stable_version, "v0.1.6");
+        assert_eq!(report.candidate_version.as_deref(), Some("v0.1.7"));
+        assert_eq!(report.next_expected_version.as_deref(), Some("v0.1.8"));
+
+        cleanup(&root);
+    }
+
+    #[test]
+    fn app_advance_stops_after_candidate_rollback() {
+        let root = temp_root("app-rollback");
+        let app = SelfForgeApp::new(&root);
+
+        app.supervisor()
+            .initialize_current_version()
+            .expect("bootstrap should succeed before app advance");
+        app.supervisor()
+            .prepare_next_version("prepare candidate")
+            .expect("candidate should be prepared before app advance");
+        fs::remove_file(root.join("workspaces").join("v0.1.6").join("README.md"))
+            .expect("test should be able to break candidate workspace");
+
+        let report = app
+            .advance("继续推进")
+            .expect("advance should roll back invalid candidate");
+
+        assert_eq!(report.outcome, MinimalLoopOutcome::RolledBack);
+        assert_eq!(report.starting_version, "v0.1.5");
+        assert_eq!(report.stable_version, "v0.1.5");
+        assert_eq!(report.candidate_version.as_deref(), Some("v0.1.6"));
+        assert_eq!(report.next_expected_version, None);
+        assert!(report.failure.is_some());
 
         cleanup(&root);
     }
@@ -476,3 +552,4 @@ mod tests {
         cleanup(&root);
     }
 }
+pub use app::{MinimalLoopOutcome, MinimalLoopReport, SelfForgeApp};

@@ -1,4 +1,7 @@
-use self_forge::{CURRENT_VERSION, CycleResult, ForgeState, Supervisor, VersionBump};
+use self_forge::{
+    CURRENT_VERSION, CycleResult, ForgeState, MinimalLoopOutcome, SelfForgeApp, Supervisor,
+    VersionBump,
+};
 use std::env;
 use std::error::Error;
 use std::process;
@@ -12,6 +15,7 @@ fn main() {
         }
     };
     let supervisor = Supervisor::new(&root);
+    let app = SelfForgeApp::new(&root);
     let mut args = env::args().skip(1);
     let command = args.next().unwrap_or_else(|| "status".to_string());
 
@@ -39,6 +43,7 @@ fn main() {
             )
         })),
         "evolve" => evolve(&supervisor, args.collect()),
+        "advance" => advance(&app, args.collect()),
         "promote" => boxed(supervisor.promote_candidate().map(|report| {
             format!(
                 "SelfForge promoted {} from {}, current workspace {}",
@@ -151,6 +156,36 @@ fn evolve(supervisor: &Supervisor, arguments: Vec<String>) -> Result<String, Box
     )
 }
 
+fn advance(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Box<dyn Error>> {
+    let goal = arguments.join(" ");
+    let goal = if goal.trim().is_empty() {
+        "推进 SelfForge 最小可运行闭环"
+    } else {
+        goal.trim()
+    };
+
+    boxed(app.advance(goal).map(|report| match report.outcome {
+        MinimalLoopOutcome::Prepared => format!(
+            "SelfForge advance prepared candidate {} from {}, next expected {:?}",
+            report.candidate_version.unwrap_or_else(|| "无".to_string()),
+            report.stable_version,
+            report.next_expected_version
+        ),
+        MinimalLoopOutcome::PromotedAndPrepared => format!(
+            "SelfForge advance promoted from {} and prepared candidate {} from {}",
+            report.starting_version,
+            report.candidate_version.unwrap_or_else(|| "无".to_string()),
+            report.stable_version
+        ),
+        MinimalLoopOutcome::RolledBack => format!(
+            "SelfForge advance rolled back candidate {} and kept {}, reason {}",
+            report.candidate_version.unwrap_or_else(|| "无".to_string()),
+            report.stable_version,
+            report.failure.unwrap_or_else(|| "未记录原因".to_string())
+        ),
+    }))
+}
+
 struct RunArgs {
     version: String,
     program: String,
@@ -213,7 +248,7 @@ fn parse_run_args(arguments: Vec<String>) -> Result<RunArgs, Box<dyn Error>> {
 }
 
 fn help_text() -> &'static str {
-    "SelfForge commands: init, validate, status, promote, rollback [reason], cycle, run [--current|--candidate|--version VERSION] [--timeout-ms N] -- PROGRAM [ARGS...], evolve [--patch|--minor|--major] [goal]"
+    "SelfForge commands: init, validate, status, advance [goal], promote, rollback [reason], cycle, run [--current|--candidate|--version VERSION] [--timeout-ms N] -- PROGRAM [ARGS...], evolve [--patch|--minor|--major] [goal]"
 }
 
 fn exit_with_error(error: Box<dyn Error>) -> ! {

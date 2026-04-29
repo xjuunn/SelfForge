@@ -147,6 +147,8 @@ forge/versions/vMAJOR.MINOR.md
 
 最小 Runtime 执行必须优先使用 `run` 命令：`run [--current|--candidate|--version VERSION] [--timeout-ms N] -- PROGRAM [ARGS...]`。该命令必须直接启动明确程序，禁止隐式 shell 包装；执行目录必须固定为目标版本工作区；必须记录退出码、标准输出、标准错误和是否超时。
 
+源码扩展必须优先进入 `src/app/` 应用用例层。CLI 只能负责参数解析和输出，不允许堆叠业务流程；`supervisor` 负责编排；`runtime` 负责验证和受控执行；`evolution` 负责版本状态机；`state` 只负责持久化读写。最小闭环的简单入口是 `advance [goal]`。
+
 ---
 
 # 八、Git 提交规范
