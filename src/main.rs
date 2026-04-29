@@ -1,4 +1,4 @@
-use self_forge::{Supervisor, VersionBump};
+use self_forge::{CycleResult, Supervisor, VersionBump};
 use std::env;
 use std::error::Error;
 use std::process;
@@ -72,16 +72,46 @@ fn main() {
                 report.promoted_version, report.previous_version, report.state.workspace
             )
         })),
+        "rollback" => {
+            let reason = args.collect::<Vec<String>>().join(" ");
+            let reason = if reason.trim().is_empty() {
+                "manual rollback"
+            } else {
+                reason.trim()
+            };
+            boxed(supervisor.rollback_candidate(reason).map(|report| {
+                format!(
+                    "SelfForge rolled back {} and kept current {}, status {}",
+                    report.rolled_back_version, report.current_version, report.state.status
+                )
+            }))
+        }
+        "cycle" => boxed(
+            supervisor
+                .run_candidate_cycle()
+                .map(|report| match report.result {
+                    CycleResult::Promoted => format!(
+                        "SelfForge cycle promoted {} from {}, current workspace {}",
+                        report.candidate_version, report.previous_version, report.state.workspace
+                    ),
+                    CycleResult::RolledBack => format!(
+                        "SelfForge cycle rolled back {} and kept {}, reason {}",
+                        report.candidate_version,
+                        report.previous_version,
+                        report.failure.unwrap_or_else(|| "未记录原因".to_string())
+                    ),
+                }),
+        ),
         "help" | "-h" | "--help" => {
             println!(
-                "SelfForge commands: init, validate, status, promote, evolve [--patch|--minor|--major] [goal]"
+                "SelfForge commands: init, validate, status, promote, rollback [reason], cycle, evolve [--patch|--minor|--major] [goal]"
             );
             return;
         }
         other => {
             eprintln!("unknown command: {other}");
             eprintln!(
-                "SelfForge commands: init, validate, status, promote, evolve [--patch|--minor|--major] [goal]"
+                "SelfForge commands: init, validate, status, promote, rollback [reason], cycle, evolve [--patch|--minor|--major] [goal]"
             );
             process::exit(2);
         }

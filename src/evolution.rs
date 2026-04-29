@@ -34,6 +34,29 @@ pub struct PromotionReport {
     pub state: ForgeState,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RollbackReport {
+    pub current_version: String,
+    pub rolled_back_version: String,
+    pub state: ForgeState,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CycleResult {
+    Promoted,
+    RolledBack,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CycleReport {
+    pub previous_version: String,
+    pub candidate_version: String,
+    pub result: CycleResult,
+    pub candidate_validation: Option<ValidationReport>,
+    pub failure: Option<String>,
+    pub state: ForgeState,
+}
+
 #[derive(Debug)]
 pub enum EvolutionError {
     State(StateError),
@@ -133,6 +156,64 @@ impl EvolutionEngine {
             promoted_version: candidate_version,
             state,
         })
+    }
+
+    pub fn rollback_candidate(&self, reason: &str) -> Result<RollbackReport, EvolutionError> {
+        let mut state = ForgeState::load(&self.root)?;
+        let Some(candidate_version) = state.candidate_version.clone() else {
+            return Err(EvolutionError::MissingCandidate);
+        };
+
+        let current_version = state.current_version.clone();
+        state.status = "rolled_back".to_string();
+        state.last_verified = Some(format!("rollback:{candidate_version}:{reason}"));
+        state.candidate_version = None;
+        state.candidate_workspace = None;
+        state.version_scheme = Some("semantic:vMAJOR.MINOR.PATCH".to_string());
+        state.save(&self.root)?;
+
+        Ok(RollbackReport {
+            current_version,
+            rolled_back_version: candidate_version,
+            state,
+        })
+    }
+
+    pub fn run_candidate_cycle(&self) -> Result<CycleReport, EvolutionError> {
+        let state = ForgeState::load(&self.root)?;
+        let previous_version = state.current_version.clone();
+        let Some(candidate_version) = state.candidate_version.clone() else {
+            return Err(EvolutionError::MissingCandidate);
+        };
+
+        let runtime = Runtime::new(&self.root);
+        runtime.verify_layout_for_version(&previous_version)?;
+
+        match runtime.verify_layout_for_version(&candidate_version) {
+            Ok(candidate_validation) => {
+                let promotion = self.promote_candidate()?;
+                Ok(CycleReport {
+                    previous_version,
+                    candidate_version,
+                    result: CycleResult::Promoted,
+                    candidate_validation: Some(candidate_validation),
+                    failure: None,
+                    state: promotion.state,
+                })
+            }
+            Err(error) => {
+                let failure = error.to_string();
+                let rollback = self.rollback_candidate(&failure)?;
+                Ok(CycleReport {
+                    previous_version,
+                    candidate_version,
+                    result: CycleResult::RolledBack,
+                    candidate_validation: None,
+                    failure: Some(failure),
+                    state: rollback.state,
+                })
+            }
+        }
     }
 }
 
@@ -287,6 +368,13 @@ fn memory_document(
     goal: &str,
     timestamp: &str,
 ) -> String {
+    let document = format!(
+        "# 版本信息\n- 版本号：{next_version}\n- 时间：{timestamp}\n- 父版本：{current_version}\n\n# 目标\n\n{goal}\n\n# 计划（Plan）\n\n1. 读取最近版本记忆和持久化状态。\n2. 验证当前稳定版本仍可运行。\n3. 按语义化版本规则计算下一候选版本。\n4. 生成候选工作区与 forge 归档文档。\n5. 验证候选版本布局和中文文档规范。\n6. 将 state/state.json 更新为 candidate_prepared。\n7. 保持当前稳定版本不变，等待提升或回滚。\n\n# 执行过程\n\n已生成候选版本骨架，尚未执行版本提升。\n\n# 代码变更\n\n待最终验证后补充。\n\n# 测试结果\n\n待最终验证后补充。\n\n# 错误总结\n\n待最终验证后补充。\n\n# 评估\n\n候选版本生成完成后仍需通过验证与提升流程才能成为当前版本。\n\n# 优化建议\n\n继续完善沙箱执行、资源限制和并行验证。\n\n# 可复用经验\n\n候选版本文档已存在时必须保留，不能覆盖前序计划。\n"
+    );
+    if !document.is_empty() {
+        return document;
+    }
+
     format!(
         "# 版本信息\n- 版本号：{next_version}\n- 时间：{timestamp}\n- 父版本：{current_version}\n\n# 目标\n\n{goal}\n\n# 计划（Plan）\n\n1. 读取最近版本记忆和持久化状态。\n2. 验证当前稳定版本仍可运行。\n3. 按语义化版本规则计算下一候选版本。\n4. 生成候选工作区与 forge 归档文档。\n5. 验证候选版本布局和中文文档规范。\n6. 将 state/state.json 更新为 candidate_prepared。\n7. 保持当前稳定版本不变，等待提升或回滚。\n\n# 执行过程\n\n已生成候选版本骨架，尚未执行版本提升。\n\n# 代码变更\n\n待最终验证后补充。\n\n# 测试结果\n\n待最终验证后补充。\n\n# 错误总结\n\n待最终验证后补充。\n\n# 评估\n\n候选版本生成完成后仍需通过验证与提升流程才能成为当前版本。\n\n# 优化建议\n\n继续完善沙箱执行、资源限制和并行验证。\n\n# 可复用经验\n\n候选版本文档已存在时必须保留，不能覆盖前序计划。\n"
     )

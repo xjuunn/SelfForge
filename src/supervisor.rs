@@ -1,4 +1,6 @@
-use crate::evolution::{EvolutionEngine, EvolutionError, EvolutionReport, PromotionReport};
+use crate::evolution::{
+    CycleReport, EvolutionEngine, EvolutionError, EvolutionReport, PromotionReport, RollbackReport,
+};
 use crate::layout::{BootstrapReport, ForgeError, SelfForge, ValidationReport};
 use crate::runtime::Runtime;
 use crate::version::VersionBump;
@@ -45,5 +47,13 @@ impl Supervisor {
 
     pub fn promote_candidate(&self) -> Result<PromotionReport, EvolutionError> {
         EvolutionEngine::new(self.forge.root()).promote_candidate()
+    }
+
+    pub fn rollback_candidate(&self, reason: &str) -> Result<RollbackReport, EvolutionError> {
+        EvolutionEngine::new(self.forge.root()).rollback_candidate(reason)
+    }
+
+    pub fn run_candidate_cycle(&self) -> Result<CycleReport, EvolutionError> {
+        EvolutionEngine::new(self.forge.root()).run_candidate_cycle()
     }
 }
