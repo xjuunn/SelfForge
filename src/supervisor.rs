@@ -2,7 +2,7 @@ use crate::evolution::{
     CycleReport, EvolutionEngine, EvolutionError, EvolutionReport, PromotionReport, RollbackReport,
 };
 use crate::layout::{BootstrapReport, ForgeError, SelfForge, ValidationReport};
-use crate::runtime::{ExecutionError, ExecutionReport, RunIndexEntry, Runtime};
+use crate::runtime::{ExecutionError, ExecutionReport, RunIndexEntry, RunQuery, Runtime};
 use crate::version::VersionBump;
 use std::path::Path;
 
@@ -50,6 +50,14 @@ impl Supervisor {
         limit: usize,
     ) -> Result<Vec<RunIndexEntry>, ExecutionError> {
         self.runtime.list_runs(version, limit)
+    }
+
+    pub fn query_runs(
+        &self,
+        version: impl AsRef<str>,
+        query: RunQuery,
+    ) -> Result<Vec<RunIndexEntry>, ExecutionError> {
+        self.runtime.query_runs(version, query)
     }
 
     pub fn prepare_next_version(&self, goal: &str) -> Result<EvolutionReport, EvolutionError> {

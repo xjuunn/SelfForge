@@ -1,6 +1,6 @@
 use self_forge::{
-    CURRENT_VERSION, CycleResult, ForgeState, MinimalLoopOutcome, SelfForgeApp, Supervisor,
-    VersionBump,
+    CURRENT_VERSION, CycleResult, ForgeState, MinimalLoopOutcome, RunQuery, SelfForgeApp,
+    Supervisor, VersionBump,
 };
 use std::env;
 use std::error::Error;
@@ -111,7 +111,14 @@ fn main() {
             };
             boxed(
                 supervisor
-                    .list_runs(&runs.version, runs.limit)
+                    .query_runs(
+                        &runs.version,
+                        RunQuery {
+                            limit: runs.limit,
+                            failed_only: runs.failed_only,
+                            timed_out_only: runs.timed_out_only,
+                        },
+                    )
                     .map(|entries| {
                         if entries.is_empty() {
                             return format!("SelfForge runs {}: no records", runs.version);
@@ -124,14 +131,14 @@ fn main() {
                         )];
                         for entry in entries {
                             lines.push(format!(
-                        "{} exit {:?} timed_out {} stdout {} bytes stderr {} bytes report {}",
-                        entry.run_id,
-                        entry.exit_code,
-                        entry.timed_out,
-                        entry.stdout_bytes,
-                        entry.stderr_bytes,
-                        entry.report_file
-                    ));
+                                "{} exit {:?} timed_out {} stdout {} bytes stderr {} bytes report {}",
+                                entry.run_id,
+                                entry.exit_code,
+                                entry.timed_out,
+                                entry.stdout_bytes,
+                                entry.stderr_bytes,
+                                entry.report_file
+                            ));
                         }
                         lines.join("\n")
                     }),
@@ -230,6 +237,8 @@ struct RunArgs {
 struct RunsArgs {
     version: String,
     limit: usize,
+    failed_only: bool,
+    timed_out_only: bool,
 }
 
 fn parse_run_args(arguments: Vec<String>) -> Result<RunArgs, Box<dyn Error>> {
@@ -290,6 +299,8 @@ fn parse_runs_args(arguments: Vec<String>) -> Result<RunsArgs, Box<dyn Error>> {
     let state = ForgeState::load(env::current_dir()?)?;
     let mut version = state.current_version.clone();
     let mut limit = 10;
+    let mut failed_only = false;
+    let mut timed_out_only = false;
     let mut index = 0;
 
     while index < arguments.len() {
@@ -316,15 +327,28 @@ fn parse_runs_args(arguments: Vec<String>) -> Result<RunsArgs, Box<dyn Error>> {
                 limit = value.parse::<usize>()?;
                 index += 2;
             }
+            "--failed" => {
+                failed_only = true;
+                index += 1;
+            }
+            "--timed-out" => {
+                timed_out_only = true;
+                index += 1;
+            }
             other => return Err(format!("未知 runs 参数: {other}").into()),
         }
     }
 
-    Ok(RunsArgs { version, limit })
+    Ok(RunsArgs {
+        version,
+        limit,
+        failed_only,
+        timed_out_only,
+    })
 }
 
 fn help_text() -> &'static str {
-    "SelfForge commands: init, validate, status, advance [goal], promote, rollback [reason], cycle, run [--current|--candidate|--version VERSION] [--timeout-ms N] -- PROGRAM [ARGS...], runs [--current|--candidate|--version VERSION] [--limit N], evolve [--patch|--minor|--major] [goal]"
+    "SelfForge commands: init, validate, status, advance [goal], promote, rollback [reason], cycle, run [--current|--candidate|--version VERSION] [--timeout-ms N] -- PROGRAM [ARGS...], runs [--current|--candidate|--version VERSION] [--limit N] [--failed] [--timed-out], evolve [--patch|--minor|--major] [goal]"
 }
 
 fn exit_with_error(error: Box<dyn Error>) -> ! {

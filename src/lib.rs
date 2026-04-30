@@ -15,7 +15,7 @@ pub use evolution::{
     RollbackReport,
 };
 pub use layout::{BootstrapReport, ForgeError, SelfForge, ValidationReport};
-pub use runtime::{ExecutionError, ExecutionReport, RunIndexEntry, Runtime};
+pub use runtime::{ExecutionError, ExecutionReport, RunIndexEntry, RunQuery, Runtime};
 pub use state::{ForgeState, StateError};
 pub use supervisor::Supervisor;
 pub use version::{
@@ -23,7 +23,7 @@ pub use version::{
     version_major_file_name, version_major_key,
 };
 
-pub const CURRENT_VERSION: &str = "v0.1.12";
+pub const CURRENT_VERSION: &str = "v0.1.13";
 
 #[cfg(test)]
 mod tests {
@@ -154,11 +154,11 @@ mod tests {
             .prepare_next_version("prepare the next controlled candidate")
             .expect("evolution should prepare a candidate version");
 
-        assert_eq!(report.current_version, "v0.1.12");
-        assert_eq!(report.next_version, "v0.1.13");
+        assert_eq!(report.current_version, "v0.1.13");
+        assert_eq!(report.next_version, "v0.1.14");
         assert!(root.join("workspaces").join("v0").is_dir());
         assert_workspace_structure(&root);
-        assert!(!root.join("workspaces").join("v0.1.13").exists());
+        assert!(!root.join("workspaces").join("v0.1.14").exists());
         assert!(root.join("forge").join("memory").join("v0.md").is_file());
         assert!(root.join("forge").join("tasks").join("v0.md").is_file());
         assert!(root.join("forge").join("errors").join("v0.md").is_file());
@@ -167,26 +167,26 @@ mod tests {
             !root
                 .join("forge")
                 .join("versions")
-                .join("v0.1.13.md")
+                .join("v0.1.14.md")
                 .exists()
         );
         let version_record = fs::read_to_string(root.join("forge").join("versions").join("v0.md"))
             .expect("major version record should be readable");
-        assert!(version_record.contains("## v0.1.13"));
-        assert_eq!(report.state.current_version, "v0.1.12");
+        assert!(version_record.contains("## v0.1.14"));
+        assert_eq!(report.state.current_version, "v0.1.13");
         assert_eq!(report.state.status, "candidate_prepared");
         assert_eq!(
             report.state.version_scheme.as_deref(),
             Some("semantic:vMAJOR.MINOR.PATCH")
         );
-        assert_eq!(report.state.candidate_version.as_deref(), Some("v0.1.13"));
+        assert_eq!(report.state.candidate_version.as_deref(), Some("v0.1.14"));
         assert_eq!(
             report.state.candidate_workspace.as_deref(),
             Some("workspaces/v0")
         );
 
         supervisor
-            .verify_version("v0.1.13")
+            .verify_version("v0.1.14")
             .expect("candidate layout should validate");
 
         cleanup(&root);
@@ -201,7 +201,7 @@ mod tests {
             .initialize_current_version()
             .expect("bootstrap should succeed before evolution");
         let mut state = ForgeState::load(&root).expect("state should be readable");
-        state.workspace = "workspaces/v0.1.12".to_string();
+        state.workspace = "workspaces/v0.1.13".to_string();
         state.save(&root).expect("state should be writable");
 
         let report = supervisor
@@ -236,7 +236,7 @@ mod tests {
         let task = fs::read_to_string(root.join("forge").join("tasks").join("v0.md"))
             .expect("task should remain readable");
         assert!(task.contains("人工任务计划"));
-        assert!(task.contains("## v0.1.13"));
+        assert!(task.contains("## v0.1.14"));
 
         cleanup(&root);
     }
@@ -272,10 +272,10 @@ mod tests {
             .promote_candidate()
             .expect("candidate should promote after validation");
 
-        assert_eq!(report.previous_version, "v0.1.12");
-        assert_eq!(report.promoted_version, "v0.1.13");
-        assert_eq!(report.state.current_version, "v0.1.13");
-        assert_eq!(report.state.parent_version.as_deref(), Some("v0.1.12"));
+        assert_eq!(report.previous_version, "v0.1.13");
+        assert_eq!(report.promoted_version, "v0.1.14");
+        assert_eq!(report.state.current_version, "v0.1.14");
+        assert_eq!(report.state.parent_version.as_deref(), Some("v0.1.13"));
         assert_eq!(report.state.candidate_version, None);
         assert_eq!(report.state.status, "active");
 
@@ -298,12 +298,12 @@ mod tests {
             .run_candidate_cycle()
             .expect("valid candidate should complete the cycle");
 
-        assert_eq!(report.previous_version, "v0.1.12");
-        assert_eq!(report.candidate_version, "v0.1.13");
+        assert_eq!(report.previous_version, "v0.1.13");
+        assert_eq!(report.candidate_version, "v0.1.14");
         assert_eq!(report.result, CycleResult::Promoted);
         assert!(report.candidate_validation.is_some());
         assert_eq!(report.failure, None);
-        assert_eq!(report.state.current_version, "v0.1.13");
+        assert_eq!(report.state.current_version, "v0.1.14");
         assert_eq!(report.state.candidate_version, None);
         assert_eq!(report.state.status, "active");
 
@@ -326,10 +326,10 @@ mod tests {
             .rollback_candidate("测试回滚")
             .expect("rollback should clear candidate state");
 
-        assert_eq!(report.current_version, "v0.1.12");
-        assert_eq!(report.rolled_back_version, "v0.1.13");
+        assert_eq!(report.current_version, "v0.1.13");
+        assert_eq!(report.rolled_back_version, "v0.1.14");
         assert_eq!(report.state.status, "rolled_back");
-        assert_eq!(report.state.current_version, "v0.1.12");
+        assert_eq!(report.state.current_version, "v0.1.13");
         assert_eq!(report.state.candidate_version, None);
         assert!(root.join("workspaces").join("v0").is_dir());
 
@@ -356,12 +356,12 @@ mod tests {
             .run_candidate_cycle()
             .expect("invalid candidate should roll back without promoting");
 
-        assert_eq!(report.previous_version, "v0.1.12");
+        assert_eq!(report.previous_version, "v0.1.13");
         assert_eq!(report.candidate_version, "v9.0.0");
         assert_eq!(report.result, CycleResult::RolledBack);
         assert!(report.candidate_validation.is_none());
         assert!(report.failure.is_some());
-        assert_eq!(report.state.current_version, "v0.1.12");
+        assert_eq!(report.state.current_version, "v0.1.13");
         assert_eq!(report.state.candidate_version, None);
         assert_eq!(report.state.status, "rolled_back");
 
@@ -382,10 +382,10 @@ mod tests {
             .expect("advance should prepare a candidate when none exists");
 
         assert_eq!(report.outcome, MinimalLoopOutcome::Prepared);
-        assert_eq!(report.starting_version, "v0.1.12");
-        assert_eq!(report.stable_version, "v0.1.12");
-        assert_eq!(report.candidate_version.as_deref(), Some("v0.1.13"));
-        assert_eq!(report.next_expected_version.as_deref(), Some("v0.1.14"));
+        assert_eq!(report.starting_version, "v0.1.13");
+        assert_eq!(report.stable_version, "v0.1.13");
+        assert_eq!(report.candidate_version.as_deref(), Some("v0.1.14"));
+        assert_eq!(report.next_expected_version.as_deref(), Some("v0.1.15"));
 
         cleanup(&root);
     }
@@ -407,10 +407,10 @@ mod tests {
             .expect("advance should promote valid candidate and prepare the next one");
 
         assert_eq!(report.outcome, MinimalLoopOutcome::PromotedAndPrepared);
-        assert_eq!(report.starting_version, "v0.1.12");
-        assert_eq!(report.stable_version, "v0.1.13");
-        assert_eq!(report.candidate_version.as_deref(), Some("v0.1.14"));
-        assert_eq!(report.next_expected_version.as_deref(), Some("v0.1.15"));
+        assert_eq!(report.starting_version, "v0.1.13");
+        assert_eq!(report.stable_version, "v0.1.14");
+        assert_eq!(report.candidate_version.as_deref(), Some("v0.1.15"));
+        assert_eq!(report.next_expected_version.as_deref(), Some("v0.1.16"));
 
         cleanup(&root);
     }
@@ -436,8 +436,8 @@ mod tests {
             .expect("advance should roll back invalid candidate");
 
         assert_eq!(report.outcome, MinimalLoopOutcome::RolledBack);
-        assert_eq!(report.starting_version, "v0.1.12");
-        assert_eq!(report.stable_version, "v0.1.12");
+        assert_eq!(report.starting_version, "v0.1.13");
+        assert_eq!(report.stable_version, "v0.1.13");
         assert_eq!(report.candidate_version.as_deref(), Some("v9.0.0"));
         assert_eq!(report.next_expected_version, None);
         assert!(report.failure.is_some());
@@ -533,6 +533,65 @@ mod tests {
             .expect("timeout run index should be queryable");
         assert_eq!(entries.len(), 1);
         assert!(entries[0].timed_out);
+
+        cleanup(&root);
+    }
+
+    #[test]
+    fn runtime_filters_failed_and_timed_out_runs() {
+        let root = temp_root("runtime-failed-runs");
+        let supervisor = Supervisor::new(&root);
+
+        supervisor
+            .initialize_current_version()
+            .expect("bootstrap should succeed before failed run filter test");
+        let program = std::env::current_exe()
+            .expect("test executable path should be available")
+            .to_string_lossy()
+            .into_owned();
+
+        supervisor
+            .execute_in_workspace(CURRENT_VERSION, &program, &["--help".to_string()], 5_000)
+            .expect("success run should be recorded");
+        supervisor
+            .execute_in_workspace(
+                CURRENT_VERSION,
+                &program,
+                &["--self-forge-invalid-test-flag".to_string()],
+                5_000,
+            )
+            .expect("failed run should still be recorded");
+        supervisor
+            .execute_in_workspace(CURRENT_VERSION, &program, &["--help".to_string()], 0)
+            .expect("timed out run should still be recorded");
+
+        let all_entries = supervisor
+            .query_runs(CURRENT_VERSION, RunQuery::recent(10))
+            .expect("all runs should be queryable");
+        assert_eq!(all_entries.len(), 3);
+
+        let failed_entries = supervisor
+            .query_runs(CURRENT_VERSION, RunQuery::failed(10))
+            .expect("failed runs should be queryable");
+        assert_eq!(failed_entries.len(), 2);
+        assert!(failed_entries.iter().all(RunIndexEntry::is_failed));
+        assert!(failed_entries.iter().any(|entry| entry.timed_out));
+        assert!(
+            failed_entries
+                .iter()
+                .any(|entry| entry.exit_code != Some(0))
+        );
+
+        let timed_out_entries = supervisor
+            .query_runs(CURRENT_VERSION, RunQuery::timed_out(10))
+            .expect("timed out runs should be queryable");
+        assert_eq!(timed_out_entries.len(), 1);
+        assert!(timed_out_entries[0].timed_out);
+
+        let no_entries = supervisor
+            .query_runs(CURRENT_VERSION, RunQuery::failed(0))
+            .expect("zero limit should be accepted");
+        assert!(no_entries.is_empty());
 
         cleanup(&root);
     }

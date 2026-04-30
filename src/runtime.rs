@@ -41,6 +41,57 @@ pub struct RunIndexEntry {
     pub report_file: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RunQuery {
+    pub limit: usize,
+    pub failed_only: bool,
+    pub timed_out_only: bool,
+}
+
+impl RunQuery {
+    pub fn recent(limit: usize) -> Self {
+        Self {
+            limit,
+            failed_only: false,
+            timed_out_only: false,
+        }
+    }
+
+    pub fn failed(limit: usize) -> Self {
+        Self {
+            limit,
+            failed_only: true,
+            timed_out_only: false,
+        }
+    }
+
+    pub fn timed_out(limit: usize) -> Self {
+        Self {
+            limit,
+            failed_only: false,
+            timed_out_only: true,
+        }
+    }
+
+    fn matches(self, entry: &RunIndexEntry) -> bool {
+        if self.failed_only && !entry.is_failed() {
+            return false;
+        }
+
+        if self.timed_out_only && !entry.timed_out {
+            return false;
+        }
+
+        true
+    }
+}
+
+impl RunIndexEntry {
+    pub fn is_failed(&self) -> bool {
+        self.timed_out || self.exit_code != Some(0)
+    }
+}
+
 #[derive(Debug)]
 pub enum ExecutionError {
     Forge(ForgeError),
@@ -158,7 +209,15 @@ impl Runtime {
         version: impl AsRef<str>,
         limit: usize,
     ) -> Result<Vec<RunIndexEntry>, ExecutionError> {
-        if limit == 0 {
+        self.query_runs(version, RunQuery::recent(limit))
+    }
+
+    pub fn query_runs(
+        &self,
+        version: impl AsRef<str>,
+        query: RunQuery,
+    ) -> Result<Vec<RunIndexEntry>, ExecutionError> {
+        if query.limit == 0 {
             return Ok(Vec::new());
         }
 
@@ -187,7 +246,12 @@ impl Runtime {
             entries.push(entry);
         }
 
-        Ok(entries.into_iter().rev().take(limit).collect())
+        Ok(entries
+            .into_iter()
+            .rev()
+            .filter(|entry| query.matches(entry))
+            .take(query.limit)
+            .collect())
     }
 
     fn persist_execution_report(
