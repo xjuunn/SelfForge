@@ -1,3 +1,4 @@
+use super::error_archive::{ErrorArchive, ErrorArchiveError, ErrorListQuery};
 use crate::{CycleResult, EvolutionError, ForgeState, StateError, Supervisor, next_version_after};
 use std::error::Error;
 use std::fmt;
@@ -30,6 +31,8 @@ pub struct MinimalLoopReport {
 pub enum MinimalLoopError {
     State(StateError),
     Evolution(EvolutionError),
+    ErrorArchive(ErrorArchiveError),
+    OpenErrors { version: String, run_id: String },
 }
 
 impl SelfForgeApp {
@@ -48,6 +51,7 @@ impl SelfForgeApp {
     pub fn advance(&self, goal: &str) -> Result<MinimalLoopReport, MinimalLoopError> {
         let state = ForgeState::load(&self.root)?;
         let starting_version = state.current_version.clone();
+        self.ensure_no_open_errors(&starting_version)?;
 
         if state.candidate_version.is_none() {
             let prepared = self.supervisor.prepare_next_version(goal)?;
@@ -84,6 +88,19 @@ impl SelfForgeApp {
             }),
         }
     }
+
+    fn ensure_no_open_errors(&self, version: &str) -> Result<(), MinimalLoopError> {
+        let errors =
+            ErrorArchive::new(&self.root).list_run_errors(version, ErrorListQuery::open(1))?;
+        if let Some(error) = errors.into_iter().next() {
+            return Err(MinimalLoopError::OpenErrors {
+                version: version.to_string(),
+                run_id: error.run_id,
+            });
+        }
+
+        Ok(())
+    }
 }
 
 impl fmt::Display for MinimalLoopError {
@@ -91,6 +108,11 @@ impl fmt::Display for MinimalLoopError {
         match self {
             MinimalLoopError::State(error) => write!(formatter, "{error}"),
             MinimalLoopError::Evolution(error) => write!(formatter, "{error}"),
+            MinimalLoopError::ErrorArchive(error) => write!(formatter, "{error}"),
+            MinimalLoopError::OpenErrors { version, run_id } => write!(
+                formatter,
+                "版本 {version} 存在未解决错误 {run_id}，请先解决后再继续进化"
+            ),
         }
     }
 }
@@ -100,6 +122,8 @@ impl Error for MinimalLoopError {
         match self {
             MinimalLoopError::State(error) => Some(error),
             MinimalLoopError::Evolution(error) => Some(error),
+            MinimalLoopError::ErrorArchive(error) => Some(error),
+            MinimalLoopError::OpenErrors { .. } => None,
         }
     }
 }
@@ -113,5 +137,11 @@ impl From<StateError> for MinimalLoopError {
 impl From<EvolutionError> for MinimalLoopError {
     fn from(error: EvolutionError) -> Self {
         MinimalLoopError::Evolution(error)
+    }
+}
+
+impl From<ErrorArchiveError> for MinimalLoopError {
+    fn from(error: ErrorArchiveError) -> Self {
+        MinimalLoopError::ErrorArchive(error)
     }
 }

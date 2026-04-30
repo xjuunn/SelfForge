@@ -172,6 +172,8 @@ workspace 根目录必须保持极简，只允许 `README.md`、`.gitignore` 和
 
 查询已归档运行错误必须优先使用 `errors [--current|--candidate|--version VERSION] [--limit N] [--open] [--resolved]`。查询只能读取当前 major 聚合错误文件，按小版本和解决状态过滤，禁止为了查询创建额外索引文件。
 
+`advance` 执行前必须检查当前稳定版本是否存在未解决错误。若 `errors --current --open` 能查询到记录，必须停止进化并先解决错误，禁止生成或提升候选版本。
+
 源码扩展必须优先进入 `src/app/` 应用用例层。CLI 只能负责参数解析和输出，不允许堆叠业务流程；`supervisor` 负责编排；`runtime` 负责验证和受控执行；`evolution` 负责版本状态机；`state` 只负责持久化读写。最小闭环的简单入口是 `advance [goal]`。
 
 ---

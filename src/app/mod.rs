@@ -5,4 +5,4 @@ pub use error_archive::{
     ArchivedErrorEntry, ErrorArchive, ErrorArchiveError, ErrorArchiveReport, ErrorListQuery,
     ErrorResolutionReport,
 };
-pub use minimal_loop::{MinimalLoopOutcome, MinimalLoopReport, SelfForgeApp};
+pub use minimal_loop::{MinimalLoopError, MinimalLoopOutcome, MinimalLoopReport, SelfForgeApp};
