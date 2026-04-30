@@ -4,7 +4,7 @@ mod minimal_loop;
 
 pub use ai_provider::{
     AiConfigError, AiConfigReport, AiProviderRegistry, AiProviderStatus, AiRequestError,
-    AiRequestSpec,
+    AiRequestSpec, AiResponseError, AiTextResponse,
 };
 pub use error_archive::{
     ArchivedErrorEntry, ErrorArchive, ErrorArchiveError, ErrorArchiveReport, ErrorListQuery,

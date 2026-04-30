@@ -41,6 +41,15 @@ pub struct AiRequestSpec {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AiTextResponse {
+    pub provider_id: String,
+    pub model: String,
+    pub protocol: String,
+    pub text: String,
+    pub raw_bytes: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AiConfigError {
     UnknownProvider {
         requested: String,
@@ -54,6 +63,13 @@ pub enum AiRequestError {
     MissingProvider,
     MissingApiKey { provider: String },
     EmptyPrompt,
+}
+
+#[derive(Debug)]
+pub enum AiResponseError {
+    InvalidJson { source: serde_json::Error },
+    MissingText { protocol: String },
+    EmptyText { protocol: String },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -101,6 +117,13 @@ impl AiProviderRegistry {
         F: Fn(&str) -> Option<String>,
     {
         build_text_request_with(prompt, lookup)
+    }
+
+    pub fn parse_text_response(
+        request: &AiRequestSpec,
+        response_body: &str,
+    ) -> Result<AiTextResponse, AiResponseError> {
+        parse_text_response(request, response_body)
     }
 }
 
@@ -156,9 +179,127 @@ impl Error for AiRequestError {
     }
 }
 
+impl fmt::Display for AiResponseError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AiResponseError::InvalidJson { source } => {
+                write!(formatter, "AI 响应不是合法 JSON：{source}")
+            }
+            AiResponseError::MissingText { protocol } => {
+                write!(formatter, "AI 响应缺少可解析文本，协议：{protocol}")
+            }
+            AiResponseError::EmptyText { protocol } => {
+                write!(formatter, "AI 响应文本为空，协议：{protocol}")
+            }
+        }
+    }
+}
+
+impl Error for AiResponseError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            AiResponseError::InvalidJson { source } => Some(source),
+            AiResponseError::MissingText { .. } | AiResponseError::EmptyText { .. } => None,
+        }
+    }
+}
+
 impl From<AiConfigError> for AiRequestError {
     fn from(error: AiConfigError) -> Self {
         AiRequestError::Config(error)
+    }
+}
+
+fn parse_text_response(
+    request: &AiRequestSpec,
+    response_body: &str,
+) -> Result<AiTextResponse, AiResponseError> {
+    let value: serde_json::Value = serde_json::from_str(response_body)
+        .map_err(|source| AiResponseError::InvalidJson { source })?;
+    let Some(text) = response_text(&request.protocol, &value) else {
+        return Err(AiResponseError::MissingText {
+            protocol: request.protocol.clone(),
+        });
+    };
+    let text = text.trim().to_string();
+    if text.is_empty() {
+        return Err(AiResponseError::EmptyText {
+            protocol: request.protocol.clone(),
+        });
+    }
+
+    Ok(AiTextResponse {
+        provider_id: request.provider_id.clone(),
+        model: request.model.clone(),
+        protocol: request.protocol.clone(),
+        text,
+        raw_bytes: response_body.len(),
+    })
+}
+
+fn response_text(protocol: &str, value: &serde_json::Value) -> Option<String> {
+    match protocol {
+        "openai-responses" => openai_response_text(value),
+        "openai-chat-completions" => chat_completion_text(value),
+        "gemini-generate-content" => gemini_response_text(value),
+        _ => None,
+    }
+}
+
+fn openai_response_text(value: &serde_json::Value) -> Option<String> {
+    if let Some(text) = value.get("output_text").and_then(serde_json::Value::as_str) {
+        return Some(text.to_string());
+    }
+
+    let output = value.get("output")?.as_array()?;
+    let mut parts = Vec::new();
+    for item in output {
+        if let Some(content) = item.get("content").and_then(serde_json::Value::as_array) {
+            collect_text_parts(content, &mut parts);
+        }
+    }
+    non_empty_join(parts)
+}
+
+fn chat_completion_text(value: &serde_json::Value) -> Option<String> {
+    value
+        .get("choices")?
+        .as_array()?
+        .first()?
+        .get("message")?
+        .get("content")?
+        .as_str()
+        .map(str::to_string)
+}
+
+fn gemini_response_text(value: &serde_json::Value) -> Option<String> {
+    let candidates = value.get("candidates")?.as_array()?;
+    let mut parts = Vec::new();
+    for candidate in candidates {
+        if let Some(content_parts) = candidate
+            .get("content")
+            .and_then(|content| content.get("parts"))
+            .and_then(serde_json::Value::as_array)
+        {
+            collect_text_parts(content_parts, &mut parts);
+        }
+    }
+    non_empty_join(parts)
+}
+
+fn collect_text_parts(values: &[serde_json::Value], parts: &mut Vec<String>) {
+    for value in values {
+        if let Some(text) = value.get("text").and_then(serde_json::Value::as_str) {
+            parts.push(text.to_string());
+        }
+    }
+}
+
+fn non_empty_join(parts: Vec<String>) -> Option<String> {
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join("\n"))
     }
 }
 
