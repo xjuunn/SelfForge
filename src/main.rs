@@ -93,13 +93,14 @@ fn main() {
             )
             .map(|report| {
                 format!(
-                    "SelfForge run {} in {}: exit {:?}, timed_out {}, stdout {} bytes, stderr {} bytes",
+                    "SelfForge run {} in {}: exit {:?}, timed_out {}, stdout {} bytes, stderr {} bytes, record {}",
                     report.program,
                     report.workspace.display(),
                     report.exit_code,
                     report.timed_out,
                     report.stdout.len(),
-                    report.stderr.len()
+                    report.stderr.len(),
+                    report.run_dir.display()
                 )
             }))
         }
