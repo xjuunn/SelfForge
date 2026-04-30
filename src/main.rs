@@ -42,6 +42,7 @@ fn main() {
                 report.checked_paths.len()
             )
         })),
+        "preflight" => preflight(&app),
         "evolve" => evolve(&supervisor, args.collect()),
         "advance" => advance(&app, args.collect()),
         "promote" => boxed(supervisor.promote_candidate().map(|report| {
@@ -323,6 +324,27 @@ fn advance(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Box<dyn
             report.stable_version,
             report.failure.unwrap_or_else(|| "未记录原因".to_string())
         ),
+    }))
+}
+
+fn preflight(app: &SelfForgeApp) -> Result<String, Box<dyn Error>> {
+    boxed(app.preflight().map(|report| {
+        let candidate = report.candidate_version.as_deref().unwrap_or("无");
+        let candidate_workspace = report.candidate_workspace.as_deref().unwrap_or("无");
+        let can_advance = if report.can_advance { "是" } else { "否" };
+
+        format!(
+            "SelfForge 前置检查 当前版本 {} 状态 {} 工作区 {} 候选版本 {} 候选工作区 {} 当前检查路径 {} 候选检查路径 {} 未解决错误 {} 可进化 {}",
+            report.current_version,
+            report.status,
+            report.current_workspace,
+            candidate,
+            candidate_workspace,
+            report.checked_paths.len(),
+            report.candidate_checked_paths.len(),
+            report.open_errors.len(),
+            can_advance
+        )
     }))
 }
 
@@ -628,7 +650,7 @@ fn parse_resolve_error_args(arguments: Vec<String>) -> Result<ResolveErrorArgs, 
 }
 
 fn help_text() -> &'static str {
-    "SelfForge commands: init, validate, status, advance [goal], promote, rollback [reason], cycle, run [--current|--candidate|--version VERSION] [--timeout-ms N] -- PROGRAM [ARGS...], runs [--current|--candidate|--version VERSION] [--limit N] [--failed] [--timed-out], errors [--current|--candidate|--version VERSION] [--limit N] [--open] [--resolved], record-error [--current|--candidate|--version VERSION] [--run-id RUN_ID] [--stage TEXT] [--solution TEXT], resolve-error [--current|--candidate|--version VERSION] --run-id RUN_ID [--verification TEXT], evolve [--patch|--minor|--major] [goal]"
+    "SelfForge commands: init, validate, status, preflight, advance [goal], promote, rollback [reason], cycle, run [--current|--candidate|--version VERSION] [--timeout-ms N] -- PROGRAM [ARGS...], runs [--current|--candidate|--version VERSION] [--limit N] [--failed] [--timed-out], errors [--current|--candidate|--version VERSION] [--limit N] [--open] [--resolved], record-error [--current|--candidate|--version VERSION] [--run-id RUN_ID] [--stage TEXT] [--solution TEXT], resolve-error [--current|--candidate|--version VERSION] --run-id RUN_ID [--verification TEXT], evolve [--patch|--minor|--major] [goal]"
 }
 
 fn exit_with_error(error: Box<dyn Error>) -> ! {

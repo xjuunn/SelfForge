@@ -1,8 +1,12 @@
-use super::error_archive::{ErrorArchive, ErrorArchiveError, ErrorListQuery};
-use crate::{CycleResult, EvolutionError, ForgeState, StateError, Supervisor, next_version_after};
+use super::error_archive::{ArchivedErrorEntry, ErrorArchive, ErrorArchiveError, ErrorListQuery};
+use crate::{
+    CycleResult, EvolutionError, ForgeError, ForgeState, StateError, Supervisor, next_version_after,
+};
 use std::error::Error;
 use std::fmt;
 use std::path::{Path, PathBuf};
+
+const PREFLIGHT_OPEN_ERROR_LIMIT: usize = 10;
 
 #[derive(Debug, Clone)]
 pub struct SelfForgeApp {
@@ -27,9 +31,23 @@ pub struct MinimalLoopReport {
     pub failure: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PreflightReport {
+    pub current_version: String,
+    pub current_workspace: String,
+    pub status: String,
+    pub candidate_version: Option<String>,
+    pub candidate_workspace: Option<String>,
+    pub checked_paths: Vec<PathBuf>,
+    pub candidate_checked_paths: Vec<PathBuf>,
+    pub open_errors: Vec<ArchivedErrorEntry>,
+    pub can_advance: bool,
+}
+
 #[derive(Debug)]
 pub enum MinimalLoopError {
     State(StateError),
+    Forge(ForgeError),
     Evolution(EvolutionError),
     ErrorArchive(ErrorArchiveError),
     OpenErrors { version: String, run_id: String },
@@ -46,6 +64,36 @@ impl SelfForgeApp {
 
     pub fn supervisor(&self) -> &Supervisor {
         &self.supervisor
+    }
+
+    pub fn preflight(&self) -> Result<PreflightReport, MinimalLoopError> {
+        let state = ForgeState::load(&self.root)?;
+        let current_validation = self.supervisor.verify_version(&state.current_version)?;
+        let candidate_checked_paths = match &state.candidate_version {
+            Some(candidate_version) => {
+                self.supervisor
+                    .verify_version(candidate_version)?
+                    .checked_paths
+            }
+            None => Vec::new(),
+        };
+        let open_errors = ErrorArchive::new(&self.root).list_run_errors(
+            &state.current_version,
+            ErrorListQuery::open(PREFLIGHT_OPEN_ERROR_LIMIT),
+        )?;
+        let can_advance = open_errors.is_empty();
+
+        Ok(PreflightReport {
+            current_version: state.current_version,
+            current_workspace: state.workspace,
+            status: state.status,
+            candidate_version: state.candidate_version,
+            candidate_workspace: state.candidate_workspace,
+            checked_paths: current_validation.checked_paths,
+            candidate_checked_paths,
+            open_errors,
+            can_advance,
+        })
     }
 
     pub fn advance(&self, goal: &str) -> Result<MinimalLoopReport, MinimalLoopError> {
@@ -107,6 +155,7 @@ impl fmt::Display for MinimalLoopError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             MinimalLoopError::State(error) => write!(formatter, "{error}"),
+            MinimalLoopError::Forge(error) => write!(formatter, "{error}"),
             MinimalLoopError::Evolution(error) => write!(formatter, "{error}"),
             MinimalLoopError::ErrorArchive(error) => write!(formatter, "{error}"),
             MinimalLoopError::OpenErrors { version, run_id } => write!(
@@ -121,6 +170,7 @@ impl Error for MinimalLoopError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             MinimalLoopError::State(error) => Some(error),
+            MinimalLoopError::Forge(error) => Some(error),
             MinimalLoopError::Evolution(error) => Some(error),
             MinimalLoopError::ErrorArchive(error) => Some(error),
             MinimalLoopError::OpenErrors { .. } => None,
@@ -131,6 +181,12 @@ impl Error for MinimalLoopError {
 impl From<StateError> for MinimalLoopError {
     fn from(error: StateError) -> Self {
         MinimalLoopError::State(error)
+    }
+}
+
+impl From<ForgeError> for MinimalLoopError {
+    fn from(error: ForgeError) -> Self {
+        MinimalLoopError::Forge(error)
     }
 }
 
