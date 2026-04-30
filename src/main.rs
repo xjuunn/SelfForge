@@ -47,6 +47,8 @@ fn main() {
         "preflight" => preflight(&app),
         "ai-config" => ai_config(&app),
         "ai-request" => ai_request(&app, args.collect()),
+        "agents" => agents(&app),
+        "agent-plan" => agent_plan(&app, args.collect()),
         "evolve" => evolve(&supervisor, args.collect()),
         "advance" => advance(&app, args.collect()),
         "promote" => boxed(supervisor.promote_candidate().map(|report| {
@@ -417,6 +419,43 @@ fn ai_request(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Box<
     )
 }
 
+fn agents(app: &SelfForgeApp) -> Result<String, Box<dyn Error>> {
+    let agents = app.agents();
+    let mut lines = vec![format!("SelfForge Agent 目录 共 {} 个", agents.len())];
+    for agent in agents {
+        let capabilities = agent
+            .capabilities
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join("、");
+        lines.push(format!(
+            "{} {} 能力 {} 输出 {}",
+            agent.id,
+            agent.name,
+            capabilities,
+            agent.outputs.join("、")
+        ));
+    }
+
+    Ok(lines.join("\n"))
+}
+
+fn agent_plan(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Box<dyn Error>> {
+    let goal = arguments.join(" ");
+    boxed(app.agent_plan(&goal).map(|plan| {
+        let mut lines = vec![format!("SelfForge Agent 计划 目标 {}", plan.goal)];
+        lines.push(format!("参与 Agent {}", plan.agents.len()));
+        for step in plan.steps {
+            lines.push(format!(
+                "{}. [{}] {} 能力 {} 验证 {}",
+                step.order, step.agent_id, step.title, step.capability, step.verification
+            ));
+        }
+        lines.join("\n")
+    }))
+}
+
 struct AiRequestArgs {
     dry_run: bool,
     timeout_ms: u64,
@@ -765,7 +804,7 @@ fn parse_resolve_error_args(arguments: Vec<String>) -> Result<ResolveErrorArgs, 
 }
 
 fn help_text() -> &'static str {
-    "SelfForge commands: init, validate, status, preflight, ai-config, ai-request [--dry-run] [--timeout-ms N] [prompt], advance [goal], promote, rollback [reason], cycle, run [--current|--candidate|--version VERSION] [--timeout-ms N] -- PROGRAM [ARGS...], runs [--current|--candidate|--version VERSION] [--limit N] [--failed] [--timed-out], errors [--current|--candidate|--version VERSION] [--limit N] [--open] [--resolved], record-error [--current|--candidate|--version VERSION] [--run-id RUN_ID] [--stage TEXT] [--solution TEXT], resolve-error [--current|--candidate|--version VERSION] --run-id RUN_ID [--verification TEXT], evolve [--patch|--minor|--major] [goal]"
+    "SelfForge commands: init, validate, status, preflight, ai-config, ai-request [--dry-run] [--timeout-ms N] [prompt], agents, agent-plan [goal], advance [goal], promote, rollback [reason], cycle, run [--current|--candidate|--version VERSION] [--timeout-ms N] -- PROGRAM [ARGS...], runs [--current|--candidate|--version VERSION] [--limit N] [--failed] [--timed-out], errors [--current|--candidate|--version VERSION] [--limit N] [--open] [--resolved], record-error [--current|--candidate|--version VERSION] [--run-id RUN_ID] [--stage TEXT] [--solution TEXT], resolve-error [--current|--candidate|--version VERSION] --run-id RUN_ID [--verification TEXT], evolve [--patch|--minor|--major] [goal]"
 }
 
 fn exit_with_error(error: Box<dyn Error>) -> ! {

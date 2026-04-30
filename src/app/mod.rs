@@ -1,7 +1,11 @@
+mod agent;
 mod ai_provider;
 mod error_archive;
 mod minimal_loop;
 
+pub use agent::{
+    AgentCapability, AgentDefinition, AgentError, AgentPlan, AgentPlanStep, AgentRegistry,
+};
 pub use ai_provider::{
     AiConfigError, AiConfigReport, AiExecutionError, AiExecutionReport, AiProviderRegistry,
     AiProviderStatus, AiRawHttpResponse, AiRequestError, AiRequestSpec, AiResponseError,

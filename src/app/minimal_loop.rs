@@ -1,3 +1,4 @@
+use super::agent::{AgentDefinition, AgentError, AgentPlan, AgentRegistry};
 use super::ai_provider::{
     AiConfigError, AiConfigReport, AiExecutionError, AiExecutionReport, AiProviderRegistry,
     AiRequestError, AiRequestSpec,
@@ -114,6 +115,14 @@ impl SelfForgeApp {
         timeout_ms: u64,
     ) -> Result<AiExecutionReport, AiExecutionError> {
         AiProviderRegistry::execute_text_request_project(&self.root, prompt, timeout_ms)
+    }
+
+    pub fn agents(&self) -> Vec<AgentDefinition> {
+        AgentRegistry::standard().agents().to_vec()
+    }
+
+    pub fn agent_plan(&self, goal: &str) -> Result<AgentPlan, AgentError> {
+        AgentRegistry::standard().plan_for_goal(goal)
     }
 
     pub fn advance(&self, goal: &str) -> Result<MinimalLoopReport, MinimalLoopError> {
