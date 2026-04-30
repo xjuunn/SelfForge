@@ -1,5 +1,8 @@
+use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
+use std::fs;
+use std::path::Path;
 
 const PROVIDER_ENV: &str = "SELFFORGE_AI_PROVIDER";
 const HTTP_METHOD_POST: &str = "POST";
@@ -91,11 +94,31 @@ struct AiProviderDefinition {
     protocol: AiProviderProtocol,
 }
 
+#[derive(Debug, Clone, Default)]
+struct ProjectEnv {
+    values: HashMap<String, String>,
+}
+
 pub struct AiProviderRegistry;
 
 impl AiProviderRegistry {
     pub fn inspect_env() -> Result<AiConfigReport, AiConfigError> {
         inspect_with(|key| std::env::var(key).ok())
+    }
+
+    pub fn inspect_project(root: impl AsRef<Path>) -> Result<AiConfigReport, AiConfigError> {
+        Self::inspect_project_with(root, |key| std::env::var(key).ok())
+    }
+
+    pub fn inspect_project_with<F>(
+        root: impl AsRef<Path>,
+        process_lookup: F,
+    ) -> Result<AiConfigReport, AiConfigError>
+    where
+        F: Fn(&str) -> Option<String>,
+    {
+        let project_env = ProjectEnv::load(root.as_ref());
+        inspect_with(|key| project_env.lookup(key, &process_lookup))
     }
 
     pub fn inspect_with<F>(lookup: F) -> Result<AiConfigReport, AiConfigError>
@@ -107,6 +130,25 @@ impl AiProviderRegistry {
 
     pub fn build_text_request_env(prompt: &str) -> Result<AiRequestSpec, AiRequestError> {
         build_text_request_with(prompt, |key| std::env::var(key).ok())
+    }
+
+    pub fn build_text_request_project(
+        root: impl AsRef<Path>,
+        prompt: &str,
+    ) -> Result<AiRequestSpec, AiRequestError> {
+        Self::build_text_request_project_with(root, prompt, |key| std::env::var(key).ok())
+    }
+
+    pub fn build_text_request_project_with<F>(
+        root: impl AsRef<Path>,
+        prompt: &str,
+        process_lookup: F,
+    ) -> Result<AiRequestSpec, AiRequestError>
+    where
+        F: Fn(&str) -> Option<String>,
+    {
+        let project_env = ProjectEnv::load(root.as_ref());
+        build_text_request_with(prompt, |key| project_env.lookup(key, &process_lookup))
     }
 
     pub fn build_text_request_with<F>(
@@ -216,6 +258,128 @@ impl From<AiConfigError> for AiRequestError {
     fn from(error: AiConfigError) -> Self {
         AiRequestError::Config(error)
     }
+}
+
+impl ProjectEnv {
+    fn load(root: &Path) -> Self {
+        let path = root.join(".env");
+        let Ok(contents) = fs::read_to_string(path) else {
+            return Self::default();
+        };
+
+        Self::parse(&contents)
+    }
+
+    fn parse(contents: &str) -> Self {
+        let mut values = HashMap::new();
+        for line in contents.lines() {
+            if let Some((key, value)) = parse_env_line(line) {
+                values.insert(key, value);
+            }
+        }
+
+        Self { values }
+    }
+
+    fn lookup<F>(&self, key: &str, process_lookup: &F) -> Option<String>
+    where
+        F: Fn(&str) -> Option<String>,
+    {
+        clean_env_value(process_lookup(key)).or_else(|| {
+            self.values
+                .get(key)
+                .and_then(|value| clean_env_value(Some(value.clone())))
+        })
+    }
+}
+
+fn parse_env_line(line: &str) -> Option<(String, String)> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() || trimmed.starts_with('#') {
+        return None;
+    }
+
+    let trimmed = trimmed
+        .strip_prefix("export ")
+        .unwrap_or(trimmed)
+        .trim_start();
+    let (key, value) = trimmed.split_once('=')?;
+    let key = key.trim();
+    if !is_valid_env_key(key) {
+        return None;
+    }
+
+    Some((key.to_string(), parse_env_value(value.trim())))
+}
+
+fn is_valid_env_key(key: &str) -> bool {
+    let mut chars = key.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if !(first == '_' || first.is_ascii_alphabetic()) {
+        return false;
+    }
+
+    chars.all(|character| character == '_' || character.is_ascii_alphanumeric())
+}
+
+fn parse_env_value(value: &str) -> String {
+    let value = value.trim();
+    if let Some(quoted) = strip_quoted_value(value, '"') {
+        return unescape_double_quoted_env_value(quoted);
+    }
+    if let Some(quoted) = strip_quoted_value(value, '\'') {
+        return quoted.to_string();
+    }
+
+    strip_unquoted_comment(value).trim().to_string()
+}
+
+fn strip_quoted_value(value: &str, quote: char) -> Option<&str> {
+    let value = value.strip_prefix(quote)?;
+    let end = value.rfind(quote)?;
+    Some(&value[..end])
+}
+
+fn unescape_double_quoted_env_value(value: &str) -> String {
+    let mut result = String::new();
+    let mut escaped = false;
+    for character in value.chars() {
+        if escaped {
+            match character {
+                'n' => result.push('\n'),
+                'r' => result.push('\r'),
+                't' => result.push('\t'),
+                '"' => result.push('"'),
+                '\\' => result.push('\\'),
+                other => {
+                    result.push('\\');
+                    result.push(other);
+                }
+            }
+            escaped = false;
+        } else if character == '\\' {
+            escaped = true;
+        } else {
+            result.push(character);
+        }
+    }
+    if escaped {
+        result.push('\\');
+    }
+    result
+}
+
+fn strip_unquoted_comment(value: &str) -> &str {
+    let mut previous_was_whitespace = false;
+    for (index, character) in value.char_indices() {
+        if character == '#' && previous_was_whitespace {
+            return &value[..index];
+        }
+        previous_was_whitespace = character.is_whitespace();
+    }
+    value
 }
 
 fn parse_text_response(

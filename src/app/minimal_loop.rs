@@ -100,11 +100,11 @@ impl SelfForgeApp {
     }
 
     pub fn ai_config(&self) -> Result<AiConfigReport, AiConfigError> {
-        AiProviderRegistry::inspect_env()
+        AiProviderRegistry::inspect_project(&self.root)
     }
 
     pub fn ai_request(&self, prompt: &str) -> Result<AiRequestSpec, AiRequestError> {
-        AiProviderRegistry::build_text_request_env(prompt)
+        AiProviderRegistry::build_text_request_project(&self.root, prompt)
     }
 
     pub fn advance(&self, goal: &str) -> Result<MinimalLoopReport, MinimalLoopError> {
