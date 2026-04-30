@@ -3,7 +3,7 @@ use serde_json::json;
 use std::error::Error;
 use std::fmt;
 use std::fs;
-use std::io;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::thread;
@@ -180,6 +180,7 @@ impl Runtime {
                 source,
             }
         })?;
+        append_run_index(&report)?;
 
         Ok(report)
     }
@@ -304,4 +305,45 @@ fn next_run_dir(workspace: &Path) -> Result<PathBuf, ExecutionError> {
     }
 
     Ok(runs_root.join(format!("run-{timestamp}-fallback")))
+}
+
+fn append_run_index(report: &ExecutionReport) -> Result<(), ExecutionError> {
+    let Some(runs_root) = report.run_dir.parent() else {
+        return Ok(());
+    };
+    let run_id = report
+        .run_dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("unknown");
+    let index_path = runs_root.join("index.jsonl");
+    let line = serde_json::to_string(&json!({
+        "run_id": run_id,
+        "version": &report.version,
+        "program": &report.program,
+        "args": &report.args,
+        "exit_code": report.exit_code,
+        "timed_out": report.timed_out,
+        "stdout_bytes": report.stdout.len(),
+        "stderr_bytes": report.stderr.len(),
+        "report_file": format!("{run_id}/report.json")
+    }))
+    .map_err(|source| ExecutionError::Serialize {
+        path: index_path.clone(),
+        source,
+    })? + "\n";
+
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&index_path)
+        .map_err(|source| ExecutionError::Io {
+            path: index_path.clone(),
+            source,
+        })?;
+    file.write_all(line.as_bytes())
+        .map_err(|source| ExecutionError::Io {
+            path: index_path,
+            source,
+        })
 }
