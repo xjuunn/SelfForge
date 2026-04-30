@@ -23,7 +23,7 @@ pub use version::{
     version_major_file_name, version_major_key,
 };
 
-pub const CURRENT_VERSION: &str = "v0.1.13";
+pub const CURRENT_VERSION: &str = "v0.1.14";
 
 #[cfg(test)]
 mod tests {
@@ -154,11 +154,11 @@ mod tests {
             .prepare_next_version("prepare the next controlled candidate")
             .expect("evolution should prepare a candidate version");
 
-        assert_eq!(report.current_version, "v0.1.13");
-        assert_eq!(report.next_version, "v0.1.14");
+        assert_eq!(report.current_version, "v0.1.14");
+        assert_eq!(report.next_version, "v0.1.15");
         assert!(root.join("workspaces").join("v0").is_dir());
         assert_workspace_structure(&root);
-        assert!(!root.join("workspaces").join("v0.1.14").exists());
+        assert!(!root.join("workspaces").join("v0.1.15").exists());
         assert!(root.join("forge").join("memory").join("v0.md").is_file());
         assert!(root.join("forge").join("tasks").join("v0.md").is_file());
         assert!(root.join("forge").join("errors").join("v0.md").is_file());
@@ -167,26 +167,26 @@ mod tests {
             !root
                 .join("forge")
                 .join("versions")
-                .join("v0.1.14.md")
+                .join("v0.1.15.md")
                 .exists()
         );
         let version_record = fs::read_to_string(root.join("forge").join("versions").join("v0.md"))
             .expect("major version record should be readable");
-        assert!(version_record.contains("## v0.1.14"));
-        assert_eq!(report.state.current_version, "v0.1.13");
+        assert!(version_record.contains("## v0.1.15"));
+        assert_eq!(report.state.current_version, "v0.1.14");
         assert_eq!(report.state.status, "candidate_prepared");
         assert_eq!(
             report.state.version_scheme.as_deref(),
             Some("semantic:vMAJOR.MINOR.PATCH")
         );
-        assert_eq!(report.state.candidate_version.as_deref(), Some("v0.1.14"));
+        assert_eq!(report.state.candidate_version.as_deref(), Some("v0.1.15"));
         assert_eq!(
             report.state.candidate_workspace.as_deref(),
             Some("workspaces/v0")
         );
 
         supervisor
-            .verify_version("v0.1.14")
+            .verify_version("v0.1.15")
             .expect("candidate layout should validate");
 
         cleanup(&root);
@@ -201,7 +201,7 @@ mod tests {
             .initialize_current_version()
             .expect("bootstrap should succeed before evolution");
         let mut state = ForgeState::load(&root).expect("state should be readable");
-        state.workspace = "workspaces/v0.1.13".to_string();
+        state.workspace = "workspaces/v0.1.14".to_string();
         state.save(&root).expect("state should be writable");
 
         let report = supervisor
@@ -236,7 +236,7 @@ mod tests {
         let task = fs::read_to_string(root.join("forge").join("tasks").join("v0.md"))
             .expect("task should remain readable");
         assert!(task.contains("人工任务计划"));
-        assert!(task.contains("## v0.1.14"));
+        assert!(task.contains("## v0.1.15"));
 
         cleanup(&root);
     }
@@ -272,10 +272,10 @@ mod tests {
             .promote_candidate()
             .expect("candidate should promote after validation");
 
-        assert_eq!(report.previous_version, "v0.1.13");
-        assert_eq!(report.promoted_version, "v0.1.14");
-        assert_eq!(report.state.current_version, "v0.1.14");
-        assert_eq!(report.state.parent_version.as_deref(), Some("v0.1.13"));
+        assert_eq!(report.previous_version, "v0.1.14");
+        assert_eq!(report.promoted_version, "v0.1.15");
+        assert_eq!(report.state.current_version, "v0.1.15");
+        assert_eq!(report.state.parent_version.as_deref(), Some("v0.1.14"));
         assert_eq!(report.state.candidate_version, None);
         assert_eq!(report.state.status, "active");
 
@@ -298,12 +298,12 @@ mod tests {
             .run_candidate_cycle()
             .expect("valid candidate should complete the cycle");
 
-        assert_eq!(report.previous_version, "v0.1.13");
-        assert_eq!(report.candidate_version, "v0.1.14");
+        assert_eq!(report.previous_version, "v0.1.14");
+        assert_eq!(report.candidate_version, "v0.1.15");
         assert_eq!(report.result, CycleResult::Promoted);
         assert!(report.candidate_validation.is_some());
         assert_eq!(report.failure, None);
-        assert_eq!(report.state.current_version, "v0.1.14");
+        assert_eq!(report.state.current_version, "v0.1.15");
         assert_eq!(report.state.candidate_version, None);
         assert_eq!(report.state.status, "active");
 
@@ -326,10 +326,10 @@ mod tests {
             .rollback_candidate("测试回滚")
             .expect("rollback should clear candidate state");
 
-        assert_eq!(report.current_version, "v0.1.13");
-        assert_eq!(report.rolled_back_version, "v0.1.14");
+        assert_eq!(report.current_version, "v0.1.14");
+        assert_eq!(report.rolled_back_version, "v0.1.15");
         assert_eq!(report.state.status, "rolled_back");
-        assert_eq!(report.state.current_version, "v0.1.13");
+        assert_eq!(report.state.current_version, "v0.1.14");
         assert_eq!(report.state.candidate_version, None);
         assert!(root.join("workspaces").join("v0").is_dir());
 
@@ -356,12 +356,12 @@ mod tests {
             .run_candidate_cycle()
             .expect("invalid candidate should roll back without promoting");
 
-        assert_eq!(report.previous_version, "v0.1.13");
+        assert_eq!(report.previous_version, "v0.1.14");
         assert_eq!(report.candidate_version, "v9.0.0");
         assert_eq!(report.result, CycleResult::RolledBack);
         assert!(report.candidate_validation.is_none());
         assert!(report.failure.is_some());
-        assert_eq!(report.state.current_version, "v0.1.13");
+        assert_eq!(report.state.current_version, "v0.1.14");
         assert_eq!(report.state.candidate_version, None);
         assert_eq!(report.state.status, "rolled_back");
 
@@ -382,10 +382,10 @@ mod tests {
             .expect("advance should prepare a candidate when none exists");
 
         assert_eq!(report.outcome, MinimalLoopOutcome::Prepared);
-        assert_eq!(report.starting_version, "v0.1.13");
-        assert_eq!(report.stable_version, "v0.1.13");
-        assert_eq!(report.candidate_version.as_deref(), Some("v0.1.14"));
-        assert_eq!(report.next_expected_version.as_deref(), Some("v0.1.15"));
+        assert_eq!(report.starting_version, "v0.1.14");
+        assert_eq!(report.stable_version, "v0.1.14");
+        assert_eq!(report.candidate_version.as_deref(), Some("v0.1.15"));
+        assert_eq!(report.next_expected_version.as_deref(), Some("v0.1.16"));
 
         cleanup(&root);
     }
@@ -407,10 +407,10 @@ mod tests {
             .expect("advance should promote valid candidate and prepare the next one");
 
         assert_eq!(report.outcome, MinimalLoopOutcome::PromotedAndPrepared);
-        assert_eq!(report.starting_version, "v0.1.13");
-        assert_eq!(report.stable_version, "v0.1.14");
-        assert_eq!(report.candidate_version.as_deref(), Some("v0.1.15"));
-        assert_eq!(report.next_expected_version.as_deref(), Some("v0.1.16"));
+        assert_eq!(report.starting_version, "v0.1.14");
+        assert_eq!(report.stable_version, "v0.1.15");
+        assert_eq!(report.candidate_version.as_deref(), Some("v0.1.16"));
+        assert_eq!(report.next_expected_version.as_deref(), Some("v0.1.17"));
 
         cleanup(&root);
     }
@@ -436,8 +436,8 @@ mod tests {
             .expect("advance should roll back invalid candidate");
 
         assert_eq!(report.outcome, MinimalLoopOutcome::RolledBack);
-        assert_eq!(report.starting_version, "v0.1.13");
-        assert_eq!(report.stable_version, "v0.1.13");
+        assert_eq!(report.starting_version, "v0.1.14");
+        assert_eq!(report.stable_version, "v0.1.14");
         assert_eq!(report.candidate_version.as_deref(), Some("v9.0.0"));
         assert_eq!(report.next_expected_version, None);
         assert!(report.failure.is_some());
@@ -564,11 +564,19 @@ mod tests {
         supervisor
             .execute_in_workspace(CURRENT_VERSION, &program, &["--help".to_string()], 0)
             .expect("timed out run should still be recorded");
+        supervisor
+            .execute_in_workspace("v0.9.0", &program, &["--help".to_string()], 5_000)
+            .expect("same major workspace may contain another small version run");
 
         let all_entries = supervisor
             .query_runs(CURRENT_VERSION, RunQuery::recent(10))
             .expect("all runs should be queryable");
         assert_eq!(all_entries.len(), 3);
+        let other_version_entries = supervisor
+            .query_runs("v0.9.0", RunQuery::recent(10))
+            .expect("same major workspace should still filter by requested version");
+        assert_eq!(other_version_entries.len(), 1);
+        assert_eq!(other_version_entries[0].version, "v0.9.0");
 
         let failed_entries = supervisor
             .query_runs(CURRENT_VERSION, RunQuery::failed(10))
@@ -592,6 +600,123 @@ mod tests {
             .query_runs(CURRENT_VERSION, RunQuery::failed(0))
             .expect("zero limit should be accepted");
         assert!(no_entries.is_empty());
+
+        cleanup(&root);
+    }
+
+    #[test]
+    fn error_archive_records_latest_failed_run_once() {
+        let root = temp_root("error-archive");
+        let supervisor = Supervisor::new(&root);
+
+        supervisor
+            .initialize_current_version()
+            .expect("bootstrap should succeed before error archive test");
+        let program = std::env::current_exe()
+            .expect("test executable path should be available")
+            .to_string_lossy()
+            .into_owned();
+
+        let failed = supervisor
+            .execute_in_workspace(
+                CURRENT_VERSION,
+                &program,
+                &["--self-forge-invalid-test-flag".to_string()],
+                5_000,
+            )
+            .expect("failed command should still produce an execution report");
+        let run_id = failed
+            .run_dir
+            .file_name()
+            .and_then(|name| name.to_str())
+            .expect("run directory should have a valid file name")
+            .to_string();
+
+        let archive = ErrorArchive::new(&root);
+        let report = archive
+            .record_failed_run(
+                CURRENT_VERSION,
+                None,
+                "Runtime 受控执行",
+                "修正命令参数后重新运行验证。",
+            )
+            .expect("latest failed run should be archived");
+
+        assert!(report.appended);
+        assert_eq!(report.run_id, run_id);
+        assert!(report.archive_path.ends_with("v0.md"));
+        let contents = fs::read_to_string(&report.archive_path)
+            .expect("error archive should be readable after append");
+        assert!(contents.contains(&format!("## {CURRENT_VERSION} 运行错误 {run_id}")));
+        assert!(contents.contains("运行编号"));
+        assert!(contents.contains("是否已解决"));
+        assert!(contents.contains("否。该记录为失败运行归档草稿"));
+
+        let duplicate = archive
+            .record_failed_run(
+                CURRENT_VERSION,
+                Some(&run_id),
+                "Runtime 受控执行",
+                "修正命令参数后重新运行验证。",
+            )
+            .expect("duplicate archive request should be idempotent");
+        assert!(!duplicate.appended);
+        let after_duplicate =
+            fs::read_to_string(&report.archive_path).expect("error archive should remain readable");
+        assert_eq!(contents, after_duplicate);
+
+        supervisor
+            .verify_current_version()
+            .expect("archived error document should pass validation");
+
+        cleanup(&root);
+    }
+
+    #[test]
+    fn error_archive_reports_when_no_failed_run_exists() {
+        let root = temp_root("error-archive-empty");
+        let supervisor = Supervisor::new(&root);
+
+        supervisor
+            .initialize_current_version()
+            .expect("bootstrap should succeed before empty error archive test");
+
+        let error = ErrorArchive::new(&root)
+            .record_failed_run(CURRENT_VERSION, None, "", "")
+            .expect_err("empty failed run list should be reported");
+
+        assert!(matches!(error, ErrorArchiveError::NoFailedRun { .. }));
+
+        cleanup(&root);
+    }
+
+    #[test]
+    fn error_archive_rejects_non_failed_run() {
+        let root = temp_root("error-archive-success");
+        let supervisor = Supervisor::new(&root);
+
+        supervisor
+            .initialize_current_version()
+            .expect("bootstrap should succeed before non-failed error archive test");
+        let program = std::env::current_exe()
+            .expect("test executable path should be available")
+            .to_string_lossy()
+            .into_owned();
+        let success = supervisor
+            .execute_in_workspace(CURRENT_VERSION, &program, &["--help".to_string()], 5_000)
+            .expect("success command should be recorded");
+        let run_id = success
+            .run_dir
+            .file_name()
+            .and_then(|name| name.to_str())
+            .expect("run directory should have a valid file name")
+            .to_string();
+
+        let error = ErrorArchive::new(&root)
+            .record_failed_run(CURRENT_VERSION, Some(&run_id), "", "")
+            .expect_err("non-failed run must not be archived as an error");
+
+        assert!(matches!(error, ErrorArchiveError::RunNotFailed { .. }));
 
         cleanup(&root);
     }
@@ -724,4 +849,7 @@ mod tests {
         cleanup(&root);
     }
 }
-pub use app::{MinimalLoopOutcome, MinimalLoopReport, SelfForgeApp};
+pub use app::{
+    ErrorArchive, ErrorArchiveError, ErrorArchiveReport, MinimalLoopOutcome, MinimalLoopReport,
+    SelfForgeApp,
+};

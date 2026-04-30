@@ -249,7 +249,7 @@ impl Runtime {
         Ok(entries
             .into_iter()
             .rev()
-            .filter(|entry| query.matches(entry))
+            .filter(|entry| entry.version == version && query.matches(entry))
             .take(query.limit)
             .collect())
     }

@@ -1,6 +1,6 @@
 use self_forge::{
-    CURRENT_VERSION, CycleResult, ForgeState, MinimalLoopOutcome, RunQuery, SelfForgeApp,
-    Supervisor, VersionBump,
+    CURRENT_VERSION, CycleResult, ErrorArchive, ForgeState, MinimalLoopOutcome, RunQuery,
+    SelfForgeApp, Supervisor, VersionBump,
 };
 use std::env;
 use std::error::Error;
@@ -144,6 +144,39 @@ fn main() {
                     }),
             )
         }
+        "record-error" => {
+            let command = match parse_record_error_args(args.collect()) {
+                Ok(command) => command,
+                Err(error) => exit_with_error(error),
+            };
+            let archive = ErrorArchive::new(&root);
+            boxed(
+                archive
+                    .record_failed_run(
+                        &command.version,
+                        command.run_id.as_deref(),
+                        &command.stage,
+                        &command.solution,
+                    )
+                    .map(|report| {
+                        if report.appended {
+                            format!(
+                                "SelfForge recorded error {} for {} in {}",
+                                report.run_id,
+                                report.version,
+                                report.archive_path.display()
+                            )
+                        } else {
+                            format!(
+                                "SelfForge error {} for {} already recorded in {}",
+                                report.run_id,
+                                report.version,
+                                report.archive_path.display()
+                            )
+                        }
+                    }),
+            )
+        }
         "help" | "-h" | "--help" => {
             println!("{}", help_text());
             return;
@@ -239,6 +272,13 @@ struct RunsArgs {
     limit: usize,
     failed_only: bool,
     timed_out_only: bool,
+}
+
+struct RecordErrorArgs {
+    version: String,
+    run_id: Option<String>,
+    stage: String,
+    solution: String,
 }
 
 fn parse_run_args(arguments: Vec<String>) -> Result<RunArgs, Box<dyn Error>> {
@@ -347,8 +387,66 @@ fn parse_runs_args(arguments: Vec<String>) -> Result<RunsArgs, Box<dyn Error>> {
     })
 }
 
+fn parse_record_error_args(arguments: Vec<String>) -> Result<RecordErrorArgs, Box<dyn Error>> {
+    let state = ForgeState::load(env::current_dir()?)?;
+    let mut version = state.current_version.clone();
+    let mut run_id = None;
+    let mut stage = "Runtime 受控执行".to_string();
+    let mut solution = "待分析并修复后重新运行验证。".to_string();
+    let mut index = 0;
+
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "--current" => {
+                version = state.current_version.clone();
+                index += 1;
+            }
+            "--candidate" => {
+                version = state.candidate_version.clone().ok_or("当前没有候选版本")?;
+                index += 1;
+            }
+            "--version" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--version 需要版本号".into());
+                };
+                version = value.clone();
+                index += 2;
+            }
+            "--run-id" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--run-id 需要运行编号".into());
+                };
+                run_id = Some(value.clone());
+                index += 2;
+            }
+            "--stage" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--stage 需要阶段说明".into());
+                };
+                stage = value.clone();
+                index += 2;
+            }
+            "--solution" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--solution 需要解决方案".into());
+                };
+                solution = value.clone();
+                index += 2;
+            }
+            other => return Err(format!("未知 record-error 参数: {other}").into()),
+        }
+    }
+
+    Ok(RecordErrorArgs {
+        version,
+        run_id,
+        stage,
+        solution,
+    })
+}
+
 fn help_text() -> &'static str {
-    "SelfForge commands: init, validate, status, advance [goal], promote, rollback [reason], cycle, run [--current|--candidate|--version VERSION] [--timeout-ms N] -- PROGRAM [ARGS...], runs [--current|--candidate|--version VERSION] [--limit N] [--failed] [--timed-out], evolve [--patch|--minor|--major] [goal]"
+    "SelfForge commands: init, validate, status, advance [goal], promote, rollback [reason], cycle, run [--current|--candidate|--version VERSION] [--timeout-ms N] -- PROGRAM [ARGS...], runs [--current|--candidate|--version VERSION] [--limit N] [--failed] [--timed-out], record-error [--current|--candidate|--version VERSION] [--run-id RUN_ID] [--stage TEXT] [--solution TEXT], evolve [--patch|--minor|--major] [goal]"
 }
 
 fn exit_with_error(error: Box<dyn Error>) -> ! {
