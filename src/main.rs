@@ -177,6 +177,34 @@ fn main() {
                     }),
             )
         }
+        "resolve-error" => {
+            let command = match parse_resolve_error_args(args.collect()) {
+                Ok(command) => command,
+                Err(error) => exit_with_error(error),
+            };
+            let archive = ErrorArchive::new(&root);
+            boxed(
+                archive
+                    .resolve_run_error(&command.version, &command.run_id, &command.verification)
+                    .map(|report| {
+                        if report.updated {
+                            format!(
+                                "SelfForge resolved error {} for {} in {}",
+                                report.run_id,
+                                report.version,
+                                report.archive_path.display()
+                            )
+                        } else {
+                            format!(
+                                "SelfForge error {} for {} already resolved in {}",
+                                report.run_id,
+                                report.version,
+                                report.archive_path.display()
+                            )
+                        }
+                    }),
+            )
+        }
         "help" | "-h" | "--help" => {
             println!("{}", help_text());
             return;
@@ -279,6 +307,12 @@ struct RecordErrorArgs {
     run_id: Option<String>,
     stage: String,
     solution: String,
+}
+
+struct ResolveErrorArgs {
+    version: String,
+    run_id: String,
+    verification: String,
 }
 
 fn parse_run_args(arguments: Vec<String>) -> Result<RunArgs, Box<dyn Error>> {
@@ -445,8 +479,59 @@ fn parse_record_error_args(arguments: Vec<String>) -> Result<RecordErrorArgs, Bo
     })
 }
 
+fn parse_resolve_error_args(arguments: Vec<String>) -> Result<ResolveErrorArgs, Box<dyn Error>> {
+    let state = ForgeState::load(env::current_dir()?)?;
+    let mut version = state.current_version.clone();
+    let mut run_id = None;
+    let mut verification = "已通过验证命令确认。".to_string();
+    let mut index = 0;
+
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "--current" => {
+                version = state.current_version.clone();
+                index += 1;
+            }
+            "--candidate" => {
+                version = state.candidate_version.clone().ok_or("当前没有候选版本")?;
+                index += 1;
+            }
+            "--version" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--version 需要版本号".into());
+                };
+                version = value.clone();
+                index += 2;
+            }
+            "--run-id" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--run-id 需要运行编号".into());
+                };
+                run_id = Some(value.clone());
+                index += 2;
+            }
+            "--verification" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--verification 需要验证依据".into());
+                };
+                verification = value.clone();
+                index += 2;
+            }
+            other => return Err(format!("未知 resolve-error 参数: {other}").into()),
+        }
+    }
+
+    let run_id = run_id.ok_or("resolve-error 需要 --run-id")?;
+
+    Ok(ResolveErrorArgs {
+        version,
+        run_id,
+        verification,
+    })
+}
+
 fn help_text() -> &'static str {
-    "SelfForge commands: init, validate, status, advance [goal], promote, rollback [reason], cycle, run [--current|--candidate|--version VERSION] [--timeout-ms N] -- PROGRAM [ARGS...], runs [--current|--candidate|--version VERSION] [--limit N] [--failed] [--timed-out], record-error [--current|--candidate|--version VERSION] [--run-id RUN_ID] [--stage TEXT] [--solution TEXT], evolve [--patch|--minor|--major] [goal]"
+    "SelfForge commands: init, validate, status, advance [goal], promote, rollback [reason], cycle, run [--current|--candidate|--version VERSION] [--timeout-ms N] -- PROGRAM [ARGS...], runs [--current|--candidate|--version VERSION] [--limit N] [--failed] [--timed-out], record-error [--current|--candidate|--version VERSION] [--run-id RUN_ID] [--stage TEXT] [--solution TEXT], resolve-error [--current|--candidate|--version VERSION] --run-id RUN_ID [--verification TEXT], evolve [--patch|--minor|--major] [goal]"
 }
 
 fn exit_with_error(error: Box<dyn Error>) -> ! {

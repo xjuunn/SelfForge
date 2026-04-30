@@ -168,6 +168,8 @@ workspace 根目录必须保持极简，只允许 `README.md`、`.gitignore` 和
 
 失败运行需要进入错误归档时，必须优先使用 `record-error [--current|--candidate|--version VERSION] [--run-id RUN_ID] [--stage TEXT] [--solution TEXT]`。未指定 `--run-id` 时记录最近一条失败运行。该命令只能追加到当前 major 的 `forge/errors/vMAJOR.md`，禁止为小版本或单次运行创建新的错误文件。
 
+已归档错误通过验证后，必须优先使用 `resolve-error [--current|--candidate|--version VERSION] --run-id RUN_ID [--verification TEXT]` 标记为已解决。解决操作必须更新同一个 major 聚合错误文件中的对应小节，并记录验证依据，禁止创建新的解决记录文件。
+
 源码扩展必须优先进入 `src/app/` 应用用例层。CLI 只能负责参数解析和输出，不允许堆叠业务流程；`supervisor` 负责编排；`runtime` 负责验证和受控执行；`evolution` 负责版本状态机；`state` 只负责持久化读写。最小闭环的简单入口是 `advance [goal]`。
 
 ---

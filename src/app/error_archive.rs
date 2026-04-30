@@ -18,6 +18,14 @@ pub struct ErrorArchiveReport {
     pub appended: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ErrorResolutionReport {
+    pub version: String,
+    pub run_id: String,
+    pub archive_path: PathBuf,
+    pub updated: bool,
+}
+
 #[derive(Debug)]
 pub enum ErrorArchiveError {
     Execution(ExecutionError),
@@ -25,6 +33,8 @@ pub enum ErrorArchiveError {
     NoFailedRun { version: String },
     RunNotFound { version: String, run_id: String },
     RunNotFailed { version: String, run_id: String },
+    ArchivedErrorNotFound { version: String, run_id: String },
+    MalformedArchivedError { version: String, run_id: String },
     Io { path: PathBuf, source: io::Error },
 }
 
@@ -110,6 +120,76 @@ impl ErrorArchive {
         })
     }
 
+    pub fn resolve_run_error(
+        &self,
+        version: impl AsRef<str>,
+        run_id: &str,
+        verification: &str,
+    ) -> Result<ErrorResolutionReport, ErrorArchiveError> {
+        let version = version.as_ref().to_string();
+        let archive_path = self
+            .root
+            .join("forge")
+            .join("errors")
+            .join(version_major_file_name(&version)?);
+        let contents =
+            fs::read_to_string(&archive_path).map_err(|source| ErrorArchiveError::Io {
+                path: archive_path.clone(),
+                source,
+            })?;
+        let section_title = format!("## {version} 运行错误 {run_id}");
+        let Some(start) = contents.find(&section_title) else {
+            return Err(ErrorArchiveError::ArchivedErrorNotFound {
+                version,
+                run_id: run_id.to_string(),
+            });
+        };
+        let rest = &contents[start + section_title.len()..];
+        let end = rest
+            .find("\n## ")
+            .map(|offset| start + section_title.len() + offset)
+            .unwrap_or(contents.len());
+        let section = &contents[start..end];
+        let marker = "# 是否已解决\n\n";
+        let Some(marker_start) = section.find(marker) else {
+            return Err(ErrorArchiveError::MalformedArchivedError {
+                version,
+                run_id: run_id.to_string(),
+            });
+        };
+        let body_start = marker_start + marker.len();
+        let current_status = &section[body_start..].trim();
+
+        if current_status.starts_with('是') {
+            return Ok(ErrorResolutionReport {
+                version,
+                run_id: run_id.to_string(),
+                archive_path,
+                updated: false,
+            });
+        }
+
+        let verification = default_when_blank(verification, "已通过验证命令确认。");
+        let resolved_status = format!("是。验证依据：{verification}\n");
+        let new_section = format!("{}{}", &section[..body_start], resolved_status);
+        let mut updated_contents = String::new();
+        updated_contents.push_str(&contents[..start]);
+        updated_contents.push_str(&new_section);
+        updated_contents.push_str(&contents[end..]);
+
+        fs::write(&archive_path, updated_contents).map_err(|source| ErrorArchiveError::Io {
+            path: archive_path.clone(),
+            source,
+        })?;
+
+        Ok(ErrorResolutionReport {
+            version,
+            run_id: run_id.to_string(),
+            archive_path,
+            updated: true,
+        })
+    }
+
     fn latest_failed_run(&self, version: &str) -> Result<RunIndexEntry, ErrorArchiveError> {
         let mut entries = self
             .supervisor
@@ -149,6 +229,15 @@ impl fmt::Display for ErrorArchiveError {
             ErrorArchiveError::RunNotFailed { version, run_id } => {
                 write!(formatter, "版本 {version} 的运行记录 {run_id} 不是失败记录")
             }
+            ErrorArchiveError::ArchivedErrorNotFound { version, run_id } => {
+                write!(formatter, "版本 {version} 未找到已归档错误 {run_id}")
+            }
+            ErrorArchiveError::MalformedArchivedError { version, run_id } => {
+                write!(
+                    formatter,
+                    "版本 {version} 的已归档错误 {run_id} 缺少解决状态字段"
+                )
+            }
             ErrorArchiveError::Io { path, source } => {
                 write!(formatter, "{}: {}", path.display(), source)
             }
@@ -164,6 +253,8 @@ impl Error for ErrorArchiveError {
             ErrorArchiveError::NoFailedRun { .. } => None,
             ErrorArchiveError::RunNotFound { .. } => None,
             ErrorArchiveError::RunNotFailed { .. } => None,
+            ErrorArchiveError::ArchivedErrorNotFound { .. } => None,
+            ErrorArchiveError::MalformedArchivedError { .. } => None,
             ErrorArchiveError::Io { source, .. } => Some(source),
         }
     }
