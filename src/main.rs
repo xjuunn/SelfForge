@@ -104,6 +104,39 @@ fn main() {
                 )
             }))
         }
+        "runs" => {
+            let runs = match parse_runs_args(args.collect()) {
+                Ok(runs) => runs,
+                Err(error) => exit_with_error(error),
+            };
+            boxed(
+                supervisor
+                    .list_runs(&runs.version, runs.limit)
+                    .map(|entries| {
+                        if entries.is_empty() {
+                            return format!("SelfForge runs {}: no records", runs.version);
+                        }
+
+                        let mut lines = vec![format!(
+                            "SelfForge runs {}: {} record(s)",
+                            runs.version,
+                            entries.len()
+                        )];
+                        for entry in entries {
+                            lines.push(format!(
+                        "{} exit {:?} timed_out {} stdout {} bytes stderr {} bytes report {}",
+                        entry.run_id,
+                        entry.exit_code,
+                        entry.timed_out,
+                        entry.stdout_bytes,
+                        entry.stderr_bytes,
+                        entry.report_file
+                    ));
+                        }
+                        lines.join("\n")
+                    }),
+            )
+        }
         "help" | "-h" | "--help" => {
             println!("{}", help_text());
             return;
@@ -194,6 +227,11 @@ struct RunArgs {
     timeout_ms: u64,
 }
 
+struct RunsArgs {
+    version: String,
+    limit: usize,
+}
+
 fn parse_run_args(arguments: Vec<String>) -> Result<RunArgs, Box<dyn Error>> {
     let state = ForgeState::load(env::current_dir()?)?;
     let mut version = CURRENT_VERSION.to_string();
@@ -248,8 +286,45 @@ fn parse_run_args(arguments: Vec<String>) -> Result<RunArgs, Box<dyn Error>> {
     })
 }
 
+fn parse_runs_args(arguments: Vec<String>) -> Result<RunsArgs, Box<dyn Error>> {
+    let state = ForgeState::load(env::current_dir()?)?;
+    let mut version = state.current_version.clone();
+    let mut limit = 10;
+    let mut index = 0;
+
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "--current" => {
+                version = state.current_version.clone();
+                index += 1;
+            }
+            "--candidate" => {
+                version = state.candidate_version.clone().ok_or("当前没有候选版本")?;
+                index += 1;
+            }
+            "--version" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--version 需要版本号".into());
+                };
+                version = value.clone();
+                index += 2;
+            }
+            "--limit" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--limit 需要数量".into());
+                };
+                limit = value.parse::<usize>()?;
+                index += 2;
+            }
+            other => return Err(format!("未知 runs 参数: {other}").into()),
+        }
+    }
+
+    Ok(RunsArgs { version, limit })
+}
+
 fn help_text() -> &'static str {
-    "SelfForge commands: init, validate, status, advance [goal], promote, rollback [reason], cycle, run [--current|--candidate|--version VERSION] [--timeout-ms N] -- PROGRAM [ARGS...], evolve [--patch|--minor|--major] [goal]"
+    "SelfForge commands: init, validate, status, advance [goal], promote, rollback [reason], cycle, run [--current|--candidate|--version VERSION] [--timeout-ms N] -- PROGRAM [ARGS...], runs [--current|--candidate|--version VERSION] [--limit N], evolve [--patch|--minor|--major] [goal]"
 }
 
 fn exit_with_error(error: Box<dyn Error>) -> ! {

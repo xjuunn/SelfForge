@@ -1,4 +1,5 @@
 use crate::layout::{ForgeError, SelfForge, ValidationReport, workspace_name};
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::error::Error;
 use std::fmt;
@@ -27,6 +28,19 @@ pub struct ExecutionReport {
     pub run_dir: PathBuf,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RunIndexEntry {
+    pub run_id: String,
+    pub version: String,
+    pub program: String,
+    pub args: Vec<String>,
+    pub exit_code: Option<i32>,
+    pub timed_out: bool,
+    pub stdout_bytes: usize,
+    pub stderr_bytes: usize,
+    pub report_file: String,
+}
+
 #[derive(Debug)]
 pub enum ExecutionError {
     Forge(ForgeError),
@@ -40,6 +54,10 @@ pub enum ExecutionError {
         source: io::Error,
     },
     Serialize {
+        path: PathBuf,
+        source: serde_json::Error,
+    },
+    Parse {
         path: PathBuf,
         source: serde_json::Error,
     },
@@ -133,6 +151,43 @@ impl Runtime {
                 None => thread::sleep(Duration::from_millis(5)),
             }
         }
+    }
+
+    pub fn list_runs(
+        &self,
+        version: impl AsRef<str>,
+        limit: usize,
+    ) -> Result<Vec<RunIndexEntry>, ExecutionError> {
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+
+        let version = version.as_ref().to_string();
+        let workspace = self.canonical_workspace(&version)?;
+        self.verify_layout_for_version(&version)
+            .map_err(ExecutionError::Forge)?;
+
+        let index_path = workspace.join("sandbox").join("runs").join("index.jsonl");
+        if !index_path.exists() {
+            return Ok(Vec::new());
+        }
+
+        let contents = fs::read_to_string(&index_path).map_err(|source| ExecutionError::Io {
+            path: index_path.clone(),
+            source,
+        })?;
+        let mut entries = Vec::new();
+        for line in contents.lines().filter(|line| !line.trim().is_empty()) {
+            let entry = serde_json::from_str::<RunIndexEntry>(line).map_err(|source| {
+                ExecutionError::Parse {
+                    path: index_path.clone(),
+                    source,
+                }
+            })?;
+            entries.push(entry);
+        }
+
+        Ok(entries.into_iter().rev().take(limit).collect())
     }
 
     fn persist_execution_report(
@@ -240,6 +295,14 @@ impl fmt::Display for ExecutionError {
                     source
                 )
             }
+            ExecutionError::Parse { path, source } => {
+                write!(
+                    formatter,
+                    "解析执行索引 {} 失败: {}",
+                    path.display(),
+                    source
+                )
+            }
             ExecutionError::Spawn { program, source } => {
                 write!(formatter, "启动命令 {program} 失败: {source}")
             }
@@ -258,6 +321,7 @@ impl Error for ExecutionError {
             ExecutionError::WorkspacePath { .. } => None,
             ExecutionError::Io { source, .. } => Some(source),
             ExecutionError::Serialize { source, .. } => Some(source),
+            ExecutionError::Parse { source, .. } => Some(source),
             ExecutionError::Spawn { source, .. } => Some(source),
             ExecutionError::Wait { source, .. } => Some(source),
         }
