@@ -6,6 +6,8 @@ use std::env;
 use std::error::Error;
 use std::process;
 
+const DEFAULT_AI_TIMEOUT_MS: u64 = 60_000;
+
 fn main() {
     let root = match env::current_dir() {
         Ok(root) => root,
@@ -379,23 +381,86 @@ fn ai_config(app: &SelfForgeApp) -> Result<String, Box<dyn Error>> {
 }
 
 fn ai_request(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Box<dyn Error>> {
-    let prompt = arguments.join(" ");
-    boxed(app.ai_request(&prompt).map(|spec| {
-        let body_size = spec.body.to_string().len();
+    let command = parse_ai_request_args(arguments)?;
+    if command.dry_run {
+        return boxed(app.ai_request_preview(&command.prompt).map(|spec| {
+            let body_size = spec.body.to_string().len();
 
-        format!(
-            "SelfForge AI 请求 提供商 {} 方法 {} 地址 {} 模型 {} 协议 {} 认证头 {} 密钥变量 {} 内容类型 {} 请求体字节 {}",
-            spec.provider_id,
-            spec.method,
-            spec.url,
-            spec.model,
-            spec.protocol,
-            spec.auth_header_name,
-            spec.api_key_env_var,
-            spec.content_type,
-            body_size
-        )
-    }))
+            format!(
+                "SelfForge AI 请求预览 提供商 {} 方法 {} 地址 {} 模型 {} 协议 {} 认证头 {} 密钥变量 {} 内容类型 {} 请求体字节 {}",
+                spec.provider_id,
+                spec.method,
+                spec.url,
+                spec.model,
+                spec.protocol,
+                spec.auth_header_name,
+                spec.api_key_env_var,
+                spec.content_type,
+                body_size
+            )
+        }));
+    }
+
+    boxed(
+        app.ai_request(&command.prompt, command.timeout_ms)
+            .map(|report| {
+                format!(
+                    "SelfForge AI 响应 提供商 {} 模型 {} 协议 {} 状态码 {} 响应字节 {}\n{}",
+                    report.response.provider_id,
+                    report.response.model,
+                    report.response.protocol,
+                    report.status_code,
+                    report.response.raw_bytes,
+                    report.response.text
+                )
+            }),
+    )
+}
+
+struct AiRequestArgs {
+    dry_run: bool,
+    timeout_ms: u64,
+    prompt: String,
+}
+
+fn parse_ai_request_args(arguments: Vec<String>) -> Result<AiRequestArgs, Box<dyn Error>> {
+    let mut dry_run = false;
+    let mut timeout_ms = DEFAULT_AI_TIMEOUT_MS;
+    let mut prompt_parts = Vec::new();
+    let mut index = 0;
+
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "--dry-run" => {
+                dry_run = true;
+                index += 1;
+            }
+            "--timeout-ms" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--timeout-ms 需要毫秒数".into());
+                };
+                timeout_ms = value.parse::<u64>()?;
+                index += 2;
+            }
+            "--" => {
+                prompt_parts.extend(arguments[index + 1..].iter().cloned());
+                break;
+            }
+            other if other.starts_with("--") => {
+                return Err(format!("未知 ai-request 参数: {other}").into());
+            }
+            _ => {
+                prompt_parts.extend(arguments[index..].iter().cloned());
+                break;
+            }
+        }
+    }
+
+    Ok(AiRequestArgs {
+        dry_run,
+        timeout_ms,
+        prompt: prompt_parts.join(" "),
+    })
 }
 
 struct RunArgs {
@@ -700,7 +765,7 @@ fn parse_resolve_error_args(arguments: Vec<String>) -> Result<ResolveErrorArgs, 
 }
 
 fn help_text() -> &'static str {
-    "SelfForge commands: init, validate, status, preflight, ai-config, ai-request [prompt], advance [goal], promote, rollback [reason], cycle, run [--current|--candidate|--version VERSION] [--timeout-ms N] -- PROGRAM [ARGS...], runs [--current|--candidate|--version VERSION] [--limit N] [--failed] [--timed-out], errors [--current|--candidate|--version VERSION] [--limit N] [--open] [--resolved], record-error [--current|--candidate|--version VERSION] [--run-id RUN_ID] [--stage TEXT] [--solution TEXT], resolve-error [--current|--candidate|--version VERSION] --run-id RUN_ID [--verification TEXT], evolve [--patch|--minor|--major] [goal]"
+    "SelfForge commands: init, validate, status, preflight, ai-config, ai-request [--dry-run] [--timeout-ms N] [prompt], advance [goal], promote, rollback [reason], cycle, run [--current|--candidate|--version VERSION] [--timeout-ms N] -- PROGRAM [ARGS...], runs [--current|--candidate|--version VERSION] [--limit N] [--failed] [--timed-out], errors [--current|--candidate|--version VERSION] [--limit N] [--open] [--resolved], record-error [--current|--candidate|--version VERSION] [--run-id RUN_ID] [--stage TEXT] [--solution TEXT], resolve-error [--current|--candidate|--version VERSION] --run-id RUN_ID [--verification TEXT], evolve [--patch|--minor|--major] [goal]"
 }
 
 fn exit_with_error(error: Box<dyn Error>) -> ! {

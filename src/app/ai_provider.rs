@@ -3,6 +3,7 @@ use std::error::Error;
 use std::fmt;
 use std::fs;
 use std::path::Path;
+use std::time::Duration;
 
 const PROVIDER_ENV: &str = "SELFFORGE_AI_PROVIDER";
 const HTTP_METHOD_POST: &str = "POST";
@@ -52,6 +53,19 @@ pub struct AiTextResponse {
     pub raw_bytes: usize,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct AiExecutionReport {
+    pub request: AiRequestSpec,
+    pub response: AiTextResponse,
+    pub status_code: u16,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AiRawHttpResponse {
+    pub status_code: u16,
+    pub body: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AiConfigError {
     UnknownProvider {
@@ -66,6 +80,22 @@ pub enum AiRequestError {
     MissingProvider,
     MissingApiKey { provider: String },
     EmptyPrompt,
+}
+
+#[derive(Debug)]
+pub enum AiExecutionError {
+    Request(AiRequestError),
+    MissingApiKey {
+        api_key_env_var: String,
+    },
+    Transport {
+        message: String,
+    },
+    HttpStatus {
+        status_code: u16,
+        body_preview: String,
+    },
+    Response(AiResponseError),
 }
 
 #[derive(Debug)]
@@ -167,6 +197,56 @@ impl AiProviderRegistry {
     ) -> Result<AiTextResponse, AiResponseError> {
         parse_text_response(request, response_body)
     }
+
+    pub fn execute_text_request_project(
+        root: impl AsRef<Path>,
+        prompt: &str,
+        timeout_ms: u64,
+    ) -> Result<AiExecutionReport, AiExecutionError> {
+        Self::execute_text_request_project_with(
+            root,
+            prompt,
+            timeout_ms,
+            |key| std::env::var(key).ok(),
+            send_http_request,
+        )
+    }
+
+    pub fn execute_text_request_project_with<F, S>(
+        root: impl AsRef<Path>,
+        prompt: &str,
+        timeout_ms: u64,
+        process_lookup: F,
+        send: S,
+    ) -> Result<AiExecutionReport, AiExecutionError>
+    where
+        F: Fn(&str) -> Option<String>,
+        S: FnOnce(&AiRequestSpec, &str, u64) -> Result<AiRawHttpResponse, AiExecutionError>,
+    {
+        let project_env = ProjectEnv::load(root.as_ref());
+        let lookup = |key: &str| project_env.lookup(key, &process_lookup);
+        let request = build_text_request_with(prompt, &lookup)?;
+        let api_key = clean_env_value(lookup(&request.api_key_env_var)).ok_or_else(|| {
+            AiExecutionError::MissingApiKey {
+                api_key_env_var: request.api_key_env_var.clone(),
+            }
+        })?;
+
+        let raw = send(&request, &api_key, timeout_ms)?;
+        if !(200..300).contains(&raw.status_code) {
+            return Err(AiExecutionError::HttpStatus {
+                status_code: raw.status_code,
+                body_preview: response_preview(&raw.body, &api_key),
+            });
+        }
+
+        let response = parse_text_response(&request, &raw.body)?;
+        Ok(AiExecutionReport {
+            request,
+            response,
+            status_code: raw.status_code,
+        })
+    }
 }
 
 impl AiConfigReport {
@@ -226,6 +306,53 @@ impl Error for AiRequestError {
             | AiRequestError::MissingApiKey { .. }
             | AiRequestError::EmptyPrompt => None,
         }
+    }
+}
+
+impl fmt::Display for AiExecutionError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AiExecutionError::Request(error) => write!(formatter, "{error}"),
+            AiExecutionError::MissingApiKey { api_key_env_var } => write!(
+                formatter,
+                "AI 请求执行缺少 API Key，请设置 `{api_key_env_var}` 后重试"
+            ),
+            AiExecutionError::Transport { message } => {
+                write!(formatter, "AI HTTP 请求失败：{message}")
+            }
+            AiExecutionError::HttpStatus {
+                status_code,
+                body_preview,
+            } => write!(
+                formatter,
+                "AI HTTP 请求返回失败状态码 {status_code}，响应摘要：{body_preview}"
+            ),
+            AiExecutionError::Response(error) => write!(formatter, "AI 响应解析失败：{error}"),
+        }
+    }
+}
+
+impl Error for AiExecutionError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            AiExecutionError::Request(error) => Some(error),
+            AiExecutionError::Response(error) => Some(error),
+            AiExecutionError::MissingApiKey { .. }
+            | AiExecutionError::Transport { .. }
+            | AiExecutionError::HttpStatus { .. } => None,
+        }
+    }
+}
+
+impl From<AiRequestError> for AiExecutionError {
+    fn from(error: AiRequestError) -> Self {
+        AiExecutionError::Request(error)
+    }
+}
+
+impl From<AiResponseError> for AiExecutionError {
+    fn from(error: AiResponseError) -> Self {
+        AiExecutionError::Response(error)
     }
 }
 
@@ -291,6 +418,60 @@ impl ProjectEnv {
                 .and_then(|value| clean_env_value(Some(value.clone())))
         })
     }
+}
+
+fn send_http_request(
+    request: &AiRequestSpec,
+    api_key: &str,
+    timeout_ms: u64,
+) -> Result<AiRawHttpResponse, AiExecutionError> {
+    let timeout = Duration::from_millis(timeout_ms);
+    let client = reqwest::blocking::Client::builder()
+        .timeout(timeout)
+        .build()
+        .map_err(|error| AiExecutionError::Transport {
+            message: error.to_string(),
+        })?;
+    let response = client
+        .post(&request.url)
+        .header(reqwest::header::CONTENT_TYPE, request.content_type.as_str())
+        .header(
+            request.auth_header_name.as_str(),
+            auth_header_value(request, api_key),
+        )
+        .body(request.body.to_string())
+        .send()
+        .map_err(|error| AiExecutionError::Transport {
+            message: error.to_string(),
+        })?;
+    let status_code = response.status().as_u16();
+    let body = response
+        .text()
+        .map_err(|error| AiExecutionError::Transport {
+            message: error.to_string(),
+        })?;
+
+    Ok(AiRawHttpResponse { status_code, body })
+}
+
+fn auth_header_value(request: &AiRequestSpec, api_key: &str) -> String {
+    if request
+        .auth_header_name
+        .eq_ignore_ascii_case("authorization")
+    {
+        format!("Bearer {api_key}")
+    } else {
+        api_key.to_string()
+    }
+}
+
+fn response_preview(body: &str, api_key: &str) -> String {
+    let redacted = body.replace(api_key, "[已脱敏]");
+    let mut preview = redacted.chars().take(400).collect::<String>();
+    if redacted.chars().count() > 400 {
+        preview.push_str("...");
+    }
+    preview
 }
 
 fn parse_env_line(line: &str) -> Option<(String, String)> {

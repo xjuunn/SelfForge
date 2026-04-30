@@ -1,5 +1,6 @@
 use super::ai_provider::{
-    AiConfigError, AiConfigReport, AiProviderRegistry, AiRequestError, AiRequestSpec,
+    AiConfigError, AiConfigReport, AiExecutionError, AiExecutionReport, AiProviderRegistry,
+    AiRequestError, AiRequestSpec,
 };
 use super::error_archive::{ArchivedErrorEntry, ErrorArchive, ErrorArchiveError, ErrorListQuery};
 use crate::{
@@ -103,8 +104,16 @@ impl SelfForgeApp {
         AiProviderRegistry::inspect_project(&self.root)
     }
 
-    pub fn ai_request(&self, prompt: &str) -> Result<AiRequestSpec, AiRequestError> {
+    pub fn ai_request_preview(&self, prompt: &str) -> Result<AiRequestSpec, AiRequestError> {
         AiProviderRegistry::build_text_request_project(&self.root, prompt)
+    }
+
+    pub fn ai_request(
+        &self,
+        prompt: &str,
+        timeout_ms: u64,
+    ) -> Result<AiExecutionReport, AiExecutionError> {
+        AiProviderRegistry::execute_text_request_project(&self.root, prompt, timeout_ms)
     }
 
     pub fn advance(&self, goal: &str) -> Result<MinimalLoopReport, MinimalLoopError> {
