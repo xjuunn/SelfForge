@@ -43,6 +43,7 @@ fn main() {
             )
         })),
         "preflight" => preflight(&app),
+        "ai-config" => ai_config(&app),
         "evolve" => evolve(&supervisor, args.collect()),
         "advance" => advance(&app, args.collect()),
         "promote" => boxed(supervisor.promote_candidate().map(|report| {
@@ -348,6 +349,34 @@ fn preflight(app: &SelfForgeApp) -> Result<String, Box<dyn Error>> {
     }))
 }
 
+fn ai_config(app: &SelfForgeApp) -> Result<String, Box<dyn Error>> {
+    boxed(app.ai_config().map(|report| {
+        let ready = if report.ready { "是" } else { "否" };
+        let selected = report.selected_provider.as_deref().unwrap_or("无");
+        let mut lines = vec![format!(
+            "SelfForge AI 配置 就绪 {ready} 选中提供商 {selected} 提供商数量 {}",
+            report.providers.len()
+        )];
+        for provider in report.providers {
+            let selected = if provider.selected { "是" } else { "否" };
+            let configured = if provider.configured { "是" } else { "否" };
+            let key_source = provider.api_key_env_var.as_deref().unwrap_or("未设置");
+            lines.push(format!(
+                "{} 选中 {} 已配置 {} 密钥变量 {} 模型 {} 基础地址 {} 协议 {} 路径 {}",
+                provider.id,
+                selected,
+                configured,
+                key_source,
+                provider.model,
+                provider.base_url,
+                provider.protocol,
+                provider.request_path
+            ));
+        }
+        lines.join("\n")
+    }))
+}
+
 struct RunArgs {
     version: String,
     program: String,
@@ -650,7 +679,7 @@ fn parse_resolve_error_args(arguments: Vec<String>) -> Result<ResolveErrorArgs, 
 }
 
 fn help_text() -> &'static str {
-    "SelfForge commands: init, validate, status, preflight, advance [goal], promote, rollback [reason], cycle, run [--current|--candidate|--version VERSION] [--timeout-ms N] -- PROGRAM [ARGS...], runs [--current|--candidate|--version VERSION] [--limit N] [--failed] [--timed-out], errors [--current|--candidate|--version VERSION] [--limit N] [--open] [--resolved], record-error [--current|--candidate|--version VERSION] [--run-id RUN_ID] [--stage TEXT] [--solution TEXT], resolve-error [--current|--candidate|--version VERSION] --run-id RUN_ID [--verification TEXT], evolve [--patch|--minor|--major] [goal]"
+    "SelfForge commands: init, validate, status, preflight, ai-config, advance [goal], promote, rollback [reason], cycle, run [--current|--candidate|--version VERSION] [--timeout-ms N] -- PROGRAM [ARGS...], runs [--current|--candidate|--version VERSION] [--limit N] [--failed] [--timed-out], errors [--current|--candidate|--version VERSION] [--limit N] [--open] [--resolved], record-error [--current|--candidate|--version VERSION] [--run-id RUN_ID] [--stage TEXT] [--solution TEXT], resolve-error [--current|--candidate|--version VERSION] --run-id RUN_ID [--verification TEXT], evolve [--patch|--minor|--major] [goal]"
 }
 
 fn exit_with_error(error: Box<dyn Error>) -> ! {

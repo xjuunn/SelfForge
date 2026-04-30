@@ -23,11 +23,12 @@ pub use version::{
     version_major_file_name, version_major_key,
 };
 
-pub const CURRENT_VERSION: &str = "v0.1.18";
+pub const CURRENT_VERSION: &str = "v0.1.19";
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -44,6 +45,10 @@ mod tests {
         if path.exists() {
             let _ = fs::remove_dir_all(path);
         }
+    }
+
+    fn env_lookup<'a>(values: &'a HashMap<&str, &str>) -> impl Fn(&str) -> Option<String> + 'a {
+        move |key| values.get(key).map(|value| (*value).to_string())
     }
 
     fn assert_workspace_structure(root: &Path) {
@@ -154,11 +159,11 @@ mod tests {
             .prepare_next_version("prepare the next controlled candidate")
             .expect("evolution should prepare a candidate version");
 
-        assert_eq!(report.current_version, "v0.1.18");
-        assert_eq!(report.next_version, "v0.1.19");
+        assert_eq!(report.current_version, "v0.1.19");
+        assert_eq!(report.next_version, "v0.1.20");
         assert!(root.join("workspaces").join("v0").is_dir());
         assert_workspace_structure(&root);
-        assert!(!root.join("workspaces").join("v0.1.19").exists());
+        assert!(!root.join("workspaces").join("v0.1.20").exists());
         assert!(root.join("forge").join("memory").join("v0.md").is_file());
         assert!(root.join("forge").join("tasks").join("v0.md").is_file());
         assert!(root.join("forge").join("errors").join("v0.md").is_file());
@@ -167,26 +172,26 @@ mod tests {
             !root
                 .join("forge")
                 .join("versions")
-                .join("v0.1.19.md")
+                .join("v0.1.20.md")
                 .exists()
         );
         let version_record = fs::read_to_string(root.join("forge").join("versions").join("v0.md"))
             .expect("major version record should be readable");
-        assert!(version_record.contains("## v0.1.19"));
-        assert_eq!(report.state.current_version, "v0.1.18");
+        assert!(version_record.contains("## v0.1.20"));
+        assert_eq!(report.state.current_version, "v0.1.19");
         assert_eq!(report.state.status, "candidate_prepared");
         assert_eq!(
             report.state.version_scheme.as_deref(),
             Some("semantic:vMAJOR.MINOR.PATCH")
         );
-        assert_eq!(report.state.candidate_version.as_deref(), Some("v0.1.19"));
+        assert_eq!(report.state.candidate_version.as_deref(), Some("v0.1.20"));
         assert_eq!(
             report.state.candidate_workspace.as_deref(),
             Some("workspaces/v0")
         );
 
         supervisor
-            .verify_version("v0.1.19")
+            .verify_version("v0.1.20")
             .expect("candidate layout should validate");
 
         cleanup(&root);
@@ -201,7 +206,7 @@ mod tests {
             .initialize_current_version()
             .expect("bootstrap should succeed before evolution");
         let mut state = ForgeState::load(&root).expect("state should be readable");
-        state.workspace = "workspaces/v0.1.18".to_string();
+        state.workspace = "workspaces/v0.1.19".to_string();
         state.save(&root).expect("state should be writable");
 
         let report = supervisor
@@ -236,7 +241,7 @@ mod tests {
         let task = fs::read_to_string(root.join("forge").join("tasks").join("v0.md"))
             .expect("task should remain readable");
         assert!(task.contains("人工任务计划"));
-        assert!(task.contains("## v0.1.19"));
+        assert!(task.contains("## v0.1.20"));
 
         cleanup(&root);
     }
@@ -272,10 +277,10 @@ mod tests {
             .promote_candidate()
             .expect("candidate should promote after validation");
 
-        assert_eq!(report.previous_version, "v0.1.18");
-        assert_eq!(report.promoted_version, "v0.1.19");
-        assert_eq!(report.state.current_version, "v0.1.19");
-        assert_eq!(report.state.parent_version.as_deref(), Some("v0.1.18"));
+        assert_eq!(report.previous_version, "v0.1.19");
+        assert_eq!(report.promoted_version, "v0.1.20");
+        assert_eq!(report.state.current_version, "v0.1.20");
+        assert_eq!(report.state.parent_version.as_deref(), Some("v0.1.19"));
         assert_eq!(report.state.candidate_version, None);
         assert_eq!(report.state.status, "active");
 
@@ -298,12 +303,12 @@ mod tests {
             .run_candidate_cycle()
             .expect("valid candidate should complete the cycle");
 
-        assert_eq!(report.previous_version, "v0.1.18");
-        assert_eq!(report.candidate_version, "v0.1.19");
+        assert_eq!(report.previous_version, "v0.1.19");
+        assert_eq!(report.candidate_version, "v0.1.20");
         assert_eq!(report.result, CycleResult::Promoted);
         assert!(report.candidate_validation.is_some());
         assert_eq!(report.failure, None);
-        assert_eq!(report.state.current_version, "v0.1.19");
+        assert_eq!(report.state.current_version, "v0.1.20");
         assert_eq!(report.state.candidate_version, None);
         assert_eq!(report.state.status, "active");
 
@@ -326,10 +331,10 @@ mod tests {
             .rollback_candidate("测试回滚")
             .expect("rollback should clear candidate state");
 
-        assert_eq!(report.current_version, "v0.1.18");
-        assert_eq!(report.rolled_back_version, "v0.1.19");
+        assert_eq!(report.current_version, "v0.1.19");
+        assert_eq!(report.rolled_back_version, "v0.1.20");
         assert_eq!(report.state.status, "rolled_back");
-        assert_eq!(report.state.current_version, "v0.1.18");
+        assert_eq!(report.state.current_version, "v0.1.19");
         assert_eq!(report.state.candidate_version, None);
         assert!(root.join("workspaces").join("v0").is_dir());
 
@@ -356,12 +361,12 @@ mod tests {
             .run_candidate_cycle()
             .expect("invalid candidate should roll back without promoting");
 
-        assert_eq!(report.previous_version, "v0.1.18");
+        assert_eq!(report.previous_version, "v0.1.19");
         assert_eq!(report.candidate_version, "v9.0.0");
         assert_eq!(report.result, CycleResult::RolledBack);
         assert!(report.candidate_validation.is_none());
         assert!(report.failure.is_some());
-        assert_eq!(report.state.current_version, "v0.1.18");
+        assert_eq!(report.state.current_version, "v0.1.19");
         assert_eq!(report.state.candidate_version, None);
         assert_eq!(report.state.status, "rolled_back");
 
@@ -382,10 +387,10 @@ mod tests {
             .expect("advance should prepare a candidate when none exists");
 
         assert_eq!(report.outcome, MinimalLoopOutcome::Prepared);
-        assert_eq!(report.starting_version, "v0.1.18");
-        assert_eq!(report.stable_version, "v0.1.18");
-        assert_eq!(report.candidate_version.as_deref(), Some("v0.1.19"));
-        assert_eq!(report.next_expected_version.as_deref(), Some("v0.1.20"));
+        assert_eq!(report.starting_version, "v0.1.19");
+        assert_eq!(report.stable_version, "v0.1.19");
+        assert_eq!(report.candidate_version.as_deref(), Some("v0.1.20"));
+        assert_eq!(report.next_expected_version.as_deref(), Some("v0.1.21"));
 
         cleanup(&root);
     }
@@ -407,10 +412,10 @@ mod tests {
             .expect("advance should promote valid candidate and prepare the next one");
 
         assert_eq!(report.outcome, MinimalLoopOutcome::PromotedAndPrepared);
-        assert_eq!(report.starting_version, "v0.1.18");
-        assert_eq!(report.stable_version, "v0.1.19");
-        assert_eq!(report.candidate_version.as_deref(), Some("v0.1.20"));
-        assert_eq!(report.next_expected_version.as_deref(), Some("v0.1.21"));
+        assert_eq!(report.starting_version, "v0.1.19");
+        assert_eq!(report.stable_version, "v0.1.20");
+        assert_eq!(report.candidate_version.as_deref(), Some("v0.1.21"));
+        assert_eq!(report.next_expected_version.as_deref(), Some("v0.1.22"));
 
         cleanup(&root);
     }
@@ -436,8 +441,8 @@ mod tests {
             .expect("advance should roll back invalid candidate");
 
         assert_eq!(report.outcome, MinimalLoopOutcome::RolledBack);
-        assert_eq!(report.starting_version, "v0.1.18");
-        assert_eq!(report.stable_version, "v0.1.18");
+        assert_eq!(report.starting_version, "v0.1.19");
+        assert_eq!(report.stable_version, "v0.1.19");
         assert_eq!(report.candidate_version.as_deref(), Some("v9.0.0"));
         assert_eq!(report.next_expected_version, None);
         assert!(report.failure.is_some());
@@ -591,6 +596,87 @@ mod tests {
         assert_eq!(state.candidate_version, None);
 
         cleanup(&root);
+    }
+
+    #[test]
+    fn ai_config_auto_selects_openai_when_key_exists() {
+        let values = HashMap::from([("OPENAI_API_KEY", "test-openai-key")]);
+
+        let report = AiProviderRegistry::inspect_with(env_lookup(&values))
+            .expect("openai key should produce a valid AI config report");
+        let selected = report
+            .selected()
+            .expect("configured provider should be selected");
+
+        assert!(report.ready);
+        assert_eq!(report.selected_provider.as_deref(), Some("openai"));
+        assert_eq!(selected.id, "openai");
+        assert_eq!(selected.api_key_env_var.as_deref(), Some("OPENAI_API_KEY"));
+        assert_eq!(selected.protocol, "openai-responses");
+        assert_eq!(selected.request_path, "/responses");
+    }
+
+    #[test]
+    fn ai_config_prefers_requested_deepseek_provider() {
+        let values = HashMap::from([
+            ("OPENAI_API_KEY", "test-openai-key"),
+            ("DEEPSEEK_API_KEY", "test-deepseek-key"),
+            ("DEEPSEEK_MODEL", "deepseek-v4-pro"),
+            ("SELFFORGE_AI_PROVIDER", "deepseek"),
+        ]);
+
+        let report = AiProviderRegistry::inspect_with(env_lookup(&values))
+            .expect("requested provider should be accepted");
+        let selected = report
+            .selected()
+            .expect("requested configured provider should be selected");
+
+        assert!(report.ready);
+        assert_eq!(selected.id, "deepseek");
+        assert_eq!(
+            selected.api_key_env_var.as_deref(),
+            Some("DEEPSEEK_API_KEY")
+        );
+        assert_eq!(selected.model, "deepseek-v4-pro");
+        assert_eq!(selected.model_source, "DEEPSEEK_MODEL");
+        assert_eq!(selected.protocol, "openai-chat-completions");
+    }
+
+    #[test]
+    fn ai_config_uses_google_api_key_before_gemini_api_key() {
+        let values = HashMap::from([
+            ("GEMINI_API_KEY", "test-gemini-key"),
+            ("GOOGLE_API_KEY", "test-google-key"),
+            ("SELFFORGE_AI_PROVIDER", "gemini"),
+        ]);
+
+        let report = AiProviderRegistry::inspect_with(env_lookup(&values))
+            .expect("gemini provider should accept either key variable");
+        let selected = report
+            .selected()
+            .expect("configured gemini provider should be selected");
+
+        assert!(report.ready);
+        assert_eq!(selected.id, "gemini");
+        assert_eq!(selected.api_key_env_var.as_deref(), Some("GOOGLE_API_KEY"));
+        assert_eq!(selected.protocol, "gemini-generate-content");
+        assert!(selected.request_path.contains(&selected.model));
+    }
+
+    #[test]
+    fn ai_config_reports_unknown_provider() {
+        let values = HashMap::from([("SELFFORGE_AI_PROVIDER", "unknown-ai")]);
+
+        let error = AiProviderRegistry::inspect_with(env_lookup(&values))
+            .expect_err("unknown provider must be rejected");
+
+        assert!(matches!(
+            error,
+            AiConfigError::UnknownProvider { ref requested, .. } if requested == "unknown-ai"
+        ));
+        assert!(error.to_string().contains("openai"));
+        assert!(error.to_string().contains("deepseek"));
+        assert!(error.to_string().contains("gemini"));
     }
 
     #[test]
@@ -1158,7 +1244,7 @@ mod tests {
     }
 }
 pub use app::{
-    ArchivedErrorEntry, ErrorArchive, ErrorArchiveError, ErrorArchiveReport, ErrorListQuery,
-    ErrorResolutionReport, MinimalLoopError, MinimalLoopOutcome, MinimalLoopReport,
-    PreflightReport, SelfForgeApp,
+    AiConfigError, AiConfigReport, AiProviderRegistry, AiProviderStatus, ArchivedErrorEntry,
+    ErrorArchive, ErrorArchiveError, ErrorArchiveReport, ErrorListQuery, ErrorResolutionReport,
+    MinimalLoopError, MinimalLoopOutcome, MinimalLoopReport, PreflightReport, SelfForgeApp,
 };
