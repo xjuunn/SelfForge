@@ -1,9 +1,9 @@
 {
-  "current_version": "v0.1.15",
-  "parent_version": "v0.1.14",
+  "current_version": "v0.1.16",
+  "parent_version": "v0.1.15",
   "status": "active",
   "workspace": "workspaces/v0",
-  "last_verified": "promoted:v0.1.15",
+  "last_verified": "promoted:v0.1.16",
   "version_scheme": "semantic:vMAJOR.MINOR.PATCH",
   "legacy_versions": [
     "v1",

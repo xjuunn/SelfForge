@@ -1,6 +1,6 @@
 use self_forge::{
-    CURRENT_VERSION, CycleResult, ErrorArchive, ForgeState, MinimalLoopOutcome, RunQuery,
-    SelfForgeApp, Supervisor, VersionBump,
+    CURRENT_VERSION, CycleResult, ErrorArchive, ErrorListQuery, ForgeState, MinimalLoopOutcome,
+    RunQuery, SelfForgeApp, Supervisor, VersionBump,
 };
 use std::env;
 use std::error::Error;
@@ -138,6 +138,44 @@ fn main() {
                                 entry.stdout_bytes,
                                 entry.stderr_bytes,
                                 entry.report_file
+                            ));
+                        }
+                        lines.join("\n")
+                    }),
+            )
+        }
+        "errors" => {
+            let command = match parse_errors_args(args.collect()) {
+                Ok(command) => command,
+                Err(error) => exit_with_error(error),
+            };
+            let archive = ErrorArchive::new(&root);
+            boxed(
+                archive
+                    .list_run_errors(
+                        &command.version,
+                        ErrorListQuery {
+                            limit: command.limit,
+                            open_only: command.open_only,
+                            resolved_only: command.resolved_only,
+                        },
+                    )
+                    .map(|entries| {
+                        if entries.is_empty() {
+                            return format!("SelfForge errors {}: no records", command.version);
+                        }
+
+                        let mut lines = vec![format!(
+                            "SelfForge errors {}: {} record(s)",
+                            command.version,
+                            entries.len()
+                        )];
+                        for entry in entries {
+                            lines.push(format!(
+                                "{} resolved {} archive {}",
+                                entry.run_id,
+                                entry.resolved,
+                                entry.archive_path.display()
                             ));
                         }
                         lines.join("\n")
@@ -302,6 +340,13 @@ struct RunsArgs {
     timed_out_only: bool,
 }
 
+struct ErrorsArgs {
+    version: String,
+    limit: usize,
+    open_only: bool,
+    resolved_only: bool,
+}
+
 struct RecordErrorArgs {
     version: String,
     run_id: Option<String>,
@@ -421,6 +466,58 @@ fn parse_runs_args(arguments: Vec<String>) -> Result<RunsArgs, Box<dyn Error>> {
     })
 }
 
+fn parse_errors_args(arguments: Vec<String>) -> Result<ErrorsArgs, Box<dyn Error>> {
+    let state = ForgeState::load(env::current_dir()?)?;
+    let mut version = state.current_version.clone();
+    let mut limit = 10;
+    let mut open_only = false;
+    let mut resolved_only = false;
+    let mut index = 0;
+
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "--current" => {
+                version = state.current_version.clone();
+                index += 1;
+            }
+            "--candidate" => {
+                version = state.candidate_version.clone().ok_or("当前没有候选版本")?;
+                index += 1;
+            }
+            "--version" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--version 需要版本号".into());
+                };
+                version = value.clone();
+                index += 2;
+            }
+            "--limit" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--limit 需要数量".into());
+                };
+                limit = value.parse::<usize>()?;
+                index += 2;
+            }
+            "--open" => {
+                open_only = true;
+                index += 1;
+            }
+            "--resolved" => {
+                resolved_only = true;
+                index += 1;
+            }
+            other => return Err(format!("未知 errors 参数: {other}").into()),
+        }
+    }
+
+    Ok(ErrorsArgs {
+        version,
+        limit,
+        open_only,
+        resolved_only,
+    })
+}
+
 fn parse_record_error_args(arguments: Vec<String>) -> Result<RecordErrorArgs, Box<dyn Error>> {
     let state = ForgeState::load(env::current_dir()?)?;
     let mut version = state.current_version.clone();
@@ -531,7 +628,7 @@ fn parse_resolve_error_args(arguments: Vec<String>) -> Result<ResolveErrorArgs, 
 }
 
 fn help_text() -> &'static str {
-    "SelfForge commands: init, validate, status, advance [goal], promote, rollback [reason], cycle, run [--current|--candidate|--version VERSION] [--timeout-ms N] -- PROGRAM [ARGS...], runs [--current|--candidate|--version VERSION] [--limit N] [--failed] [--timed-out], record-error [--current|--candidate|--version VERSION] [--run-id RUN_ID] [--stage TEXT] [--solution TEXT], resolve-error [--current|--candidate|--version VERSION] --run-id RUN_ID [--verification TEXT], evolve [--patch|--minor|--major] [goal]"
+    "SelfForge commands: init, validate, status, advance [goal], promote, rollback [reason], cycle, run [--current|--candidate|--version VERSION] [--timeout-ms N] -- PROGRAM [ARGS...], runs [--current|--candidate|--version VERSION] [--limit N] [--failed] [--timed-out], errors [--current|--candidate|--version VERSION] [--limit N] [--open] [--resolved], record-error [--current|--candidate|--version VERSION] [--run-id RUN_ID] [--stage TEXT] [--solution TEXT], resolve-error [--current|--candidate|--version VERSION] --run-id RUN_ID [--verification TEXT], evolve [--patch|--minor|--major] [goal]"
 }
 
 fn exit_with_error(error: Box<dyn Error>) -> ! {

@@ -26,6 +26,59 @@ pub struct ErrorResolutionReport {
     pub updated: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ArchivedErrorEntry {
+    pub version: String,
+    pub run_id: String,
+    pub resolved: bool,
+    pub archive_path: PathBuf,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ErrorListQuery {
+    pub limit: usize,
+    pub open_only: bool,
+    pub resolved_only: bool,
+}
+
+impl ErrorListQuery {
+    pub fn recent(limit: usize) -> Self {
+        Self {
+            limit,
+            open_only: false,
+            resolved_only: false,
+        }
+    }
+
+    pub fn open(limit: usize) -> Self {
+        Self {
+            limit,
+            open_only: true,
+            resolved_only: false,
+        }
+    }
+
+    pub fn resolved(limit: usize) -> Self {
+        Self {
+            limit,
+            open_only: false,
+            resolved_only: true,
+        }
+    }
+
+    fn matches(self, entry: &ArchivedErrorEntry) -> bool {
+        if self.open_only && entry.resolved {
+            return false;
+        }
+
+        if self.resolved_only && !entry.resolved {
+            return false;
+        }
+
+        true
+    }
+}
+
 #[derive(Debug)]
 pub enum ErrorArchiveError {
     Execution(ExecutionError),
@@ -190,6 +243,34 @@ impl ErrorArchive {
         })
     }
 
+    pub fn list_run_errors(
+        &self,
+        version: impl AsRef<str>,
+        query: ErrorListQuery,
+    ) -> Result<Vec<ArchivedErrorEntry>, ErrorArchiveError> {
+        if query.limit == 0 {
+            return Ok(Vec::new());
+        }
+
+        let version = version.as_ref().to_string();
+        let archive_path = self
+            .root
+            .join("forge")
+            .join("errors")
+            .join(version_major_file_name(&version)?);
+        let contents =
+            fs::read_to_string(&archive_path).map_err(|source| ErrorArchiveError::Io {
+                path: archive_path.clone(),
+                source,
+            })?;
+
+        let mut entries = parse_run_error_entries(&contents, &archive_path);
+        entries.retain(|entry| entry.version == version && query.matches(entry));
+        entries.reverse();
+        entries.truncate(query.limit);
+        Ok(entries)
+    }
+
     fn latest_failed_run(&self, version: &str) -> Result<RunIndexEntry, ErrorArchiveError> {
         let mut entries = self
             .supervisor
@@ -299,4 +380,38 @@ fn error_section(
 fn default_when_blank<'a>(value: &'a str, default: &'a str) -> &'a str {
     let value = value.trim();
     if value.is_empty() { default } else { value }
+}
+
+fn parse_run_error_entries(contents: &str, archive_path: &Path) -> Vec<ArchivedErrorEntry> {
+    let mut entries = Vec::new();
+    for section in contents.split("\n## ").skip(1) {
+        let section = format!("## {section}");
+        let Some(title) = section.lines().next() else {
+            continue;
+        };
+        let Some((version, run_id)) = parse_run_error_title(title) else {
+            continue;
+        };
+        let resolved = section
+            .split("# 是否已解决\n\n")
+            .nth(1)
+            .map(|status| status.trim_start().starts_with('是'))
+            .unwrap_or(false);
+        entries.push(ArchivedErrorEntry {
+            version,
+            run_id,
+            resolved,
+            archive_path: archive_path.to_path_buf(),
+        });
+    }
+    entries
+}
+
+fn parse_run_error_title(title: &str) -> Option<(String, String)> {
+    let title = title.strip_prefix("## ")?;
+    let (version, rest) = title.split_once(" 运行错误 ")?;
+    if version.is_empty() || rest.is_empty() {
+        return None;
+    }
+    Some((version.to_string(), rest.to_string()))
 }
