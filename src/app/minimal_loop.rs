@@ -1,4 +1,7 @@
-use super::agent::{AgentDefinition, AgentError, AgentPlan, AgentRegistry};
+use super::agent::{
+    AgentDefinition, AgentError, AgentPlan, AgentRegistry, AgentSession, AgentSessionError,
+    AgentSessionStore, AgentSessionSummary,
+};
 use super::ai_provider::{
     AiConfigError, AiConfigReport, AiExecutionError, AiExecutionReport, AiProviderRegistry,
     AiRequestError, AiRequestSpec,
@@ -123,6 +126,30 @@ impl SelfForgeApp {
 
     pub fn agent_plan(&self, goal: &str) -> Result<AgentPlan, AgentError> {
         AgentRegistry::standard().plan_for_goal(goal)
+    }
+
+    pub fn start_agent_session(
+        &self,
+        version: &str,
+        goal: &str,
+    ) -> Result<AgentSession, AgentSessionError> {
+        AgentSessionStore::new(&self.root).start(version, goal)
+    }
+
+    pub fn agent_sessions(
+        &self,
+        version: &str,
+        limit: usize,
+    ) -> Result<Vec<AgentSessionSummary>, AgentSessionError> {
+        AgentSessionStore::new(&self.root).list(version, limit)
+    }
+
+    pub fn agent_session(
+        &self,
+        version: &str,
+        id: &str,
+    ) -> Result<AgentSession, AgentSessionError> {
+        AgentSessionStore::new(&self.root).load(version, id)
     }
 
     pub fn advance(&self, goal: &str) -> Result<MinimalLoopReport, MinimalLoopError> {

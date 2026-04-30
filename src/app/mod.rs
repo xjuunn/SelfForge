@@ -5,6 +5,8 @@ mod minimal_loop;
 
 pub use agent::{
     AgentCapability, AgentDefinition, AgentError, AgentPlan, AgentPlanStep, AgentRegistry,
+    AgentSession, AgentSessionError, AgentSessionStatus, AgentSessionStep, AgentSessionStore,
+    AgentSessionSummary, AgentStepStatus,
 };
 pub use ai_provider::{
     AiConfigError, AiConfigReport, AiExecutionError, AiExecutionReport, AiProviderRegistry,

@@ -1,7 +1,8 @@
+use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fmt;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum AgentCapability {
     Architecture,
     Planning,
@@ -13,7 +14,7 @@ pub enum AgentCapability {
     Runtime,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentDefinition {
     pub id: String,
     pub name: String,
@@ -23,14 +24,14 @@ pub struct AgentDefinition {
     pub outputs: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentPlan {
     pub goal: String,
     pub agents: Vec<AgentDefinition>,
     pub steps: Vec<AgentPlanStep>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentPlanStep {
     pub order: usize,
     pub agent_id: String,
