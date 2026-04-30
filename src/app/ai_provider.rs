@@ -2,6 +2,7 @@ use std::error::Error;
 use std::fmt;
 
 const PROVIDER_ENV: &str = "SELFFORGE_AI_PROVIDER";
+const HTTP_METHOD_POST: &str = "POST";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AiConfigReport {
@@ -26,12 +27,33 @@ pub struct AiProviderStatus {
     pub request_path: String,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct AiRequestSpec {
+    pub provider_id: String,
+    pub model: String,
+    pub protocol: String,
+    pub method: String,
+    pub url: String,
+    pub auth_header_name: String,
+    pub api_key_env_var: String,
+    pub content_type: String,
+    pub body: serde_json::Value,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AiConfigError {
     UnknownProvider {
         requested: String,
         supported: Vec<String>,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AiRequestError {
+    Config(AiConfigError),
+    MissingProvider,
+    MissingApiKey { provider: String },
+    EmptyPrompt,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -66,6 +88,20 @@ impl AiProviderRegistry {
     {
         inspect_with(lookup)
     }
+
+    pub fn build_text_request_env(prompt: &str) -> Result<AiRequestSpec, AiRequestError> {
+        build_text_request_with(prompt, |key| std::env::var(key).ok())
+    }
+
+    pub fn build_text_request_with<F>(
+        prompt: &str,
+        lookup: F,
+    ) -> Result<AiRequestSpec, AiRequestError>
+    where
+        F: Fn(&str) -> Option<String>,
+    {
+        build_text_request_with(prompt, lookup)
+    }
 }
 
 impl AiConfigReport {
@@ -93,6 +129,38 @@ impl fmt::Display for AiConfigError {
 }
 
 impl Error for AiConfigError {}
+
+impl fmt::Display for AiRequestError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AiRequestError::Config(error) => write!(formatter, "{error}"),
+            AiRequestError::MissingProvider => {
+                write!(formatter, "没有可用 AI 提供商，请先配置 API Key 环境变量")
+            }
+            AiRequestError::MissingApiKey { provider } => {
+                write!(formatter, "AI 提供商 {provider} 未配置 API Key 环境变量")
+            }
+            AiRequestError::EmptyPrompt => write!(formatter, "AI 请求提示词不能为空"),
+        }
+    }
+}
+
+impl Error for AiRequestError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            AiRequestError::Config(error) => Some(error),
+            AiRequestError::MissingProvider
+            | AiRequestError::MissingApiKey { .. }
+            | AiRequestError::EmptyPrompt => None,
+        }
+    }
+}
+
+impl From<AiConfigError> for AiRequestError {
+    fn from(error: AiConfigError) -> Self {
+        AiRequestError::Config(error)
+    }
+}
 
 impl AiProviderProtocol {
     fn as_str(self) -> &'static str {
@@ -160,6 +228,85 @@ where
         selected_provider,
         ready,
     })
+}
+
+fn build_text_request_with<F>(prompt: &str, lookup: F) -> Result<AiRequestSpec, AiRequestError>
+where
+    F: Fn(&str) -> Option<String>,
+{
+    let prompt = prompt.trim();
+    if prompt.is_empty() {
+        return Err(AiRequestError::EmptyPrompt);
+    }
+
+    let report = inspect_with(lookup)?;
+    let provider = report.selected().ok_or(AiRequestError::MissingProvider)?;
+    let api_key_env_var =
+        provider
+            .api_key_env_var
+            .clone()
+            .ok_or_else(|| AiRequestError::MissingApiKey {
+                provider: provider.id.clone(),
+            })?;
+    let body = request_body(provider, prompt);
+
+    Ok(AiRequestSpec {
+        provider_id: provider.id.clone(),
+        model: provider.model.clone(),
+        protocol: provider.protocol.clone(),
+        method: HTTP_METHOD_POST.to_string(),
+        url: join_url(&provider.base_url, &provider.request_path),
+        auth_header_name: auth_header_name(provider),
+        api_key_env_var,
+        content_type: "application/json".to_string(),
+        body,
+    })
+}
+
+fn request_body(provider: &AiProviderStatus, prompt: &str) -> serde_json::Value {
+    match provider.protocol.as_str() {
+        "openai-responses" => serde_json::json!({
+            "model": provider.model,
+            "input": prompt
+        }),
+        "openai-chat-completions" => serde_json::json!({
+            "model": provider.model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            "stream": false
+        }),
+        "gemini-generate-content" => serde_json::json!({
+            "contents": [
+                {
+                    "parts": [
+                        {
+                            "text": prompt
+                        }
+                    ]
+                }
+            ]
+        }),
+        _ => serde_json::json!({}),
+    }
+}
+
+fn auth_header_name(provider: &AiProviderStatus) -> String {
+    match provider.protocol.as_str() {
+        "gemini-generate-content" => "x-goog-api-key".to_string(),
+        _ => "Authorization".to_string(),
+    }
+}
+
+fn join_url(base_url: &str, request_path: &str) -> String {
+    format!(
+        "{}/{}",
+        base_url.trim_end_matches('/'),
+        request_path.trim_start_matches('/')
+    )
 }
 
 fn inspect_provider<F>(definition: &AiProviderDefinition, lookup: &F) -> AiProviderStatus

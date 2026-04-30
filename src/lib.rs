@@ -23,7 +23,7 @@ pub use version::{
     version_major_file_name, version_major_key,
 };
 
-pub const CURRENT_VERSION: &str = "v0.1.19";
+pub const CURRENT_VERSION: &str = "v0.1.20";
 
 #[cfg(test)]
 mod tests {
@@ -159,11 +159,11 @@ mod tests {
             .prepare_next_version("prepare the next controlled candidate")
             .expect("evolution should prepare a candidate version");
 
-        assert_eq!(report.current_version, "v0.1.19");
-        assert_eq!(report.next_version, "v0.1.20");
+        assert_eq!(report.current_version, "v0.1.20");
+        assert_eq!(report.next_version, "v0.1.21");
         assert!(root.join("workspaces").join("v0").is_dir());
         assert_workspace_structure(&root);
-        assert!(!root.join("workspaces").join("v0.1.20").exists());
+        assert!(!root.join("workspaces").join("v0.1.21").exists());
         assert!(root.join("forge").join("memory").join("v0.md").is_file());
         assert!(root.join("forge").join("tasks").join("v0.md").is_file());
         assert!(root.join("forge").join("errors").join("v0.md").is_file());
@@ -172,26 +172,26 @@ mod tests {
             !root
                 .join("forge")
                 .join("versions")
-                .join("v0.1.20.md")
+                .join("v0.1.21.md")
                 .exists()
         );
         let version_record = fs::read_to_string(root.join("forge").join("versions").join("v0.md"))
             .expect("major version record should be readable");
-        assert!(version_record.contains("## v0.1.20"));
-        assert_eq!(report.state.current_version, "v0.1.19");
+        assert!(version_record.contains("## v0.1.21"));
+        assert_eq!(report.state.current_version, "v0.1.20");
         assert_eq!(report.state.status, "candidate_prepared");
         assert_eq!(
             report.state.version_scheme.as_deref(),
             Some("semantic:vMAJOR.MINOR.PATCH")
         );
-        assert_eq!(report.state.candidate_version.as_deref(), Some("v0.1.20"));
+        assert_eq!(report.state.candidate_version.as_deref(), Some("v0.1.21"));
         assert_eq!(
             report.state.candidate_workspace.as_deref(),
             Some("workspaces/v0")
         );
 
         supervisor
-            .verify_version("v0.1.20")
+            .verify_version("v0.1.21")
             .expect("candidate layout should validate");
 
         cleanup(&root);
@@ -206,7 +206,7 @@ mod tests {
             .initialize_current_version()
             .expect("bootstrap should succeed before evolution");
         let mut state = ForgeState::load(&root).expect("state should be readable");
-        state.workspace = "workspaces/v0.1.19".to_string();
+        state.workspace = "workspaces/v0.1.20".to_string();
         state.save(&root).expect("state should be writable");
 
         let report = supervisor
@@ -241,7 +241,7 @@ mod tests {
         let task = fs::read_to_string(root.join("forge").join("tasks").join("v0.md"))
             .expect("task should remain readable");
         assert!(task.contains("人工任务计划"));
-        assert!(task.contains("## v0.1.20"));
+        assert!(task.contains("## v0.1.21"));
 
         cleanup(&root);
     }
@@ -277,10 +277,10 @@ mod tests {
             .promote_candidate()
             .expect("candidate should promote after validation");
 
-        assert_eq!(report.previous_version, "v0.1.19");
-        assert_eq!(report.promoted_version, "v0.1.20");
-        assert_eq!(report.state.current_version, "v0.1.20");
-        assert_eq!(report.state.parent_version.as_deref(), Some("v0.1.19"));
+        assert_eq!(report.previous_version, "v0.1.20");
+        assert_eq!(report.promoted_version, "v0.1.21");
+        assert_eq!(report.state.current_version, "v0.1.21");
+        assert_eq!(report.state.parent_version.as_deref(), Some("v0.1.20"));
         assert_eq!(report.state.candidate_version, None);
         assert_eq!(report.state.status, "active");
 
@@ -303,12 +303,12 @@ mod tests {
             .run_candidate_cycle()
             .expect("valid candidate should complete the cycle");
 
-        assert_eq!(report.previous_version, "v0.1.19");
-        assert_eq!(report.candidate_version, "v0.1.20");
+        assert_eq!(report.previous_version, "v0.1.20");
+        assert_eq!(report.candidate_version, "v0.1.21");
         assert_eq!(report.result, CycleResult::Promoted);
         assert!(report.candidate_validation.is_some());
         assert_eq!(report.failure, None);
-        assert_eq!(report.state.current_version, "v0.1.20");
+        assert_eq!(report.state.current_version, "v0.1.21");
         assert_eq!(report.state.candidate_version, None);
         assert_eq!(report.state.status, "active");
 
@@ -331,10 +331,10 @@ mod tests {
             .rollback_candidate("测试回滚")
             .expect("rollback should clear candidate state");
 
-        assert_eq!(report.current_version, "v0.1.19");
-        assert_eq!(report.rolled_back_version, "v0.1.20");
+        assert_eq!(report.current_version, "v0.1.20");
+        assert_eq!(report.rolled_back_version, "v0.1.21");
         assert_eq!(report.state.status, "rolled_back");
-        assert_eq!(report.state.current_version, "v0.1.19");
+        assert_eq!(report.state.current_version, "v0.1.20");
         assert_eq!(report.state.candidate_version, None);
         assert!(root.join("workspaces").join("v0").is_dir());
 
@@ -361,12 +361,12 @@ mod tests {
             .run_candidate_cycle()
             .expect("invalid candidate should roll back without promoting");
 
-        assert_eq!(report.previous_version, "v0.1.19");
+        assert_eq!(report.previous_version, "v0.1.20");
         assert_eq!(report.candidate_version, "v9.0.0");
         assert_eq!(report.result, CycleResult::RolledBack);
         assert!(report.candidate_validation.is_none());
         assert!(report.failure.is_some());
-        assert_eq!(report.state.current_version, "v0.1.19");
+        assert_eq!(report.state.current_version, "v0.1.20");
         assert_eq!(report.state.candidate_version, None);
         assert_eq!(report.state.status, "rolled_back");
 
@@ -387,10 +387,10 @@ mod tests {
             .expect("advance should prepare a candidate when none exists");
 
         assert_eq!(report.outcome, MinimalLoopOutcome::Prepared);
-        assert_eq!(report.starting_version, "v0.1.19");
-        assert_eq!(report.stable_version, "v0.1.19");
-        assert_eq!(report.candidate_version.as_deref(), Some("v0.1.20"));
-        assert_eq!(report.next_expected_version.as_deref(), Some("v0.1.21"));
+        assert_eq!(report.starting_version, "v0.1.20");
+        assert_eq!(report.stable_version, "v0.1.20");
+        assert_eq!(report.candidate_version.as_deref(), Some("v0.1.21"));
+        assert_eq!(report.next_expected_version.as_deref(), Some("v0.1.22"));
 
         cleanup(&root);
     }
@@ -412,10 +412,10 @@ mod tests {
             .expect("advance should promote valid candidate and prepare the next one");
 
         assert_eq!(report.outcome, MinimalLoopOutcome::PromotedAndPrepared);
-        assert_eq!(report.starting_version, "v0.1.19");
-        assert_eq!(report.stable_version, "v0.1.20");
-        assert_eq!(report.candidate_version.as_deref(), Some("v0.1.21"));
-        assert_eq!(report.next_expected_version.as_deref(), Some("v0.1.22"));
+        assert_eq!(report.starting_version, "v0.1.20");
+        assert_eq!(report.stable_version, "v0.1.21");
+        assert_eq!(report.candidate_version.as_deref(), Some("v0.1.22"));
+        assert_eq!(report.next_expected_version.as_deref(), Some("v0.1.23"));
 
         cleanup(&root);
     }
@@ -441,8 +441,8 @@ mod tests {
             .expect("advance should roll back invalid candidate");
 
         assert_eq!(report.outcome, MinimalLoopOutcome::RolledBack);
-        assert_eq!(report.starting_version, "v0.1.19");
-        assert_eq!(report.stable_version, "v0.1.19");
+        assert_eq!(report.starting_version, "v0.1.20");
+        assert_eq!(report.stable_version, "v0.1.20");
         assert_eq!(report.candidate_version.as_deref(), Some("v9.0.0"));
         assert_eq!(report.next_expected_version, None);
         assert!(report.failure.is_some());
@@ -677,6 +677,94 @@ mod tests {
         assert!(error.to_string().contains("openai"));
         assert!(error.to_string().contains("deepseek"));
         assert!(error.to_string().contains("gemini"));
+    }
+
+    #[test]
+    fn ai_request_builds_openai_responses_spec() {
+        let values = HashMap::from([
+            ("SELFFORGE_AI_PROVIDER", "openai"),
+            ("OPENAI_API_KEY", "test-openai-key"),
+            ("OPENAI_MODEL", "gpt-test"),
+        ]);
+
+        let spec = AiProviderRegistry::build_text_request_with("生成一个计划", env_lookup(&values))
+            .expect("openai request spec should build");
+
+        assert_eq!(spec.provider_id, "openai");
+        assert_eq!(spec.method, "POST");
+        assert_eq!(spec.url, "https://api.openai.com/v1/responses");
+        assert_eq!(spec.auth_header_name, "Authorization");
+        assert_eq!(spec.api_key_env_var, "OPENAI_API_KEY");
+        assert_eq!(spec.body["model"], "gpt-test");
+        assert_eq!(spec.body["input"], "生成一个计划");
+        assert!(!spec.body.to_string().contains("test-openai-key"));
+    }
+
+    #[test]
+    fn ai_request_builds_deepseek_chat_spec() {
+        let values = HashMap::from([
+            ("SELFFORGE_AI_PROVIDER", "deepseek"),
+            ("DEEPSEEK_API_KEY", "test-deepseek-key"),
+            ("DEEPSEEK_BASE_URL", "https://api.deepseek.com/"),
+        ]);
+
+        let spec = AiProviderRegistry::build_text_request_with("分析错误", env_lookup(&values))
+            .expect("deepseek request spec should build");
+
+        assert_eq!(spec.provider_id, "deepseek");
+        assert_eq!(spec.url, "https://api.deepseek.com/chat/completions");
+        assert_eq!(spec.auth_header_name, "Authorization");
+        assert_eq!(spec.api_key_env_var, "DEEPSEEK_API_KEY");
+        assert_eq!(spec.body["model"], "deepseek-v4-flash");
+        assert_eq!(spec.body["messages"][0]["role"], "user");
+        assert_eq!(spec.body["messages"][0]["content"], "分析错误");
+        assert_eq!(spec.body["stream"], false);
+        assert!(!spec.body.to_string().contains("test-deepseek-key"));
+    }
+
+    #[test]
+    fn ai_request_builds_gemini_generate_content_spec() {
+        let values = HashMap::from([
+            ("SELFFORGE_AI_PROVIDER", "gemini"),
+            ("GOOGLE_API_KEY", "test-google-key"),
+            ("GEMINI_MODEL", "gemini-test"),
+        ]);
+
+        let spec = AiProviderRegistry::build_text_request_with("生成测试", env_lookup(&values))
+            .expect("gemini request spec should build");
+
+        assert_eq!(spec.provider_id, "gemini");
+        assert_eq!(
+            spec.url,
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-test:generateContent"
+        );
+        assert_eq!(spec.auth_header_name, "x-goog-api-key");
+        assert_eq!(spec.api_key_env_var, "GOOGLE_API_KEY");
+        assert_eq!(spec.body["contents"][0]["parts"][0]["text"], "生成测试");
+        assert!(!spec.body.to_string().contains("test-google-key"));
+    }
+
+    #[test]
+    fn ai_request_reports_missing_selected_provider_key() {
+        let values = HashMap::from([("SELFFORGE_AI_PROVIDER", "gemini")]);
+
+        let error = AiProviderRegistry::build_text_request_with("生成测试", env_lookup(&values))
+            .expect_err("selected provider without key must be rejected");
+
+        assert!(matches!(
+            error,
+            AiRequestError::MissingApiKey { ref provider } if provider == "gemini"
+        ));
+    }
+
+    #[test]
+    fn ai_request_rejects_empty_prompt() {
+        let values = HashMap::from([("OPENAI_API_KEY", "test-openai-key")]);
+
+        let error = AiProviderRegistry::build_text_request_with("   ", env_lookup(&values))
+            .expect_err("empty prompt must be rejected");
+
+        assert!(matches!(error, AiRequestError::EmptyPrompt));
     }
 
     #[test]
@@ -1244,7 +1332,8 @@ mod tests {
     }
 }
 pub use app::{
-    AiConfigError, AiConfigReport, AiProviderRegistry, AiProviderStatus, ArchivedErrorEntry,
-    ErrorArchive, ErrorArchiveError, ErrorArchiveReport, ErrorListQuery, ErrorResolutionReport,
-    MinimalLoopError, MinimalLoopOutcome, MinimalLoopReport, PreflightReport, SelfForgeApp,
+    AiConfigError, AiConfigReport, AiProviderRegistry, AiProviderStatus, AiRequestError,
+    AiRequestSpec, ArchivedErrorEntry, ErrorArchive, ErrorArchiveError, ErrorArchiveReport,
+    ErrorListQuery, ErrorResolutionReport, MinimalLoopError, MinimalLoopOutcome, MinimalLoopReport,
+    PreflightReport, SelfForgeApp,
 };

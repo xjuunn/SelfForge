@@ -1,4 +1,6 @@
-use super::ai_provider::{AiConfigError, AiConfigReport, AiProviderRegistry};
+use super::ai_provider::{
+    AiConfigError, AiConfigReport, AiProviderRegistry, AiRequestError, AiRequestSpec,
+};
 use super::error_archive::{ArchivedErrorEntry, ErrorArchive, ErrorArchiveError, ErrorListQuery};
 use crate::{
     CycleResult, EvolutionError, ForgeError, ForgeState, StateError, Supervisor, next_version_after,
@@ -99,6 +101,10 @@ impl SelfForgeApp {
 
     pub fn ai_config(&self) -> Result<AiConfigReport, AiConfigError> {
         AiProviderRegistry::inspect_env()
+    }
+
+    pub fn ai_request(&self, prompt: &str) -> Result<AiRequestSpec, AiRequestError> {
+        AiProviderRegistry::build_text_request_env(prompt)
     }
 
     pub fn advance(&self, goal: &str) -> Result<MinimalLoopReport, MinimalLoopError> {

@@ -44,6 +44,7 @@ fn main() {
         })),
         "preflight" => preflight(&app),
         "ai-config" => ai_config(&app),
+        "ai-request" => ai_request(&app, args.collect()),
         "evolve" => evolve(&supervisor, args.collect()),
         "advance" => advance(&app, args.collect()),
         "promote" => boxed(supervisor.promote_candidate().map(|report| {
@@ -377,6 +378,26 @@ fn ai_config(app: &SelfForgeApp) -> Result<String, Box<dyn Error>> {
     }))
 }
 
+fn ai_request(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Box<dyn Error>> {
+    let prompt = arguments.join(" ");
+    boxed(app.ai_request(&prompt).map(|spec| {
+        let body_size = spec.body.to_string().len();
+
+        format!(
+            "SelfForge AI 请求 提供商 {} 方法 {} 地址 {} 模型 {} 协议 {} 认证头 {} 密钥变量 {} 内容类型 {} 请求体字节 {}",
+            spec.provider_id,
+            spec.method,
+            spec.url,
+            spec.model,
+            spec.protocol,
+            spec.auth_header_name,
+            spec.api_key_env_var,
+            spec.content_type,
+            body_size
+        )
+    }))
+}
+
 struct RunArgs {
     version: String,
     program: String,
@@ -679,7 +700,7 @@ fn parse_resolve_error_args(arguments: Vec<String>) -> Result<ResolveErrorArgs, 
 }
 
 fn help_text() -> &'static str {
-    "SelfForge commands: init, validate, status, preflight, ai-config, advance [goal], promote, rollback [reason], cycle, run [--current|--candidate|--version VERSION] [--timeout-ms N] -- PROGRAM [ARGS...], runs [--current|--candidate|--version VERSION] [--limit N] [--failed] [--timed-out], errors [--current|--candidate|--version VERSION] [--limit N] [--open] [--resolved], record-error [--current|--candidate|--version VERSION] [--run-id RUN_ID] [--stage TEXT] [--solution TEXT], resolve-error [--current|--candidate|--version VERSION] --run-id RUN_ID [--verification TEXT], evolve [--patch|--minor|--major] [goal]"
+    "SelfForge commands: init, validate, status, preflight, ai-config, ai-request [prompt], advance [goal], promote, rollback [reason], cycle, run [--current|--candidate|--version VERSION] [--timeout-ms N] -- PROGRAM [ARGS...], runs [--current|--candidate|--version VERSION] [--limit N] [--failed] [--timed-out], errors [--current|--candidate|--version VERSION] [--limit N] [--open] [--resolved], record-error [--current|--candidate|--version VERSION] [--run-id RUN_ID] [--stage TEXT] [--solution TEXT], resolve-error [--current|--candidate|--version VERSION] --run-id RUN_ID [--verification TEXT], evolve [--patch|--minor|--major] [goal]"
 }
 
 fn exit_with_error(error: Box<dyn Error>) -> ! {

@@ -178,6 +178,8 @@ workspace 根目录必须保持极简，只允许 `README.md`、`.gitignore` 和
 
 AI 提供商配置必须优先使用环境变量，禁止把 API Key 写入源码、Markdown、日志、状态文件或运行记录。支持 `OPENAI_API_KEY`、`DEEPSEEK_API_KEY`、`GEMINI_API_KEY` 和 `GOOGLE_API_KEY`；可用 `SELFFORGE_AI_PROVIDER` 指定 `openai`、`deepseek` 或 `gemini`。模型和基础地址可分别通过 `OPENAI_MODEL`、`DEEPSEEK_MODEL`、`GEMINI_MODEL`、`OPENAI_BASE_URL`、`DEEPSEEK_BASE_URL`、`GEMINI_BASE_URL` 覆盖。检查配置必须使用 `ai-config`，输出只能显示密钥是否存在和来源变量名，不得输出密钥值。
 
+AI 请求构建必须优先使用 `ai-request [prompt]` 或应用层统一请求规格。请求构建只能输出脱敏摘要，禁止输出真实 API Key；默认不打印完整请求体，避免把敏感提示词写入日志。不同提供商的端点、认证头和 JSON 请求体差异必须集中在 AI 提供商模块内处理，禁止散落在 CLI 或 Agent 业务流程中。
+
 源码扩展必须优先进入 `src/app/` 应用用例层。CLI 只能负责参数解析和输出，不允许堆叠业务流程；`supervisor` 负责编排；`runtime` 负责验证和受控执行；`evolution` 负责版本状态机；`state` 只负责持久化读写。最小闭环的简单入口是 `advance [goal]`。
 
 ---
