@@ -178,6 +178,8 @@ workspace 根目录必须保持极简，只允许 `README.md`、`.gitignore` 和
 
 AI 提供商配置必须优先使用环境变量，禁止把 API Key 写入源码、Markdown、日志、状态文件或运行记录。支持 `OPENAI_API_KEY`、`DEEPSEEK_API_KEY`、`GEMINI_API_KEY` 和 `GOOGLE_API_KEY`；可用 `SELFFORGE_AI_PROVIDER` 指定 `openai`、`deepseek` 或 `gemini`。模型和基础地址可分别通过 `OPENAI_MODEL`、`DEEPSEEK_MODEL`、`GEMINI_MODEL`、`OPENAI_BASE_URL`、`DEEPSEEK_BASE_URL`、`GEMINI_BASE_URL` 覆盖。检查配置必须使用 `ai-config`，输出只能显示密钥是否存在和来源变量名，不得输出密钥值。
 
+Windows PowerShell 当前会话设置环境变量必须使用 `$env:SELFFORGE_AI_PROVIDER="deepseek"` 和 `$env:DEEPSEEK_API_KEY="密钥"` 这类语法；只写 `SELFFORGE_AI_PROVIDER=deepseek` 不会传递给 `cargo run` 子进程。遇到 AI 配置问题必须先运行 `cargo run -- ai-config` 检查当前进程可见环境。
+
 AI 请求构建必须优先使用 `ai-request [prompt]` 或应用层统一请求规格。请求构建只能输出脱敏摘要，禁止输出真实 API Key；默认不打印完整请求体，避免把敏感提示词写入日志。不同提供商的端点、认证头和 JSON 请求体差异必须集中在 AI 提供商模块内处理，禁止散落在 CLI 或 Agent 业务流程中。
 
 AI 响应解析必须优先使用应用层统一文本响应结构。OpenAI、DeepSeek、Gemini 的响应 JSON 差异必须集中在 AI 提供商模块内处理，业务流程只能消费归一化文本结果。解析失败必须返回明确错误，禁止静默使用空文本继续推进 Agent 流程。

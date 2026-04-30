@@ -157,11 +157,19 @@ impl fmt::Display for AiRequestError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             AiRequestError::Config(error) => write!(formatter, "{error}"),
-            AiRequestError::MissingProvider => {
-                write!(formatter, "没有可用 AI 提供商，请先配置 API Key 环境变量")
-            }
+            AiRequestError::MissingProvider => write!(
+                formatter,
+                "没有可用 AI 提供商。请确认当前 PowerShell 会话已设置环境变量，例如 `$env:SELFFORGE_AI_PROVIDER=\"deepseek\"` 和 `$env:DEEPSEEK_API_KEY=\"你的密钥\"`，然后运行 `cargo run -- ai-config` 检查。支持的密钥变量：{}",
+                all_api_key_env_vars().join(", ")
+            ),
             AiRequestError::MissingApiKey { provider } => {
-                write!(formatter, "AI 提供商 {provider} 未配置 API Key 环境变量")
+                let api_key_env_vars = api_key_env_vars_for_provider(provider)
+                    .unwrap_or_else(|| all_api_key_env_vars());
+                write!(
+                    formatter,
+                    "AI 提供商 {provider} 未配置 API Key 环境变量。请在当前 PowerShell 会话中设置：`$env:{}=\"你的密钥\"`，然后运行 `cargo run -- ai-config` 检查。",
+                    api_key_env_vars.join("` 或 `$env:")
+                )
             }
             AiRequestError::EmptyPrompt => write!(formatter, "AI 请求提示词不能为空"),
         }
@@ -541,4 +549,25 @@ fn provider_definitions() -> &'static [AiProviderDefinition] {
             protocol: AiProviderProtocol::GeminiGenerateContent,
         },
     ]
+}
+
+fn all_api_key_env_vars() -> Vec<String> {
+    provider_definitions()
+        .iter()
+        .flat_map(|definition| definition.api_key_env_vars.iter())
+        .map(|env_var| (*env_var).to_string())
+        .collect()
+}
+
+fn api_key_env_vars_for_provider(provider: &str) -> Option<Vec<String>> {
+    provider_definitions()
+        .iter()
+        .find(|definition| definition.id == provider)
+        .map(|definition| {
+            definition
+                .api_key_env_vars
+                .iter()
+                .map(|env_var| (*env_var).to_string())
+                .collect()
+        })
 }
