@@ -203,6 +203,47 @@ impl AiSelfUpgradeAuditStore {
         Ok(entries)
     }
 
+    pub fn find_by_session(
+        &self,
+        version: impl AsRef<str>,
+        session_id: &str,
+    ) -> Result<Option<AiSelfUpgradeAuditSummary>, AiSelfUpgradeAuditError> {
+        if session_id.trim().is_empty() {
+            return Ok(None);
+        }
+
+        let version = version.as_ref().to_string();
+        let layout = self.layout(&version)?;
+        if !layout.index_path.exists() {
+            return Ok(None);
+        }
+
+        let contents = fs::read_to_string(&layout.index_path).map_err(|source| {
+            AiSelfUpgradeAuditError::Io {
+                path: layout.index_path.clone(),
+                source,
+            }
+        })?;
+        for line in contents
+            .lines()
+            .rev()
+            .filter(|line| !line.trim().is_empty())
+        {
+            let entry =
+                serde_json::from_str::<AiSelfUpgradeAuditSummary>(line).map_err(|source| {
+                    AiSelfUpgradeAuditError::Parse {
+                        path: layout.index_path.clone(),
+                        source,
+                    }
+                })?;
+            if entry.version == version && entry.session_id.as_deref() == Some(session_id) {
+                return Ok(Some(entry));
+            }
+        }
+
+        Ok(None)
+    }
+
     pub fn load(
         &self,
         version: impl AsRef<str>,

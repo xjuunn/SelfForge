@@ -407,6 +407,14 @@ impl SelfForgeApp {
         AiSelfUpgradeAuditStore::new(&self.root).load(version, id)
     }
 
+    pub fn ai_self_upgrade_record_for_session(
+        &self,
+        version: &str,
+        session_id: &str,
+    ) -> Result<Option<AiSelfUpgradeAuditSummary>, AiSelfUpgradeAuditError> {
+        AiSelfUpgradeAuditStore::new(&self.root).find_by_session(version, session_id)
+    }
+
     pub fn agents(&self) -> Vec<AgentDefinition> {
         AgentRegistry::standard().agents().to_vec()
     }

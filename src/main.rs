@@ -1000,90 +1000,86 @@ fn agent_sessions(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, 
 
 fn agent_session(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Box<dyn Error>> {
     let command = parse_agent_session_args(arguments)?;
-    boxed(
-        app.agent_session(&command.version, &command.id)
-            .map(|session| {
-                let mut lines = vec![format!(
-                    "SelfForge Agent 会话 {} 版本 {} 状态 {} 目标 {}",
-                    session.id, session.version, session.status, session.goal
-                )];
-                if let Some(context) = session.plan_context.as_ref() {
-                    lines.push(format_plan_context_summary(context));
-                    if let Some(queue) = context.work_queue.as_ref() {
-                        lines.push(format_work_queue_context_summary(queue));
-                    }
-                    if !context.source_versions.is_empty() {
-                        lines.push(format!(
-                            "计划依据来源 {}",
-                            context.source_versions.join("、")
-                        ));
-                    }
-                } else {
-                    lines.push("计划依据 无".to_string());
-                }
-                for step in session.steps {
-                    let tools = if step.tool_ids.is_empty() {
-                        "无".to_string()
-                    } else {
-                        step.tool_ids.join("、")
-                    };
-                    lines.push(format!(
-                        "{}. [{}] {} 状态 {} 工具 {} 验证 {}",
-                        step.order,
-                        step.agent_id,
-                        step.title,
-                        step.status,
-                        tools,
-                        step.verification
-                    ));
-                    if let Some(task_id) = step.work_task_id.as_deref() {
-                        let worker_id = step.work_worker_id.as_deref().unwrap_or("未知");
-                        lines.push(format!("   协作任务 {task_id} 工作线程 {worker_id}"));
-                    }
-                    if let Some(result) = step.result {
-                        lines.push(format!("   结果 {}", result));
-                    }
-                }
-                if let Some(outcome) = session.outcome {
-                    lines.push(format!("结果 {}", outcome));
-                }
-                if let Some(error) = session.error {
-                    lines.push(format!("错误 {}", error));
-                }
-                lines.push(format!("事件 {} 条", session.events.len()));
-                for event in session.events {
-                    let step = event
-                        .step_order
-                        .map(|order| format!(" 步骤 {order}"))
-                        .unwrap_or_default();
-                    let run = event
-                        .run
-                        .as_ref()
-                        .map(|run| {
-                            format!(
-                                " 运行 {} 版本 {} 退出码 {:?} 超时 {} 报告 {}",
-                                run.run_id,
-                                run.version,
-                                run.exit_code,
-                                run.timed_out,
-                                run.report_file
-                            )
-                        })
-                        .unwrap_or_default();
-                    lines.push(format!(
-                        "事件 {} 时间 {} 类型 {}{}{} 内容 {}",
-                        event.order,
-                        event.timestamp_unix_seconds,
-                        event.kind,
-                        step,
-                        run,
-                        event.message
-                    ));
-                }
-                lines.push(format!("文件 {}", session.file.display()));
-                lines.join("\n")
-            }),
-    )
+    let session = app.agent_session(&command.version, &command.id)?;
+    let audit = app.ai_self_upgrade_record_for_session(&command.version, &session.id)?;
+    let mut lines = vec![format!(
+        "SelfForge Agent 会话 {} 版本 {} 状态 {} 目标 {}",
+        session.id, session.version, session.status, session.goal
+    )];
+    if let Some(audit) = audit {
+        lines.push(format!(
+            "自我升级审计 {} 状态 {} 目标 {} 候选 {} 当前稳定 {} 文件 {}",
+            audit.id,
+            audit.status,
+            audit.proposed_goal.as_deref().unwrap_or("无"),
+            audit.candidate_version.as_deref().unwrap_or("无"),
+            audit.stable_version_after.as_deref().unwrap_or("无"),
+            audit.file.display()
+        ));
+    } else {
+        lines.push("自我升级审计 无".to_string());
+    }
+    if let Some(context) = session.plan_context.as_ref() {
+        lines.push(format_plan_context_summary(context));
+        if let Some(queue) = context.work_queue.as_ref() {
+            lines.push(format_work_queue_context_summary(queue));
+        }
+        if !context.source_versions.is_empty() {
+            lines.push(format!(
+                "计划依据来源 {}",
+                context.source_versions.join("、")
+            ));
+        }
+    } else {
+        lines.push("计划依据 无".to_string());
+    }
+    for step in session.steps {
+        let tools = if step.tool_ids.is_empty() {
+            "无".to_string()
+        } else {
+            step.tool_ids.join("、")
+        };
+        lines.push(format!(
+            "{}. [{}] {} 状态 {} 工具 {} 验证 {}",
+            step.order, step.agent_id, step.title, step.status, tools, step.verification
+        ));
+        if let Some(task_id) = step.work_task_id.as_deref() {
+            let worker_id = step.work_worker_id.as_deref().unwrap_or("未知");
+            lines.push(format!("   协作任务 {task_id} 工作线程 {worker_id}"));
+        }
+        if let Some(result) = step.result {
+            lines.push(format!("   结果 {}", result));
+        }
+    }
+    if let Some(outcome) = session.outcome {
+        lines.push(format!("结果 {}", outcome));
+    }
+    if let Some(error) = session.error {
+        lines.push(format!("错误 {}", error));
+    }
+    lines.push(format!("事件 {} 条", session.events.len()));
+    for event in session.events {
+        let step = event
+            .step_order
+            .map(|order| format!(" 步骤 {order}"))
+            .unwrap_or_default();
+        let run = event
+            .run
+            .as_ref()
+            .map(|run| {
+                format!(
+                    " 运行 {} 版本 {} 退出码 {:?} 超时 {} 报告 {}",
+                    run.run_id, run.version, run.exit_code, run.timed_out, run.report_file
+                )
+            })
+            .unwrap_or_default();
+        lines.push(format!(
+            "事件 {} 时间 {} 类型 {}{}{} 内容 {}",
+            event.order, event.timestamp_unix_seconds, event.kind, step, run, event.message
+        ));
+    }
+    lines.push(format!("文件 {}", session.file.display()));
+    Ok(lines.join("\n"))
 }
 
 fn format_plan_context_summary(context: &self_forge::AgentSessionPlanContext) -> String {
