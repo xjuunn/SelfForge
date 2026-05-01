@@ -89,6 +89,24 @@ pub struct AgentSingleEvolutionReport {
 }
 
 #[derive(Debug, Clone)]
+pub struct AiSelfUpgradePreview {
+    pub current_version: String,
+    pub hint: Option<String>,
+    pub prompt: String,
+    pub request: AiRequestSpec,
+    pub preflight: PreflightReport,
+    pub insights: MemoryInsightReport,
+}
+
+#[derive(Debug, Clone)]
+pub struct AiSelfUpgradeReport {
+    pub preview: AiSelfUpgradePreview,
+    pub ai: AiExecutionReport,
+    pub proposed_goal: String,
+    pub evolution: AgentSingleEvolutionReport,
+}
+
+#[derive(Debug, Clone)]
 pub struct AgentRunReport {
     pub session: AgentSession,
     pub execution: ExecutionReport,
@@ -143,6 +161,21 @@ pub enum AgentEvolutionError {
         session: Box<AgentSession>,
         open_errors: Vec<ArchivedErrorEntry>,
     },
+}
+
+#[derive(Debug)]
+pub enum AiSelfUpgradeError {
+    Preflight(MinimalLoopError),
+    Memory(MemoryContextError),
+    Ai(AiExecutionError),
+    Blocked {
+        version: String,
+        open_errors: Vec<ArchivedErrorEntry>,
+    },
+    EmptyGoal {
+        response_preview: String,
+    },
+    Evolution(AgentEvolutionError),
 }
 
 #[derive(Debug)]
@@ -252,6 +285,75 @@ impl SelfForgeApp {
         timeout_ms: u64,
     ) -> Result<AiExecutionReport, AiExecutionError> {
         AiProviderRegistry::execute_text_request_project(&self.root, prompt, timeout_ms)
+    }
+
+    pub fn ai_self_upgrade_preview(
+        &self,
+        hint: &str,
+    ) -> Result<AiSelfUpgradePreview, AiSelfUpgradeError> {
+        self.ai_self_upgrade_preview_with_lookup(hint, |key| std::env::var(key).ok())
+    }
+
+    pub(crate) fn ai_self_upgrade_preview_with_lookup<F>(
+        &self,
+        hint: &str,
+        process_lookup: F,
+    ) -> Result<AiSelfUpgradePreview, AiSelfUpgradeError>
+    where
+        F: Fn(&str) -> Option<String>,
+    {
+        let preflight = self.preflight().map_err(AiSelfUpgradeError::Preflight)?;
+        if !preflight.can_advance {
+            return Err(AiSelfUpgradeError::Blocked {
+                version: preflight.current_version.clone(),
+                open_errors: preflight.open_errors.clone(),
+            });
+        }
+
+        let insights = self
+            .memory_insights(&preflight.current_version, 5)
+            .map_err(AiSelfUpgradeError::Memory)?;
+        let normalized_hint = normalize_optional_text(hint);
+        let prompt =
+            build_ai_self_upgrade_prompt(&preflight, &insights, normalized_hint.as_deref());
+        let request = AiProviderRegistry::build_text_request_project_with(
+            &self.root,
+            &prompt,
+            process_lookup,
+        )
+        .map_err(AiExecutionError::from)
+        .map_err(AiSelfUpgradeError::Ai)?;
+
+        Ok(AiSelfUpgradePreview {
+            current_version: preflight.current_version.clone(),
+            hint: normalized_hint,
+            prompt,
+            request,
+            preflight,
+            insights,
+        })
+    }
+
+    pub fn ai_self_upgrade(
+        &self,
+        hint: &str,
+        timeout_ms: u64,
+    ) -> Result<AiSelfUpgradeReport, AiSelfUpgradeError> {
+        let preview = self.ai_self_upgrade_preview(hint)?;
+        let ai = self
+            .ai_request(&preview.prompt, timeout_ms)
+            .map_err(AiSelfUpgradeError::Ai)?;
+        let proposed_goal = normalize_ai_self_upgrade_goal(&ai.response.text)?;
+        let evolution = self
+            .agent_evolve(&proposed_goal)
+            .map_err(AiSelfUpgradeError::Evolution)?;
+
+        Ok(AiSelfUpgradeReport {
+            preview,
+            ai,
+            proposed_goal,
+            evolution,
+        })
     }
 
     pub fn agents(&self) -> Vec<AgentDefinition> {
@@ -1527,6 +1629,149 @@ fn session_memory_insights(insights: &[MemoryInsight]) -> Vec<AgentSessionMemory
         .collect()
 }
 
+fn build_ai_self_upgrade_prompt(
+    preflight: &PreflightReport,
+    insights: &MemoryInsightReport,
+    hint: Option<&str>,
+) -> String {
+    let mut prompt = String::new();
+    prompt.push_str("你是 SelfForge 的自我升级目标决策 Agent。\n");
+    prompt.push_str("请基于当前状态和近期记忆，选择下一轮最小、可验证、可回滚的小版本升级目标。\n");
+    prompt.push_str("必须遵守：只返回一个中文目标句子；不要 Markdown；不要编号；不要解释；不要输出代码；不要要求写入密钥；默认只做 patch 级升级；禁止修改 runtime 和 supervisor 受保护边界。\n");
+    prompt.push_str(
+        "目标必须能交给 SelfForge 的 agent-evolve 流程执行，并优先推进自动自我升级闭环。\n\n",
+    );
+    prompt.push_str("# 当前状态\n");
+    prompt.push_str(&format!(
+        "- 当前稳定版本：{}\n- 状态：{}\n- 候选版本：{}\n- 未解决错误：{}\n",
+        preflight.current_version,
+        preflight.status,
+        preflight.candidate_version.as_deref().unwrap_or("无"),
+        preflight.open_errors.len()
+    ));
+    if let Some(hint) = hint {
+        prompt.push_str(&format!("- 用户补充目标：{hint}\n"));
+    }
+    prompt.push('\n');
+
+    prompt.push_str("# 近期成功经验\n");
+    prompt.push_str(&format_memory_insight_lines(
+        &insights.success_experiences,
+        5,
+    ));
+    prompt.push_str("\n# 近期失败风险\n");
+    prompt.push_str(&format_memory_insight_lines(
+        &insights.failure_experiences,
+        5,
+    ));
+    prompt.push_str("\n# 近期优化建议\n");
+    prompt.push_str(&format_memory_insight_lines(
+        &insights.optimization_suggestions,
+        5,
+    ));
+    prompt.push_str("\n# 可复用经验\n");
+    prompt.push_str(&format_memory_insight_lines(
+        &insights.reusable_experiences,
+        5,
+    ));
+    prompt.push_str("\n# 输出格式\n");
+    prompt.push_str("只返回一个中文目标句子，例如：继续完善 AI 自我升级流程的受控执行记录。\n");
+    prompt
+}
+
+fn format_memory_insight_lines(insights: &[MemoryInsight], limit: usize) -> String {
+    if insights.is_empty() || limit == 0 {
+        return "- 暂无记录。\n".to_string();
+    }
+
+    insights
+        .iter()
+        .take(limit)
+        .map(|insight| format!("- {}：{}\n", insight.version, insight.text.trim()))
+        .collect::<Vec<_>>()
+        .join("")
+}
+
+fn normalize_optional_text(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+pub fn normalize_ai_self_upgrade_goal(text: &str) -> Result<String, AiSelfUpgradeError> {
+    let response_preview = truncate_chars(text.trim(), 160);
+    let Some(line) = text
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty() && !line.starts_with("```"))
+    else {
+        return Err(AiSelfUpgradeError::EmptyGoal { response_preview });
+    };
+
+    let cleaned = strip_goal_prefix(line)
+        .chars()
+        .filter(|character| !is_disallowed_symbol(*character))
+        .collect::<String>();
+    let goal = truncate_chars(
+        cleaned.trim_matches(|character| {
+            matches!(character, '"' | '\'' | '“' | '”' | '‘' | '’' | '`')
+        }),
+        160,
+    );
+
+    if goal.trim().is_empty() {
+        Err(AiSelfUpgradeError::EmptyGoal { response_preview })
+    } else {
+        Ok(goal.trim().to_string())
+    }
+}
+
+fn strip_goal_prefix(line: &str) -> &str {
+    let mut value = line.trim();
+    loop {
+        let next = value
+            .strip_prefix("- ")
+            .or_else(|| value.strip_prefix("* "))
+            .or_else(|| value.strip_prefix("目标："))
+            .or_else(|| value.strip_prefix("目标:"))
+            .or_else(|| value.strip_prefix("升级目标："))
+            .or_else(|| value.strip_prefix("升级目标:"));
+        if let Some(next) = next {
+            value = next.trim();
+            continue;
+        }
+
+        let Some((prefix, rest)) = value.split_once('.') else {
+            break;
+        };
+        if prefix.chars().all(|character| character.is_ascii_digit()) {
+            value = rest.trim();
+            continue;
+        }
+        break;
+    }
+
+    value
+}
+
+fn truncate_chars(value: &str, max: usize) -> String {
+    let mut output = value.chars().take(max).collect::<String>();
+    if value.chars().count() > max {
+        output.push_str("...");
+    }
+    output
+}
+
+fn is_disallowed_symbol(character: char) -> bool {
+    matches!(
+        character,
+        '\u{1F000}'..='\u{1FAFF}' | '\u{2600}'..='\u{27BF}' | '\u{FE0F}'
+    )
+}
+
 impl fmt::Display for MinimalLoopError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -1645,6 +1890,47 @@ impl Error for AgentEvolutionError {
 impl From<AgentSessionError> for AgentEvolutionError {
     fn from(error: AgentSessionError) -> Self {
         AgentEvolutionError::Session(error)
+    }
+}
+
+impl fmt::Display for AiSelfUpgradeError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AiSelfUpgradeError::Preflight(error) => {
+                write!(formatter, "AI 自我升级预检失败：{error}")
+            }
+            AiSelfUpgradeError::Memory(error) => {
+                write!(formatter, "AI 自我升级读取记忆失败：{error}")
+            }
+            AiSelfUpgradeError::Ai(error) => write!(formatter, "AI 自我升级请求失败：{error}"),
+            AiSelfUpgradeError::Blocked {
+                version,
+                open_errors,
+            } => write!(
+                formatter,
+                "版本 {version} 存在 {} 条未解决错误，AI 自我升级已停止",
+                open_errors.len()
+            ),
+            AiSelfUpgradeError::EmptyGoal { response_preview } => write!(
+                formatter,
+                "AI 自我升级响应未包含可执行目标，响应摘要：{response_preview}"
+            ),
+            AiSelfUpgradeError::Evolution(error) => {
+                write!(formatter, "AI 自我升级执行受控进化失败：{error}")
+            }
+        }
+    }
+}
+
+impl Error for AiSelfUpgradeError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            AiSelfUpgradeError::Preflight(error) => Some(error),
+            AiSelfUpgradeError::Memory(error) => Some(error),
+            AiSelfUpgradeError::Ai(error) => Some(error),
+            AiSelfUpgradeError::Evolution(error) => Some(error),
+            AiSelfUpgradeError::Blocked { .. } | AiSelfUpgradeError::EmptyGoal { .. } => None,
+        }
     }
 }
 

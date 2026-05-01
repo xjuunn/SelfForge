@@ -70,6 +70,7 @@ fn main() {
         "agent-verify" => agent_verify(&app, args.collect()),
         "agent-advance" => agent_advance(&app, args.collect()),
         "agent-evolve" => agent_evolve(&app, args.collect()),
+        "agent-self-upgrade" => agent_self_upgrade(&app, args.collect()),
         "evolve" => evolve(&supervisor, args.collect()),
         "advance" => advance(&app, args.collect()),
         "promote" => boxed(supervisor.promote_candidate().map(|report| {
@@ -1227,10 +1228,59 @@ fn agent_evolve(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Bo
     }))
 }
 
+fn agent_self_upgrade(
+    app: &SelfForgeApp,
+    arguments: Vec<String>,
+) -> Result<String, Box<dyn Error>> {
+    let command = parse_agent_self_upgrade_args(arguments)?;
+    if command.dry_run {
+        return boxed(app.ai_self_upgrade_preview(&command.hint).map(|preview| {
+            format!(
+                "SelfForge AI 自我升级预览 当前版本 {} 提供商 {} 模型 {} 协议 {} 记忆来源 {} 优化建议 {} 用户提示 {} 提示词字节 {}",
+                preview.current_version,
+                preview.request.provider_id,
+                preview.request.model,
+                preview.request.protocol,
+                preview.insights.source_versions.len(),
+                preview.insights.optimization_suggestions.len(),
+                preview.hint.as_deref().unwrap_or("无"),
+                preview.prompt.len()
+            )
+        }));
+    }
+
+    boxed(app.ai_self_upgrade(&command.hint, command.timeout_ms).map(|report| {
+        let prepared = report
+            .evolution
+            .prepared_candidate_version
+            .as_deref()
+            .unwrap_or("复用已有候选");
+        format!(
+            "SelfForge AI 自我升级完成 当前版本 {} 提供商 {} 模型 {} 目标 {} 会话 {} 准备 {} 候选版本 {} 结果 {:?} 当前稳定版本 {} 未解决错误 {}",
+            report.preview.current_version,
+            report.ai.response.provider_id,
+            report.ai.response.model,
+            report.proposed_goal,
+            report.evolution.session.id,
+            prepared,
+            report.evolution.cycle.candidate_version,
+            report.evolution.cycle.result,
+            report.evolution.cycle.state.current_version,
+            report.evolution.preflight.open_errors.len()
+        )
+    }))
+}
+
 struct AiRequestArgs {
     dry_run: bool,
     timeout_ms: u64,
     prompt: String,
+}
+
+struct AgentSelfUpgradeArgs {
+    dry_run: bool,
+    timeout_ms: u64,
+    hint: String,
 }
 
 struct MemoryContextArgs {
@@ -1280,6 +1330,48 @@ fn parse_ai_request_args(arguments: Vec<String>) -> Result<AiRequestArgs, Box<dy
         dry_run,
         timeout_ms,
         prompt: prompt_parts.join(" "),
+    })
+}
+
+fn parse_agent_self_upgrade_args(
+    arguments: Vec<String>,
+) -> Result<AgentSelfUpgradeArgs, Box<dyn Error>> {
+    let mut dry_run = false;
+    let mut timeout_ms = DEFAULT_AI_TIMEOUT_MS;
+    let mut hint_parts = Vec::new();
+    let mut index = 0;
+
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "--dry-run" => {
+                dry_run = true;
+                index += 1;
+            }
+            "--timeout-ms" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--timeout-ms 需要毫秒数".into());
+                };
+                timeout_ms = value.parse::<u64>()?;
+                index += 2;
+            }
+            "--" => {
+                hint_parts.extend(arguments[index + 1..].iter().cloned());
+                break;
+            }
+            other if other.starts_with("--") => {
+                return Err(format!("未知 agent-self-upgrade 参数: {other}").into());
+            }
+            _ => {
+                hint_parts.extend(arguments[index..].iter().cloned());
+                break;
+            }
+        }
+    }
+
+    Ok(AgentSelfUpgradeArgs {
+        dry_run,
+        timeout_ms,
+        hint: hint_parts.join(" "),
     })
 }
 
@@ -2699,7 +2791,7 @@ fn parse_agent_verify_args(arguments: Vec<String>) -> Result<AgentVerifyArgs, Bo
 }
 
 fn help_text() -> &'static str {
-    "SelfForge commands: init, validate, status, preflight, memory-context [--current|--candidate|--version VERSION] [--limit N], memory-insights [--current|--candidate|--version VERSION] [--limit N], memory-compact [--current|--candidate|--version VERSION] [--keep N], ai-config, ai-request [--dry-run] [--timeout-ms N] [prompt], agents, agent-tools [--current|--candidate|--version VERSION] [--init], agent-work-init [--current|--candidate|--version VERSION] [--threads N] [goal], agent-work-status [--current|--candidate|--version VERSION], agent-work-claim [--current|--candidate|--version VERSION] [--worker ID] [--agent AGENT_ID] [--lease-seconds N], agent-work-complete [--current|--candidate|--version VERSION] TASK_ID [--worker ID] [--summary TEXT], agent-work-release [--current|--candidate|--version VERSION] TASK_ID [--worker ID] [--reason TEXT], agent-work-reap [--current|--candidate|--version VERSION] [--reason TEXT], agent-tool-run TOOL_ID --agent AGENT_ID [--current|--candidate|--version VERSION] [--limit N] [--all] [--session SESSION_ID] [--session-version VERSION] [--step N] [--target-version VERSION] [--timeout-ms N] [--prompt TEXT] [-- PROGRAM ARGS...], agent-step [--session-version VERSION] [--target-version VERSION] [--tool TOOL_ID] [--limit N] [--timeout-ms N] [--prompt TEXT] SESSION_ID [-- PROGRAM ARGS...], agent-plan [--current|--candidate|--version VERSION] [--limit N] [goal], agent-start [--current|--candidate|--version VERSION] [goal], agent-sessions [--current|--candidate|--version VERSION] [--limit N] [--all], agent-session [--current|--candidate|--version VERSION] SESSION_ID, agent-run [--session-version VERSION] [--current|--candidate|--version VERSION] [--step N] [--timeout-ms N] SESSION_ID -- PROGRAM [ARGS...], agent-verify [--current|--candidate|--version VERSION] [--timeout-ms N] [goal] -- PROGRAM [ARGS...], agent-advance [goal], agent-evolve [goal], advance [goal], promote, rollback [reason], cycle, run [--current|--candidate|--version VERSION] [--timeout-ms N] -- PROGRAM [ARGS...], runs [--current|--candidate|--version VERSION] [--limit N] [--failed] [--timed-out], errors [--current|--candidate|--version VERSION] [--limit N] [--open] [--resolved], record-error [--current|--candidate|--version VERSION] [--run-id RUN_ID] [--stage TEXT] [--solution TEXT], resolve-error [--current|--candidate|--version VERSION] --run-id RUN_ID [--verification TEXT], evolve [--patch|--minor|--major] [goal]"
+    "SelfForge commands: init, validate, status, preflight, memory-context [--current|--candidate|--version VERSION] [--limit N], memory-insights [--current|--candidate|--version VERSION] [--limit N], memory-compact [--current|--candidate|--version VERSION] [--keep N], ai-config, ai-request [--dry-run] [--timeout-ms N] [prompt], agents, agent-tools [--current|--candidate|--version VERSION] [--init], agent-work-init [--current|--candidate|--version VERSION] [--threads N] [goal], agent-work-status [--current|--candidate|--version VERSION], agent-work-claim [--current|--candidate|--version VERSION] [--worker ID] [--agent AGENT_ID] [--lease-seconds N], agent-work-complete [--current|--candidate|--version VERSION] TASK_ID [--worker ID] [--summary TEXT], agent-work-release [--current|--candidate|--version VERSION] TASK_ID [--worker ID] [--reason TEXT], agent-work-reap [--current|--candidate|--version VERSION] [--reason TEXT], agent-tool-run TOOL_ID --agent AGENT_ID [--current|--candidate|--version VERSION] [--limit N] [--all] [--session SESSION_ID] [--session-version VERSION] [--step N] [--target-version VERSION] [--timeout-ms N] [--prompt TEXT] [-- PROGRAM ARGS...], agent-step [--session-version VERSION] [--target-version VERSION] [--tool TOOL_ID] [--limit N] [--timeout-ms N] [--prompt TEXT] SESSION_ID [-- PROGRAM ARGS...], agent-plan [--current|--candidate|--version VERSION] [--limit N] [goal], agent-start [--current|--candidate|--version VERSION] [goal], agent-sessions [--current|--candidate|--version VERSION] [--limit N] [--all], agent-session [--current|--candidate|--version VERSION] SESSION_ID, agent-run [--session-version VERSION] [--current|--candidate|--version VERSION] [--step N] [--timeout-ms N] SESSION_ID -- PROGRAM [ARGS...], agent-verify [--current|--candidate|--version VERSION] [--timeout-ms N] [goal] -- PROGRAM [ARGS...], agent-advance [goal], agent-evolve [goal], agent-self-upgrade [--dry-run] [--timeout-ms N] [hint], advance [goal], promote, rollback [reason], cycle, run [--current|--candidate|--version VERSION] [--timeout-ms N] -- PROGRAM [ARGS...], runs [--current|--candidate|--version VERSION] [--limit N] [--failed] [--timed-out], errors [--current|--candidate|--version VERSION] [--limit N] [--open] [--resolved], record-error [--current|--candidate|--version VERSION] [--run-id RUN_ID] [--stage TEXT] [--solution TEXT], resolve-error [--current|--candidate|--version VERSION] --run-id RUN_ID [--verification TEXT], evolve [--patch|--minor|--major] [goal]"
 }
 
 fn exit_with_error(error: Box<dyn Error>) -> ! {

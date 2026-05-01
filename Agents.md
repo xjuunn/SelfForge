@@ -226,6 +226,8 @@ Agent 自动进化入口必须优先使用 `agent-advance [goal]`。该命令必
 
 单轮完整 Agent 进化必须优先使用 `agent-evolve [goal]`。该命令必须创建 Agent 会话、执行 `preflight`、在无候选时准备下一 patch 候选、在已有候选时直接验证候选，并通过 `cycle` 完成提升或回滚。若存在未解决错误，必须在准备候选前停止并将会话标记为失败。`agent-evolve` 只能执行一轮完整进化，禁止循环自调用，禁止跳过测试和验证。
 
+AI 自我升级入口必须优先使用 `agent-self-upgrade [--dry-run] [--timeout-ms N] [hint]`。该命令必须先执行 `preflight`，再读取近期 `memory-insights`，然后通过统一 AI Provider 生成一个中文、单句、patch 级、可验证的升级目标，最后复用 `agent-evolve` 执行受控进化。`--dry-run` 只能输出脱敏请求摘要和提示词规模，禁止发起真实升级；真实执行必须设置超时，并且不得输出 API Key、完整请求体或敏感提示词。若存在未解决错误、AI 响应为空、响应无法归一化为目标或进化流程失败，必须停止并返回明确错误，禁止静默继续。当前阶段 AI 自我升级只负责选择升级目标和触发受控闭环，禁止绕过任务、记忆、错误、版本、Runtime、Supervisor 和状态文件直接修改代码。
+
 ---
 
 # 八、Git 提交规范
