@@ -1,7 +1,9 @@
 use super::agent::{
     AgentDefinition, AgentError, AgentPlan, AgentRegistry, AgentRunReference, AgentSession,
     AgentSessionError, AgentSessionMemoryInsight, AgentSessionPlanContext, AgentSessionStatus,
-    AgentSessionStore, AgentSessionSummary, AgentStepStatus,
+    AgentSessionStore, AgentSessionSummary, AgentStepStatus, AgentToolConfigInitReport,
+    AgentToolError, AgentToolReport, apply_tools_to_plan, initialize_agent_tool_config,
+    load_agent_tool_report,
 };
 use super::ai_provider::{
     AiConfigError, AiConfigReport, AiExecutionError, AiExecutionReport, AiProviderRegistry,
@@ -62,6 +64,7 @@ pub struct PreflightReport {
 pub struct AgentPlanReport {
     pub plan: AgentPlan,
     pub insights: MemoryInsightReport,
+    pub tools: AgentToolReport,
 }
 
 #[derive(Debug, Clone)]
@@ -108,6 +111,7 @@ pub enum MinimalLoopError {
 pub enum AgentPlanReportError {
     Agent(AgentError),
     Memory(MemoryContextError),
+    Tools(AgentToolError),
 }
 
 #[derive(Debug)]
@@ -201,6 +205,18 @@ impl SelfForgeApp {
         AgentRegistry::standard().agents().to_vec()
     }
 
+    pub fn agent_tools(&self, version: &str) -> Result<AgentToolReport, AgentToolError> {
+        let registry = AgentRegistry::standard();
+        load_agent_tool_report(&self.root, version, registry.agents())
+    }
+
+    pub fn init_agent_tool_config(
+        &self,
+        version: &str,
+    ) -> Result<AgentToolConfigInitReport, AgentToolError> {
+        initialize_agent_tool_config(&self.root, version)
+    }
+
     pub fn agent_plan(&self, goal: &str) -> Result<AgentPlan, AgentError> {
         AgentRegistry::standard().plan_for_goal(goal)
     }
@@ -211,10 +227,16 @@ impl SelfForgeApp {
         version: &str,
         limit: usize,
     ) -> Result<AgentPlanReport, AgentPlanReportError> {
-        let plan = self.agent_plan(goal)?;
+        let mut plan = self.agent_plan(goal)?;
         let insights = self.memory_insights(version, limit)?;
+        let tools = self.agent_tools(version)?;
+        apply_tools_to_plan(&mut plan, &tools);
 
-        Ok(AgentPlanReport { plan, insights })
+        Ok(AgentPlanReport {
+            plan,
+            insights,
+            tools,
+        })
     }
 
     pub fn memory_context(
@@ -239,7 +261,7 @@ impl SelfForgeApp {
         goal: &str,
     ) -> Result<AgentSession, AgentSessionError> {
         let store = AgentSessionStore::new(&self.root);
-        let mut session = store.start(version, goal)?;
+        let mut session = self.start_session_with_tools(&store, version, goal)?;
         match self.attach_plan_context(&mut session, version, 5) {
             Ok(_) => {
                 store.save(&session)?;
@@ -387,7 +409,7 @@ impl SelfForgeApp {
             .map_err(MinimalLoopError::from)
             .map_err(AgentRunError::Setup)?;
         let store = AgentSessionStore::new(&self.root);
-        let mut session = store.start(&state.current_version, goal)?;
+        let mut session = self.start_session_with_tools(&store, &state.current_version, goal)?;
         session.mark_running();
         let memory = match self.attach_plan_context(&mut session, &state.current_version, 5) {
             Ok(report) => report,
@@ -458,7 +480,7 @@ impl SelfForgeApp {
             .map_err(MinimalLoopError::from)
             .map_err(AgentEvolutionError::Setup)?;
         let store = AgentSessionStore::new(&self.root);
-        let mut session = store.start(&state.current_version, goal)?;
+        let mut session = self.start_session_with_tools(&store, &state.current_version, goal)?;
         session.mark_running();
         let memory = match self.attach_plan_context(&mut session, &state.current_version, 5) {
             Ok(report) => report,
@@ -575,7 +597,7 @@ impl SelfForgeApp {
             .map_err(MinimalLoopError::from)
             .map_err(AgentEvolutionError::Setup)?;
         let store = AgentSessionStore::new(&self.root);
-        let mut session = store.start(&state.current_version, goal)?;
+        let mut session = self.start_session_with_tools(&store, &state.current_version, goal)?;
         session.mark_running();
         let memory = match self.attach_plan_context(&mut session, &state.current_version, 5) {
             Ok(report) => report,
@@ -775,6 +797,22 @@ impl SelfForgeApp {
         Ok(())
     }
 
+    fn start_session_with_tools(
+        &self,
+        store: &AgentSessionStore,
+        version: &str,
+        goal: &str,
+    ) -> Result<AgentSession, AgentSessionError> {
+        let mut plan = self.agent_plan(goal)?;
+        let tools = self
+            .agent_tools(version)
+            .map_err(|error| AgentSessionError::PlanContext {
+                message: error.to_string(),
+            })?;
+        apply_tools_to_plan(&mut plan, &tools);
+        store.start_with_plan_context(version, plan, None)
+    }
+
     fn attach_plan_context(
         &self,
         session: &mut AgentSession,
@@ -854,6 +892,9 @@ impl fmt::Display for AgentPlanReportError {
             AgentPlanReportError::Memory(error) => {
                 write!(formatter, "Agent 计划记忆读取失败：{error}")
             }
+            AgentPlanReportError::Tools(error) => {
+                write!(formatter, "Agent 计划工具配置失败：{error}")
+            }
         }
     }
 }
@@ -863,6 +904,7 @@ impl Error for AgentPlanReportError {
         match self {
             AgentPlanReportError::Agent(error) => Some(error),
             AgentPlanReportError::Memory(error) => Some(error),
+            AgentPlanReportError::Tools(error) => Some(error),
         }
     }
 }
@@ -876,6 +918,12 @@ impl From<AgentError> for AgentPlanReportError {
 impl From<MemoryContextError> for AgentPlanReportError {
     fn from(error: MemoryContextError) -> Self {
         AgentPlanReportError::Memory(error)
+    }
+}
+
+impl From<AgentToolError> for AgentPlanReportError {
+    fn from(error: AgentToolError) -> Self {
+        AgentPlanReportError::Tools(error)
     }
 }
 

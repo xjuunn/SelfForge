@@ -50,6 +50,7 @@ fn main() {
         "ai-config" => ai_config(&app),
         "ai-request" => ai_request(&app, args.collect()),
         "agents" => agents(&app),
+        "agent-tools" => agent_tools(&app, args.collect()),
         "agent-plan" => agent_plan(&app, args.collect()),
         "agent-start" => agent_start(&app, args.collect()),
         "agent-sessions" => agent_sessions(&app, args.collect()),
@@ -522,6 +523,68 @@ fn agents(app: &SelfForgeApp) -> Result<String, Box<dyn Error>> {
     Ok(lines.join("\n"))
 }
 
+fn agent_tools(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Box<dyn Error>> {
+    let command = parse_agent_tools_args(arguments)?;
+    if command.init {
+        return boxed(app.init_agent_tool_config(&command.version).map(|report| {
+            let created = if report.created {
+                "已创建"
+            } else {
+                "已存在"
+            };
+            format!(
+                "SelfForge Agent 工具配置 {} 版本 {} 文件 {}",
+                created,
+                report.version,
+                report.config_path.display()
+            )
+        }));
+    }
+
+    boxed(app.agent_tools(&command.version).map(|report| {
+        let config = if report.config_exists {
+            "已配置"
+        } else {
+            "使用内置默认"
+        };
+        let mut lines = vec![format!(
+            "SelfForge Agent 工具 {} 工具 {} 分配 {} 配置 {} 文件 {}",
+            report.version,
+            report.tools.len(),
+            report.assignments.len(),
+            config,
+            report.config_path.display()
+        )];
+        for tool in &report.tools {
+            let enabled = if tool.enabled { "是" } else { "否" };
+            let capabilities = tool
+                .capabilities
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join("、");
+            let agents = if tool.agent_ids.is_empty() {
+                "按能力匹配".to_string()
+            } else {
+                tool.agent_ids.join("、")
+            };
+            lines.push(format!(
+                "工具 {} 启用 {} 类型 {} 能力 {} Agent {} 名称 {}",
+                tool.id, enabled, tool.kind, capabilities, agents, tool.name
+            ));
+        }
+        for assignment in &report.assignments {
+            let tools = if assignment.tool_ids.is_empty() {
+                "无".to_string()
+            } else {
+                assignment.tool_ids.join("、")
+            };
+            lines.push(format!("Agent {} 工具 {}", assignment.agent_id, tools));
+        }
+        lines.join("\n")
+    }))
+}
+
 fn agent_plan(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Box<dyn Error>> {
     let command = parse_agent_plan_args(arguments)?;
     let report = app.agent_plan_with_memory(&command.goal, &command.version, command.limit);
@@ -529,8 +592,9 @@ fn agent_plan(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Box<
     boxed(report.map(|report| {
         let plan = report.plan;
         let insights = report.insights;
+        let tools = report.tools;
         let mut lines = vec![format!(
-            "SelfForge Agent 计划 目标 {} 记忆版本 {} 来源 {} 成功 {} 风险 {} 建议 {} 经验 {} 文件 {}",
+            "SelfForge Agent 计划 目标 {} 记忆版本 {} 来源 {} 成功 {} 风险 {} 建议 {} 经验 {} 工具 {} 文件 {}",
             plan.goal,
             insights.version,
             insights.source_versions.len(),
@@ -538,6 +602,7 @@ fn agent_plan(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Box<
             insights.failure_experiences.len(),
             insights.optimization_suggestions.len(),
             insights.reusable_experiences.len(),
+            tools.tools.len(),
             insights.archive_path.display()
         )];
         append_insight_lines(&mut lines, "成功经验", &insights.success_experiences);
@@ -546,9 +611,14 @@ fn agent_plan(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Box<
         append_insight_lines(&mut lines, "可复用经验", &insights.reusable_experiences);
         lines.push(format!("参与 Agent {}", plan.agents.len()));
         for step in plan.steps {
+            let tools = if step.tool_ids.is_empty() {
+                "无".to_string()
+            } else {
+                step.tool_ids.join("、")
+            };
             lines.push(format!(
-                "{}. [{}] {} 能力 {} 验证 {}",
-                step.order, step.agent_id, step.title, step.capability, step.verification
+                "{}. [{}] {} 能力 {} 工具 {} 验证 {}",
+                step.order, step.agent_id, step.title, step.capability, tools, step.verification
             ));
         }
         lines.join("\n")
@@ -637,9 +707,19 @@ fn agent_session(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, B
                     lines.push("计划依据 无".to_string());
                 }
                 for step in session.steps {
+                    let tools = if step.tool_ids.is_empty() {
+                        "无".to_string()
+                    } else {
+                        step.tool_ids.join("、")
+                    };
                     lines.push(format!(
-                        "{}. [{}] {} 状态 {} 验证 {}",
-                        step.order, step.agent_id, step.title, step.status, step.verification
+                        "{}. [{}] {} 状态 {} 工具 {} 验证 {}",
+                        step.order,
+                        step.agent_id,
+                        step.title,
+                        step.status,
+                        tools,
+                        step.verification
                     ));
                     if let Some(result) = step.result {
                         lines.push(format!("   结果 {}", result));
@@ -934,6 +1014,11 @@ struct AgentPlanArgs {
     version: String,
     limit: usize,
     goal: String,
+}
+
+struct AgentToolsArgs {
+    version: String,
+    init: bool,
 }
 
 struct AgentSessionsArgs {
@@ -1284,6 +1369,40 @@ fn parse_agent_plan_args(arguments: Vec<String>) -> Result<AgentPlanArgs, Box<dy
     })
 }
 
+fn parse_agent_tools_args(arguments: Vec<String>) -> Result<AgentToolsArgs, Box<dyn Error>> {
+    let state = ForgeState::load(env::current_dir()?)?;
+    let mut version = state.current_version.clone();
+    let mut init = false;
+    let mut index = 0;
+
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "--init" => {
+                init = true;
+                index += 1;
+            }
+            "--current" => {
+                version = state.current_version.clone();
+                index += 1;
+            }
+            "--candidate" => {
+                version = state.candidate_version.clone().ok_or("当前没有候选版本")?;
+                index += 1;
+            }
+            "--version" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--version 需要版本号".into());
+                };
+                version = value.clone();
+                index += 2;
+            }
+            other => return Err(format!("未知 agent-tools 参数: {other}").into()),
+        }
+    }
+
+    Ok(AgentToolsArgs { version, init })
+}
+
 fn parse_agent_start_args(arguments: Vec<String>) -> Result<AgentStartArgs, Box<dyn Error>> {
     let state = ForgeState::load(env::current_dir()?)?;
     let mut version = state.current_version.clone();
@@ -1562,7 +1681,7 @@ fn parse_agent_verify_args(arguments: Vec<String>) -> Result<AgentVerifyArgs, Bo
 }
 
 fn help_text() -> &'static str {
-    "SelfForge commands: init, validate, status, preflight, memory-context [--current|--candidate|--version VERSION] [--limit N], memory-insights [--current|--candidate|--version VERSION] [--limit N], ai-config, ai-request [--dry-run] [--timeout-ms N] [prompt], agents, agent-plan [--current|--candidate|--version VERSION] [--limit N] [goal], agent-start [--current|--candidate|--version VERSION] [goal], agent-sessions [--current|--candidate|--version VERSION] [--limit N] [--all], agent-session [--current|--candidate|--version VERSION] SESSION_ID, agent-run [--session-version VERSION] [--current|--candidate|--version VERSION] [--step N] [--timeout-ms N] SESSION_ID -- PROGRAM [ARGS...], agent-verify [--current|--candidate|--version VERSION] [--timeout-ms N] [goal] -- PROGRAM [ARGS...], agent-advance [goal], agent-evolve [goal], advance [goal], promote, rollback [reason], cycle, run [--current|--candidate|--version VERSION] [--timeout-ms N] -- PROGRAM [ARGS...], runs [--current|--candidate|--version VERSION] [--limit N] [--failed] [--timed-out], errors [--current|--candidate|--version VERSION] [--limit N] [--open] [--resolved], record-error [--current|--candidate|--version VERSION] [--run-id RUN_ID] [--stage TEXT] [--solution TEXT], resolve-error [--current|--candidate|--version VERSION] --run-id RUN_ID [--verification TEXT], evolve [--patch|--minor|--major] [goal]"
+    "SelfForge commands: init, validate, status, preflight, memory-context [--current|--candidate|--version VERSION] [--limit N], memory-insights [--current|--candidate|--version VERSION] [--limit N], ai-config, ai-request [--dry-run] [--timeout-ms N] [prompt], agents, agent-tools [--current|--candidate|--version VERSION] [--init], agent-plan [--current|--candidate|--version VERSION] [--limit N] [goal], agent-start [--current|--candidate|--version VERSION] [goal], agent-sessions [--current|--candidate|--version VERSION] [--limit N] [--all], agent-session [--current|--candidate|--version VERSION] SESSION_ID, agent-run [--session-version VERSION] [--current|--candidate|--version VERSION] [--step N] [--timeout-ms N] SESSION_ID -- PROGRAM [ARGS...], agent-verify [--current|--candidate|--version VERSION] [--timeout-ms N] [goal] -- PROGRAM [ARGS...], agent-advance [goal], agent-evolve [goal], advance [goal], promote, rollback [reason], cycle, run [--current|--candidate|--version VERSION] [--timeout-ms N] -- PROGRAM [ARGS...], runs [--current|--candidate|--version VERSION] [--limit N] [--failed] [--timed-out], errors [--current|--candidate|--version VERSION] [--limit N] [--open] [--resolved], record-error [--current|--candidate|--version VERSION] [--run-id RUN_ID] [--stage TEXT] [--solution TEXT], resolve-error [--current|--candidate|--version VERSION] --run-id RUN_ID [--verification TEXT], evolve [--patch|--minor|--major] [goal]"
 }
 
 fn exit_with_error(error: Box<dyn Error>) -> ! {

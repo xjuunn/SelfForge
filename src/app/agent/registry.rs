@@ -148,6 +148,7 @@ impl AgentRegistry {
                     .map(|value| (*value).to_string())
                     .collect(),
                 verification: spec.verification.to_string(),
+                tool_ids: Vec::new(),
             });
         }
 

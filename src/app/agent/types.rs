@@ -40,6 +40,8 @@ pub struct AgentPlanStep {
     pub inputs: Vec<String>,
     pub outputs: Vec<String>,
     pub verification: String,
+    #[serde(default)]
+    pub tool_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

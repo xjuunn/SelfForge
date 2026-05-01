@@ -87,6 +87,8 @@ pub struct AgentSessionStep {
     pub agent_id: String,
     pub title: String,
     pub capability: AgentCapability,
+    #[serde(default)]
+    pub tool_ids: Vec<String>,
     pub status: AgentStepStatus,
     pub verification: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -233,6 +235,7 @@ impl AgentSessionStore {
                 agent_id: step.agent_id.clone(),
                 title: step.title.clone(),
                 capability: step.capability,
+                tool_ids: step.tool_ids.clone(),
                 status: AgentStepStatus::Pending,
                 verification: step.verification.clone(),
                 result: None,

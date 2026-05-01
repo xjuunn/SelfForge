@@ -8,7 +8,9 @@ pub use agent::{
     AgentCapability, AgentDefinition, AgentError, AgentPlan, AgentPlanStep, AgentRegistry,
     AgentRunReference, AgentSession, AgentSessionError, AgentSessionEvent, AgentSessionEventKind,
     AgentSessionMemoryInsight, AgentSessionPlanContext, AgentSessionStatus, AgentSessionStep,
-    AgentSessionStore, AgentSessionSummary, AgentStepStatus,
+    AgentSessionStore, AgentSessionSummary, AgentStepStatus, AgentToolAssignment, AgentToolBinding,
+    AgentToolConfig, AgentToolConfigInitReport, AgentToolDefinition, AgentToolError,
+    AgentToolReport,
 };
 pub use ai_provider::{
     AiConfigError, AiConfigReport, AiExecutionError, AiExecutionReport, AiProviderRegistry,
