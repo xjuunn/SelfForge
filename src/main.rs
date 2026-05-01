@@ -9,6 +9,7 @@ use std::process;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const DEFAULT_AI_TIMEOUT_MS: u64 = 60_000;
+const DEFAULT_PATCH_VERIFICATION_TIMEOUT_MS: u64 = 120_000;
 
 fn main() {
     let root = match env::current_dir() {
@@ -81,6 +82,7 @@ fn main() {
         "agent-patch-previews" => agent_patch_previews(&app, args.collect()),
         "agent-patch-preview-record" => agent_patch_preview_record(&app, args.collect()),
         "agent-patch-apply" => agent_patch_apply(&app, args.collect()),
+        "agent-patch-verify" => agent_patch_verify(&app, args.collect()),
         "agent-patch-applications" => agent_patch_applications(&app, args.collect()),
         "agent-patch-application-record" => agent_patch_application_record(&app, args.collect()),
         "agent-self-upgrade" => agent_self_upgrade(&app, args.collect()),
@@ -1702,6 +1704,33 @@ fn agent_patch_apply(app: &SelfForgeApp, arguments: Vec<String>) -> Result<Strin
     )
 }
 
+fn agent_patch_verify(
+    app: &SelfForgeApp,
+    arguments: Vec<String>,
+) -> Result<String, Box<dyn Error>> {
+    let command = parse_agent_patch_verify_args(arguments)?;
+    boxed(
+        app.ai_patch_verify(&command.version, &command.id, command.timeout_ms)
+            .map(|report| {
+                format!(
+                    "SelfForge AI 补丁候选应用验证完成 版本 {} 记录 {} 状态 {} 执行命令 {} 验证状态 {} 报告 {} 错误 {}",
+                    report.record.version,
+                    report.record.id,
+                    report.record.status,
+                    report.executed_count,
+                    report.status,
+                    report
+                        .record
+                        .report_file
+                        .as_ref()
+                        .map(|path| path.display().to_string())
+                        .unwrap_or_else(|| "无".to_string()),
+                    report.record.error.as_deref().unwrap_or("无")
+                )
+            }),
+    )
+}
+
 fn agent_patch_applications(
     app: &SelfForgeApp,
     arguments: Vec<String>,
@@ -1724,9 +1753,10 @@ fn agent_patch_applications(
                 )];
                 for record in records {
                     lines.push(format!(
-                        "{} 状态 {} 候选版本 {} 预演 {} 应用文件 {} 应用目录 {} 错误 {} 文件 {}",
+                        "{} 状态 {} 验证 {} 候选版本 {} 预演 {} 应用文件 {} 应用目录 {} 错误 {} 文件 {}",
                         record.id,
                         record.status,
+                        record.verification_status,
                         record.candidate_version,
                         record.preview_id,
                         record.applied_file_count,
@@ -1786,6 +1816,19 @@ fn agent_patch_application_record(
                 for command in &record.verification_commands {
                     lines.push(format!("验证命令 {command}"));
                 }
+                for run in &record.verification_runs {
+                    lines.push(format!(
+                        "验证结果 命令 {} 状态 {} 退出码 {} 超时 {} 耗时毫秒 {}",
+                        run.command,
+                        run.status,
+                        run.exit_code
+                            .map(|value| value.to_string())
+                            .unwrap_or_else(|| "无".to_string()),
+                        if run.timed_out { "是" } else { "否" },
+                        run.duration_ms
+                    ));
+                }
+                lines.push(format!("验证状态 {}", record.verification_status));
                 lines.push(format!("回滚提示 {}", record.rollback_hint));
                 lines.join("\n")
             }),
@@ -2004,6 +2047,12 @@ struct AgentPatchPreviewRecordArgs {
 struct AgentPatchApplyArgs {
     version: String,
     preview_id: String,
+}
+
+struct AgentPatchVerifyArgs {
+    version: String,
+    id: String,
+    timeout_ms: u64,
 }
 
 struct AgentPatchApplicationsArgs {
@@ -2565,6 +2614,59 @@ fn parse_agent_patch_apply_args(
     Ok(AgentPatchApplyArgs {
         version,
         preview_id: preview_id.ok_or("agent-patch-apply 需要预演记录编号")?,
+    })
+}
+
+fn parse_agent_patch_verify_args(
+    arguments: Vec<String>,
+) -> Result<AgentPatchVerifyArgs, Box<dyn Error>> {
+    let state = ForgeState::load(env::current_dir()?)?;
+    let mut version = state.current_version.clone();
+    let mut timeout_ms = DEFAULT_PATCH_VERIFICATION_TIMEOUT_MS;
+    let mut id = None;
+    let mut index = 0;
+
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "--current" => {
+                version = state.current_version.clone();
+                index += 1;
+            }
+            "--candidate" => {
+                version = state.candidate_version.clone().ok_or("当前没有候选版本")?;
+                index += 1;
+            }
+            "--version" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--version 需要版本号".into());
+                };
+                version = value.clone();
+                index += 2;
+            }
+            "--timeout-ms" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--timeout-ms 需要毫秒数".into());
+                };
+                timeout_ms = value.parse::<u64>()?;
+                index += 2;
+            }
+            other if other.starts_with("--") => {
+                return Err(format!("未知 agent-patch-verify 参数: {other}").into());
+            }
+            other => {
+                if id.is_some() {
+                    return Err("agent-patch-verify 只允许一个记录编号".into());
+                }
+                id = Some(other.to_string());
+                index += 1;
+            }
+        }
+    }
+
+    Ok(AgentPatchVerifyArgs {
+        version,
+        id: id.ok_or("agent-patch-verify 需要候选应用记录编号")?,
+        timeout_ms,
     })
 }
 
@@ -4412,6 +4514,7 @@ agent-patch-preview [--current|--candidate|--version VERSION] AUDIT_RECORD_ID
 agent-patch-previews [--current|--candidate|--version VERSION] [--limit N]
 agent-patch-preview-record [--current|--candidate|--version VERSION] PREVIEW_RECORD_ID
 agent-patch-apply [--current|--candidate|--version VERSION] PREVIEW_RECORD_ID
+agent-patch-verify [--current|--candidate|--version VERSION] [--timeout-ms N] APPLICATION_RECORD_ID
 agent-patch-applications [--current|--candidate|--version VERSION] [--limit N]
 agent-patch-application-record [--current|--candidate|--version VERSION] APPLICATION_RECORD_ID
 agent-self-upgrade [--dry-run] [--timeout-ms N] [hint]

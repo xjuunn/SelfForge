@@ -242,6 +242,8 @@ AI 补丁草案审计通过后，真实写入源码前必须先使用 `agent-pat
 
 AI 补丁预演通过后，候选应用必须优先使用 `agent-patch-apply [--current|--candidate|--version VERSION] PREVIEW_RECORD_ID`。候选应用必须准备或复用候选版本，只能将预演代码写入 `workspaces/vMAJOR/source/patch-applications/APPLICATION_ID/` 的镜像目录，并将结构化记录写入 `workspaces/vMAJOR/artifacts/agents/patch-applications/`；禁止直接覆盖仓库源码、Runtime、Supervisor、状态文件或真实稳定版本。候选应用必须记录候选版本、预演记录、草案记录、审计记录、镜像文件、验证命令和回滚提示，并在写入后执行候选布局验证。预演未通过、存在未解决错误或路径非法时必须写入已阻断记录。查询候选应用使用 `agent-patch-applications [--limit N]`，读取单条候选应用使用 `agent-patch-application-record APPLICATION_RECORD_ID`。后续真实源码覆盖前必须继续执行格式化、测试、验证、错误归档和可回滚检查。
 
+AI 补丁候选应用写入后，验证执行必须优先使用 `agent-patch-verify [--current|--candidate|--version VERSION] [--timeout-ms N] APPLICATION_RECORD_ID`。该命令只能执行固定白名单命令：`cargo fmt --check`、`cargo test`、`cargo run -- validate` 和 `cargo run -- preflight`；禁止隐式 shell 包装，禁止执行未登记命令，禁止把验证结果只保存在进程内存。验证结果必须回写到同一条候选应用记录，包含每条命令的程序、参数、退出码、超时状态、耗时、输出字节数、输出摘要和最终验证状态。候选应用未真正应用时必须标记为已跳过；任一命令失败或超时必须标记验证未通过，禁止进入真实源码覆盖或版本提升。
+
 ---
 
 # 八、Git 提交规范

@@ -18,11 +18,44 @@ pub enum AiPatchApplicationStatus {
     Blocked,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AiPatchVerificationStatus {
+    Pending,
+    Passed,
+    Failed,
+    Skipped,
+}
+
+impl Default for AiPatchVerificationStatus {
+    fn default() -> Self {
+        Self::Pending
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AiPatchApplicationFile {
     pub source_path: String,
     pub mirror_file: PathBuf,
     pub content_bytes: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AiPatchVerificationCommandRecord {
+    pub command: String,
+    pub program: String,
+    #[serde(default)]
+    pub args: Vec<String>,
+    pub started_at_unix_seconds: u64,
+    pub duration_ms: u64,
+    pub timeout_ms: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exit_code: Option<i32>,
+    pub timed_out: bool,
+    pub stdout_bytes: usize,
+    pub stderr_bytes: usize,
+    pub stdout_preview: String,
+    pub stderr_preview: String,
+    pub status: AiPatchVerificationStatus,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -44,6 +77,12 @@ pub struct AiPatchApplicationRecord {
     pub validation_checked_paths: Vec<PathBuf>,
     #[serde(default)]
     pub verification_commands: Vec<String>,
+    #[serde(default)]
+    pub verification_runs: Vec<AiPatchVerificationCommandRecord>,
+    #[serde(default)]
+    pub verification_status: AiPatchVerificationStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verified_at_unix_seconds: Option<u64>,
     pub rollback_hint: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub report_file: Option<PathBuf>,
@@ -61,6 +100,8 @@ pub struct AiPatchApplicationSummary {
     pub created_at_unix_seconds: u64,
     pub status: AiPatchApplicationStatus,
     pub applied_file_count: usize,
+    #[serde(default)]
+    pub verification_status: AiPatchVerificationStatus,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub application_dir: Option<PathBuf>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -160,6 +201,48 @@ impl AiPatchApplicationStore {
             let relative_report_file = layout
                 .relative_records_dir
                 .join(format!("{}.md", record.id));
+            let report_path = self.root.join(&relative_report_file);
+            self.write_text(&report_path, report_markdown)?;
+            record.report_file = Some(relative_report_file);
+        }
+        self.write_json(&path, &record)?;
+        self.append_summary(&layout.index_path, record.summary())?;
+
+        Ok(record)
+    }
+
+    pub fn update(
+        &self,
+        mut record: AiPatchApplicationRecord,
+        report_markdown: Option<&str>,
+    ) -> Result<AiPatchApplicationRecord, AiPatchApplicationStoreError> {
+        validate_record_id(&record.id)?;
+        let layout = self.layout(&record.version)?;
+        fs::create_dir_all(&layout.records_dir).map_err(|source| {
+            AiPatchApplicationStoreError::Io {
+                path: layout.records_dir.clone(),
+                source,
+            }
+        })?;
+
+        let relative_file = layout
+            .relative_records_dir
+            .join(format!("{}.json", record.id));
+        let path = self.root.join(&relative_file);
+        if !path.exists() {
+            return Err(AiPatchApplicationStoreError::NotFound {
+                version: record.version.clone(),
+                id: record.id.clone(),
+            });
+        }
+
+        record.file = relative_file;
+        if let Some(report_markdown) = report_markdown {
+            let relative_report_file = record.report_file.clone().unwrap_or_else(|| {
+                layout
+                    .relative_records_dir
+                    .join(format!("{}.md", record.id))
+            });
             let report_path = self.root.join(&relative_report_file);
             self.write_text(&report_path, report_markdown)?;
             record.report_file = Some(relative_report_file);
@@ -354,6 +437,7 @@ impl AiPatchApplicationRecord {
             created_at_unix_seconds: self.created_at_unix_seconds,
             status: self.status,
             applied_file_count: self.applied_file_count,
+            verification_status: self.verification_status,
             application_dir: self.application_dir.clone(),
             error: self.error.clone(),
             file: self.file.clone(),
@@ -366,6 +450,17 @@ impl fmt::Display for AiPatchApplicationStatus {
         match self {
             AiPatchApplicationStatus::Applied => write!(formatter, "已应用"),
             AiPatchApplicationStatus::Blocked => write!(formatter, "已阻断"),
+        }
+    }
+}
+
+impl fmt::Display for AiPatchVerificationStatus {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AiPatchVerificationStatus::Pending => write!(formatter, "待验证"),
+            AiPatchVerificationStatus::Passed => write!(formatter, "已通过"),
+            AiPatchVerificationStatus::Failed => write!(formatter, "未通过"),
+            AiPatchVerificationStatus::Skipped => write!(formatter, "已跳过"),
         }
     }
 }

@@ -18,6 +18,7 @@ pub use coordination::{
 pub use patch_application::{
     AiPatchApplicationFile, AiPatchApplicationRecord, AiPatchApplicationStatus,
     AiPatchApplicationStore, AiPatchApplicationStoreError, AiPatchApplicationSummary,
+    AiPatchVerificationCommandRecord, AiPatchVerificationStatus,
 };
 pub use patch_audit::{
     AiPatchAuditFinding, AiPatchAuditFindingKind, AiPatchAuditRecord, AiPatchAuditSeverity,

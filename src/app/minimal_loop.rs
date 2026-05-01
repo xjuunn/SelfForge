@@ -12,7 +12,8 @@ use super::agent::{
     AiPatchAuditStatus, AiPatchAuditStore, AiPatchAuditStoreError, AiPatchAuditSummary,
     AiPatchDraftRecord, AiPatchDraftStatus, AiPatchDraftStore, AiPatchDraftStoreError,
     AiPatchDraftSummary, AiPatchPreviewChange, AiPatchPreviewRecord, AiPatchPreviewStatus,
-    AiPatchPreviewStore, AiPatchPreviewStoreError, AiPatchPreviewSummary, AiSelfUpgradeAuditError,
+    AiPatchPreviewStore, AiPatchPreviewStoreError, AiPatchPreviewSummary,
+    AiPatchVerificationCommandRecord, AiPatchVerificationStatus, AiSelfUpgradeAuditError,
     AiSelfUpgradeAuditRecord, AiSelfUpgradeAuditStatus, AiSelfUpgradeAuditStore,
     AiSelfUpgradeAuditSummary, AiSelfUpgradeSummaryIndexEntry, AiSelfUpgradeSummaryRecord,
     AiSelfUpgradeSummaryStatus, AiSelfUpgradeSummaryStore, AiSelfUpgradeSummaryStoreError,
@@ -38,7 +39,9 @@ use std::fmt;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::process::{Command, Stdio};
+use std::thread;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const PREFLIGHT_OPEN_ERROR_LIMIT: usize = 10;
 const DEFAULT_MEMORY_COMPACTION_KEEP: usize = 5;
@@ -169,6 +172,20 @@ pub struct AiPatchApplicationReport {
     pub draft: AiPatchDraftRecord,
     pub prepared_candidate_version: Option<String>,
     pub record: AiPatchApplicationRecord,
+}
+
+#[derive(Debug, Clone)]
+pub struct AiPatchVerificationReport {
+    pub record: AiPatchApplicationRecord,
+    pub executed_count: usize,
+    pub status: AiPatchVerificationStatus,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AiPatchVerificationCommandSpec {
+    pub command: String,
+    pub program: String,
+    pub args: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -327,6 +344,14 @@ pub enum AiPatchApplicationError {
     Forge(ForgeError),
     Io { path: PathBuf, source: io::Error },
     InvalidPath { path: String, reason: String },
+}
+
+#[derive(Debug)]
+pub enum AiPatchVerificationError {
+    Store(AiPatchApplicationStoreError),
+    Preview(AiPatchPreviewStoreError),
+    UnsupportedCommand(String),
+    Io { path: PathBuf, source: io::Error },
 }
 
 #[derive(Debug)]
@@ -965,6 +990,9 @@ impl SelfForgeApp {
             files,
             validation_checked_paths,
             verification_commands,
+            verification_runs: Vec::new(),
+            verification_status: AiPatchVerificationStatus::Pending,
+            verified_at_unix_seconds: None,
             rollback_hint,
             report_file: None,
             error,
@@ -996,6 +1024,90 @@ impl SelfForgeApp {
         id: &str,
     ) -> Result<AiPatchApplicationRecord, AiPatchApplicationStoreError> {
         AiPatchApplicationStore::new(&self.root).load(version, id)
+    }
+
+    pub fn ai_patch_verify(
+        &self,
+        version: &str,
+        id: &str,
+        timeout_ms: u64,
+    ) -> Result<AiPatchVerificationReport, AiPatchVerificationError> {
+        let root = self.root.clone();
+        self.ai_patch_verify_with_runner(version, id, timeout_ms, |spec, timeout_ms| {
+            run_patch_verification_command(&root, spec, timeout_ms)
+        })
+    }
+
+    pub(crate) fn ai_patch_verify_with_runner<F>(
+        &self,
+        version: &str,
+        id: &str,
+        timeout_ms: u64,
+        mut runner: F,
+    ) -> Result<AiPatchVerificationReport, AiPatchVerificationError>
+    where
+        F: FnMut(
+            &AiPatchVerificationCommandSpec,
+            u64,
+        ) -> Result<AiPatchVerificationCommandRecord, AiPatchVerificationError>,
+    {
+        let store = AiPatchApplicationStore::new(&self.root);
+        let mut record = store
+            .load(version, id)
+            .map_err(AiPatchVerificationError::Store)?;
+        let mut executed_count = 0;
+
+        if record.status != AiPatchApplicationStatus::Applied {
+            record.verification_status = AiPatchVerificationStatus::Skipped;
+            record.verified_at_unix_seconds = Some(current_unix_seconds());
+        } else {
+            let commands = if record.verification_commands.is_empty() {
+                patch_application_verification_commands()
+            } else {
+                record.verification_commands.clone()
+            };
+            let specs = match patch_application_verification_specs(&commands) {
+                Ok(specs) => specs,
+                Err(AiPatchVerificationError::UnsupportedCommand(command)) => {
+                    record
+                        .verification_runs
+                        .push(unsupported_patch_verification_run(&command, timeout_ms));
+                    record.verification_status = AiPatchVerificationStatus::Failed;
+                    record.verified_at_unix_seconds = Some(current_unix_seconds());
+                    let markdown = build_ai_patch_application_record_markdown(&record);
+                    store
+                        .update(record, Some(&markdown))
+                        .map_err(AiPatchVerificationError::Store)?;
+                    return Err(AiPatchVerificationError::UnsupportedCommand(command));
+                }
+                Err(error) => return Err(error),
+            };
+            let mut runs = Vec::new();
+            for spec in specs {
+                runs.push(runner(&spec, timeout_ms)?);
+            }
+            executed_count = runs.len();
+            let passed = runs.iter().all(patch_verification_run_passed);
+            record.verification_runs.extend(runs);
+            record.verification_status = if passed {
+                AiPatchVerificationStatus::Passed
+            } else {
+                AiPatchVerificationStatus::Failed
+            };
+            record.verified_at_unix_seconds = Some(current_unix_seconds());
+        }
+
+        let markdown = build_ai_patch_application_record_markdown(&record);
+        let status = record.verification_status;
+        let record = store
+            .update(record, Some(&markdown))
+            .map_err(AiPatchVerificationError::Store)?;
+
+        Ok(AiPatchVerificationReport {
+            record,
+            executed_count,
+            status,
+        })
     }
 
     pub fn ai_self_upgrade_preview(
@@ -3155,6 +3267,203 @@ fn patch_application_verification_commands() -> Vec<String> {
     ]
 }
 
+fn patch_application_verification_specs(
+    commands: &[String],
+) -> Result<Vec<AiPatchVerificationCommandSpec>, AiPatchVerificationError> {
+    commands
+        .iter()
+        .map(|command| match command.as_str() {
+            "cargo fmt --check" => Ok(AiPatchVerificationCommandSpec {
+                command: command.clone(),
+                program: "cargo".to_string(),
+                args: vec!["fmt".to_string(), "--check".to_string()],
+            }),
+            "cargo test" => Ok(AiPatchVerificationCommandSpec {
+                command: command.clone(),
+                program: "cargo".to_string(),
+                args: vec!["test".to_string()],
+            }),
+            "cargo run -- validate" => Ok(AiPatchVerificationCommandSpec {
+                command: command.clone(),
+                program: "cargo".to_string(),
+                args: vec!["run".to_string(), "--".to_string(), "validate".to_string()],
+            }),
+            "cargo run -- preflight" => Ok(AiPatchVerificationCommandSpec {
+                command: command.clone(),
+                program: "cargo".to_string(),
+                args: vec!["run".to_string(), "--".to_string(), "preflight".to_string()],
+            }),
+            other => Err(AiPatchVerificationError::UnsupportedCommand(
+                other.to_string(),
+            )),
+        })
+        .collect()
+}
+
+fn run_patch_verification_command(
+    root: &Path,
+    spec: &AiPatchVerificationCommandSpec,
+    timeout_ms: u64,
+) -> Result<AiPatchVerificationCommandRecord, AiPatchVerificationError> {
+    let started_at_unix_seconds = current_unix_seconds();
+    let started = Instant::now();
+    let mut child = match Command::new(&spec.program)
+        .args(&spec.args)
+        .current_dir(root)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(source) => {
+            return Ok(AiPatchVerificationCommandRecord {
+                command: spec.command.clone(),
+                program: spec.program.clone(),
+                args: spec.args.clone(),
+                started_at_unix_seconds,
+                duration_ms: started.elapsed().as_millis() as u64,
+                timeout_ms,
+                exit_code: None,
+                timed_out: false,
+                stdout_bytes: 0,
+                stderr_bytes: source.to_string().len(),
+                stdout_preview: String::new(),
+                stderr_preview: format!("启动失败：{source}"),
+                status: AiPatchVerificationStatus::Failed,
+            });
+        }
+    };
+
+    let timeout = Duration::from_millis(timeout_ms);
+    loop {
+        if started.elapsed() >= timeout {
+            let _ = child.kill();
+            let output =
+                child
+                    .wait_with_output()
+                    .map_err(|source| AiPatchVerificationError::Io {
+                        path: root.to_path_buf(),
+                        source,
+                    })?;
+            return Ok(build_patch_verification_run(
+                spec,
+                started_at_unix_seconds,
+                started.elapsed().as_millis() as u64,
+                timeout_ms,
+                output.status.code(),
+                true,
+                &output.stdout,
+                &output.stderr,
+            ));
+        }
+
+        match child
+            .try_wait()
+            .map_err(|source| AiPatchVerificationError::Io {
+                path: root.to_path_buf(),
+                source,
+            })? {
+            Some(_) => {
+                let output =
+                    child
+                        .wait_with_output()
+                        .map_err(|source| AiPatchVerificationError::Io {
+                            path: root.to_path_buf(),
+                            source,
+                        })?;
+                return Ok(build_patch_verification_run(
+                    spec,
+                    started_at_unix_seconds,
+                    started.elapsed().as_millis() as u64,
+                    timeout_ms,
+                    output.status.code(),
+                    false,
+                    &output.stdout,
+                    &output.stderr,
+                ));
+            }
+            None => thread::sleep(Duration::from_millis(10)),
+        }
+    }
+}
+
+fn build_patch_verification_run(
+    spec: &AiPatchVerificationCommandSpec,
+    started_at_unix_seconds: u64,
+    duration_ms: u64,
+    timeout_ms: u64,
+    exit_code: Option<i32>,
+    timed_out: bool,
+    stdout: &[u8],
+    stderr: &[u8],
+) -> AiPatchVerificationCommandRecord {
+    let status = if !timed_out && exit_code == Some(0) {
+        AiPatchVerificationStatus::Passed
+    } else {
+        AiPatchVerificationStatus::Failed
+    };
+    AiPatchVerificationCommandRecord {
+        command: spec.command.clone(),
+        program: spec.program.clone(),
+        args: spec.args.clone(),
+        started_at_unix_seconds,
+        duration_ms,
+        timeout_ms,
+        exit_code,
+        timed_out,
+        stdout_bytes: stdout.len(),
+        stderr_bytes: stderr.len(),
+        stdout_preview: command_output_preview(stdout),
+        stderr_preview: command_output_preview(stderr),
+        status,
+    }
+}
+
+fn patch_verification_run_passed(run: &AiPatchVerificationCommandRecord) -> bool {
+    run.status == AiPatchVerificationStatus::Passed && !run.timed_out && run.exit_code == Some(0)
+}
+
+fn unsupported_patch_verification_run(
+    command: &str,
+    timeout_ms: u64,
+) -> AiPatchVerificationCommandRecord {
+    let message = format!("验证命令不受支持：{command}");
+    AiPatchVerificationCommandRecord {
+        command: command.to_string(),
+        program: String::new(),
+        args: Vec::new(),
+        started_at_unix_seconds: current_unix_seconds(),
+        duration_ms: 0,
+        timeout_ms,
+        exit_code: None,
+        timed_out: false,
+        stdout_bytes: 0,
+        stderr_bytes: message.len(),
+        stdout_preview: String::new(),
+        stderr_preview: message,
+        status: AiPatchVerificationStatus::Failed,
+    }
+}
+
+fn command_output_preview(bytes: &[u8]) -> String {
+    const LIMIT: usize = 1200;
+    let text = String::from_utf8_lossy(bytes).replace("\r\n", "\n");
+    let trimmed = text.trim();
+    if trimmed.chars().count() <= LIMIT {
+        return trimmed.to_string();
+    }
+
+    trimmed.chars().take(LIMIT).collect::<String>() + "..."
+}
+
+fn current_unix_seconds() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
 fn build_ai_patch_application_markdown(
     preview: &AiPatchPreviewRecord,
     candidate_version: &str,
@@ -3206,6 +3515,83 @@ fn build_ai_patch_application_markdown(
     markdown.push_str("# 回滚准备\n\n");
     markdown.push_str(&format!("- {rollback_hint}\n"));
     markdown.push_str("- 当前命令只写入候选工作区镜像，后续真实覆盖仓库源码前必须再次审计写入范围并执行完整验证。\n");
+    markdown
+}
+
+fn build_ai_patch_application_record_markdown(record: &AiPatchApplicationRecord) -> String {
+    let mut markdown = String::new();
+    markdown.push_str("# AI 补丁候选应用记录\n\n");
+    markdown.push_str("# 基本信息\n\n");
+    markdown.push_str(&format!(
+        "- 源版本：{}\n- 候选版本：{}\n- 预演记录：{}\n- 审计记录：{}\n- 草案记录：{}\n- 应用状态：{}\n- 验证状态：{}\n- 验证时间：{}\n- 应用目录：{}\n- 错误信息：{}\n\n",
+        record.version,
+        record.candidate_version,
+        record.preview_id,
+        record.audit_id,
+        record.draft_id,
+        record.status,
+        record.verification_status,
+        record
+            .verified_at_unix_seconds
+            .map(|value| format!("unix:{value}"))
+            .unwrap_or_else(|| "未验证".to_string()),
+        record
+            .application_dir
+            .as_ref()
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|| "无".to_string()),
+        record.error.as_deref().unwrap_or("无")
+    ));
+
+    markdown.push_str("# 应用文件\n\n");
+    if record.files.is_empty() {
+        markdown.push_str("- 本次没有写入候选应用镜像文件。\n\n");
+    } else {
+        for file in &record.files {
+            markdown.push_str(&format!(
+                "- 来源路径：{}；镜像文件：{}；字节：{}\n",
+                file.source_path,
+                file.mirror_file.display(),
+                file.content_bytes
+            ));
+        }
+        markdown.push('\n');
+    }
+
+    markdown.push_str("# 验证命令\n\n");
+    if record.verification_commands.is_empty() {
+        markdown.push_str("- 无。\n\n");
+    } else {
+        for command in &record.verification_commands {
+            markdown.push_str(&format!("- `{command}`\n"));
+        }
+        markdown.push('\n');
+    }
+
+    markdown.push_str("# 验证结果\n\n");
+    if record.verification_runs.is_empty() {
+        markdown.push_str("- 尚未执行验证命令。\n\n");
+    } else {
+        for run in &record.verification_runs {
+            markdown.push_str(&format!(
+                "- 命令：`{}`；状态：{}；退出码：{}；超时：{}；耗时毫秒：{}；标准输出字节：{}；标准错误字节：{}\n",
+                run.command,
+                run.status,
+                run.exit_code
+                    .map(|value| value.to_string())
+                    .unwrap_or_else(|| "无".to_string()),
+                if run.timed_out { "是" } else { "否" },
+                run.duration_ms,
+                run.stdout_bytes,
+                run.stderr_bytes
+            ));
+        }
+        markdown.push('\n');
+    }
+
+    markdown.push_str("# 回滚准备\n\n");
+    markdown.push_str(&format!("- {}\n", record.rollback_hint));
+    markdown.push_str("- 任何验证失败都必须先保留本记录，再通过回滚或阻断流程恢复稳定版本。\n");
     markdown
 }
 
@@ -4005,6 +4391,39 @@ impl Error for AiPatchApplicationError {
             AiPatchApplicationError::Forge(error) => Some(error),
             AiPatchApplicationError::Io { source, .. } => Some(source),
             AiPatchApplicationError::InvalidPath { .. } => None,
+        }
+    }
+}
+
+impl fmt::Display for AiPatchVerificationError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AiPatchVerificationError::Store(error) => {
+                write!(formatter, "AI 补丁候选应用验证记录失败：{error}")
+            }
+            AiPatchVerificationError::Preview(error) => {
+                write!(formatter, "AI 补丁候选应用验证读取预演失败：{error}")
+            }
+            AiPatchVerificationError::UnsupportedCommand(command) => {
+                write!(formatter, "AI 补丁候选应用验证命令不受支持：{command}")
+            }
+            AiPatchVerificationError::Io { path, source } => write!(
+                formatter,
+                "AI 补丁候选应用验证执行失败 {}：{}",
+                path.display(),
+                source
+            ),
+        }
+    }
+}
+
+impl Error for AiPatchVerificationError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            AiPatchVerificationError::Store(error) => Some(error),
+            AiPatchVerificationError::Preview(error) => Some(error),
+            AiPatchVerificationError::Io { source, .. } => Some(source),
+            AiPatchVerificationError::UnsupportedCommand(_) => None,
         }
     }
 }
