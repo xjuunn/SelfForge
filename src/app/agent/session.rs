@@ -210,36 +210,21 @@ impl AgentSessionStore {
 
         let version = version.as_ref().to_string();
         let layout = self.layout(&version)?;
-        if !layout.index_path.exists() {
+        self.list_from_index(&layout.index_path, limit, |entry| entry.version == version)
+    }
+
+    pub fn list_all_major(
+        &self,
+        version: impl AsRef<str>,
+        limit: usize,
+    ) -> Result<Vec<AgentSessionSummary>, AgentSessionError> {
+        if limit == 0 {
             return Ok(Vec::new());
         }
 
-        let contents =
-            fs::read_to_string(&layout.index_path).map_err(|source| AgentSessionError::Io {
-                path: layout.index_path.clone(),
-                source,
-            })?;
-        let mut entries = Vec::new();
-        let mut seen = HashSet::new();
-        for line in contents
-            .lines()
-            .rev()
-            .filter(|line| !line.trim().is_empty())
-        {
-            let entry = serde_json::from_str::<AgentSessionSummary>(line).map_err(|source| {
-                AgentSessionError::Parse {
-                    path: layout.index_path.clone(),
-                    source,
-                }
-            })?;
-            if entry.version == version && seen.insert(entry.id.clone()) {
-                entries.push(entry);
-                if entries.len() >= limit {
-                    break;
-                }
-            }
-        }
-        Ok(entries)
+        let version = version.as_ref().to_string();
+        let layout = self.layout(&version)?;
+        self.list_from_index(&layout.index_path, limit, |_| true)
     }
 
     pub fn load(
@@ -276,6 +261,46 @@ impl AgentSessionStore {
         }
 
         Ok(session)
+    }
+
+    fn list_from_index<F>(
+        &self,
+        index_path: &Path,
+        limit: usize,
+        mut should_include: F,
+    ) -> Result<Vec<AgentSessionSummary>, AgentSessionError>
+    where
+        F: FnMut(&AgentSessionSummary) -> bool,
+    {
+        if !index_path.exists() {
+            return Ok(Vec::new());
+        }
+
+        let contents = fs::read_to_string(index_path).map_err(|source| AgentSessionError::Io {
+            path: index_path.to_path_buf(),
+            source,
+        })?;
+        let mut entries = Vec::new();
+        let mut seen = HashSet::new();
+        for line in contents
+            .lines()
+            .rev()
+            .filter(|line| !line.trim().is_empty())
+        {
+            let entry = serde_json::from_str::<AgentSessionSummary>(line).map_err(|source| {
+                AgentSessionError::Parse {
+                    path: index_path.to_path_buf(),
+                    source,
+                }
+            })?;
+            if should_include(&entry) && seen.insert(entry.id.clone()) {
+                entries.push(entry);
+                if entries.len() >= limit {
+                    break;
+                }
+            }
+        }
+        Ok(entries)
     }
 
     fn layout(&self, version: &str) -> Result<AgentSessionLayout, AgentSessionError> {

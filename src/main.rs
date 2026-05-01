@@ -480,31 +480,39 @@ fn agent_start(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Box
 
 fn agent_sessions(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Box<dyn Error>> {
     let command = parse_agent_sessions_args(arguments)?;
-    boxed(
+    let sessions = if command.all_versions {
+        app.agent_sessions_all(&command.version, command.limit)
+    } else {
         app.agent_sessions(&command.version, command.limit)
-            .map(|sessions| {
-                if sessions.is_empty() {
-                    return format!("SelfForge Agent 会话 {}: 无记录", command.version);
-                }
+    };
+    let scope = if command.all_versions {
+        format!("{} 所属 major", command.version)
+    } else {
+        command.version.clone()
+    };
 
-                let mut lines = vec![format!(
-                    "SelfForge Agent 会话 {}: {} 条记录",
-                    command.version,
-                    sessions.len()
-                )];
-                for session in sessions {
-                    lines.push(format!(
-                        "{} 状态 {} 步骤 {} 目标 {} 文件 {}",
-                        session.id,
-                        session.status,
-                        session.step_count,
-                        session.goal,
-                        session.file.display()
-                    ));
-                }
-                lines.join("\n")
-            }),
-    )
+    boxed(sessions.map(|sessions| {
+        if sessions.is_empty() {
+            return format!("SelfForge Agent 会话 {scope}: 无记录");
+        }
+
+        let mut lines = vec![format!(
+            "SelfForge Agent 会话 {scope}: {} 条记录",
+            sessions.len()
+        )];
+        for session in sessions {
+            lines.push(format!(
+                "{} 版本 {} 状态 {} 步骤 {} 目标 {} 文件 {}",
+                session.id,
+                session.version,
+                session.status,
+                session.step_count,
+                session.goal,
+                session.file.display()
+            ));
+        }
+        lines.join("\n")
+    }))
 }
 
 fn agent_session(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Box<dyn Error>> {
@@ -666,6 +674,7 @@ struct AgentStartArgs {
 struct AgentSessionsArgs {
     version: String,
     limit: usize,
+    all_versions: bool,
 }
 
 struct AgentSessionArgs {
@@ -987,10 +996,15 @@ fn parse_agent_sessions_args(arguments: Vec<String>) -> Result<AgentSessionsArgs
     let state = ForgeState::load(env::current_dir()?)?;
     let mut version = state.current_version.clone();
     let mut limit = 10;
+    let mut all_versions = false;
     let mut index = 0;
 
     while index < arguments.len() {
         match arguments[index].as_str() {
+            "--all" => {
+                all_versions = true;
+                index += 1;
+            }
             "--current" => {
                 version = state.current_version.clone();
                 index += 1;
@@ -1017,7 +1031,11 @@ fn parse_agent_sessions_args(arguments: Vec<String>) -> Result<AgentSessionsArgs
         }
     }
 
-    Ok(AgentSessionsArgs { version, limit })
+    Ok(AgentSessionsArgs {
+        version,
+        limit,
+        all_versions,
+    })
 }
 
 fn parse_agent_session_args(arguments: Vec<String>) -> Result<AgentSessionArgs, Box<dyn Error>> {
@@ -1063,7 +1081,7 @@ fn parse_agent_session_args(arguments: Vec<String>) -> Result<AgentSessionArgs, 
 }
 
 fn help_text() -> &'static str {
-    "SelfForge commands: init, validate, status, preflight, ai-config, ai-request [--dry-run] [--timeout-ms N] [prompt], agents, agent-plan [goal], agent-start [--current|--candidate|--version VERSION] [goal], agent-sessions [--current|--candidate|--version VERSION] [--limit N], agent-session [--current|--candidate|--version VERSION] SESSION_ID, agent-advance [goal], agent-evolve [goal], advance [goal], promote, rollback [reason], cycle, run [--current|--candidate|--version VERSION] [--timeout-ms N] -- PROGRAM [ARGS...], runs [--current|--candidate|--version VERSION] [--limit N] [--failed] [--timed-out], errors [--current|--candidate|--version VERSION] [--limit N] [--open] [--resolved], record-error [--current|--candidate|--version VERSION] [--run-id RUN_ID] [--stage TEXT] [--solution TEXT], resolve-error [--current|--candidate|--version VERSION] --run-id RUN_ID [--verification TEXT], evolve [--patch|--minor|--major] [goal]"
+    "SelfForge commands: init, validate, status, preflight, ai-config, ai-request [--dry-run] [--timeout-ms N] [prompt], agents, agent-plan [goal], agent-start [--current|--candidate|--version VERSION] [goal], agent-sessions [--current|--candidate|--version VERSION] [--limit N] [--all], agent-session [--current|--candidate|--version VERSION] SESSION_ID, agent-advance [goal], agent-evolve [goal], advance [goal], promote, rollback [reason], cycle, run [--current|--candidate|--version VERSION] [--timeout-ms N] -- PROGRAM [ARGS...], runs [--current|--candidate|--version VERSION] [--limit N] [--failed] [--timed-out], errors [--current|--candidate|--version VERSION] [--limit N] [--open] [--resolved], record-error [--current|--candidate|--version VERSION] [--run-id RUN_ID] [--stage TEXT] [--solution TEXT], resolve-error [--current|--candidate|--version VERSION] --run-id RUN_ID [--verification TEXT], evolve [--patch|--minor|--major] [goal]"
 }
 
 fn exit_with_error(error: Box<dyn Error>) -> ! {

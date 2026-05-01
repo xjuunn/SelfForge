@@ -174,6 +174,14 @@ impl SelfForgeApp {
         AgentSessionStore::new(&self.root).list(version, limit)
     }
 
+    pub fn agent_sessions_all(
+        &self,
+        version: &str,
+        limit: usize,
+    ) -> Result<Vec<AgentSessionSummary>, AgentSessionError> {
+        AgentSessionStore::new(&self.root).list_all_major(version, limit)
+    }
+
     pub fn agent_session(
         &self,
         version: &str,
