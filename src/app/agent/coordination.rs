@@ -417,6 +417,7 @@ impl AgentWorkCoordinator {
                 task.claimed_by = None;
                 task.claimed_at_unix_seconds = None;
                 task.lease_expires_at_unix_seconds = None;
+                task.completed_at_unix_seconds = None;
                 task.result = Some(message.clone());
                 task.prompt = build_base_prompt(&goal, task);
             }

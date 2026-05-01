@@ -870,6 +870,10 @@ fn agent_step(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Box<
             completed,
             report.tool.summary
         )];
+        if let Some(task_id) = report.work_task_id.as_deref() {
+            let worker_id = report.work_worker_id.as_deref().unwrap_or("未知");
+            lines.push(format!("协作任务 {task_id} 工作线程 {worker_id}"));
+        }
         for detail in report.tool.details {
             lines.push(format!("- {detail}"));
         }
@@ -1029,6 +1033,10 @@ fn agent_session(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, B
                         tools,
                         step.verification
                     ));
+                    if let Some(task_id) = step.work_task_id.as_deref() {
+                        let worker_id = step.work_worker_id.as_deref().unwrap_or("未知");
+                        lines.push(format!("   协作任务 {task_id} 工作线程 {worker_id}"));
+                    }
                     if let Some(result) = step.result {
                         lines.push(format!("   结果 {}", result));
                     }

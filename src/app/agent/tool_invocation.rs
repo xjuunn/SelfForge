@@ -72,6 +72,10 @@ pub struct AgentStepExecutionReport {
     pub session_version: String,
     pub step_order: usize,
     pub agent_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work_task_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work_worker_id: Option<String>,
     pub tool: AgentToolInvocationReport,
     pub session_completed: bool,
 }

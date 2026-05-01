@@ -97,6 +97,13 @@ pub struct AgentRunReport {
 }
 
 #[derive(Debug, Clone)]
+struct AgentStepWorkClaim {
+    task_id: String,
+    worker_id: String,
+    newly_claimed: bool,
+}
+
+#[derive(Debug, Clone)]
 pub struct AgentVerificationReport {
     pub session: AgentSession,
     pub execution: ExecutionReport,
@@ -170,6 +177,7 @@ pub enum AgentToolInvocationError {
 pub enum AgentStepExecutionError {
     Session(AgentSessionError),
     Tool(AgentToolInvocationError),
+    Work(AgentWorkError),
     NoPendingStep {
         session_id: String,
     },
@@ -577,17 +585,52 @@ impl SelfForgeApp {
         }
 
         let invocation = self.step_invocation(&request, &step)?;
+        let work_claim = self.claim_work_for_step(&session, &step)?;
+        if let Some(claim) = &work_claim {
+            if claim.newly_claimed {
+                session.attach_work_claim(
+                    step.order,
+                    claim.task_id.clone(),
+                    claim.worker_id.clone(),
+                )?;
+                store.save(&session)?;
+            }
+        }
         let tool = match self.invoke_agent_tool(invocation) {
             Ok(report) => report,
             Err(error) => {
+                let release_result = work_claim.as_ref().map(|claim| {
+                    self.release_agent_work(
+                        &request.session_version,
+                        &claim.task_id,
+                        &claim.worker_id,
+                        &format!("步骤 {} 工具调用失败：{error}", step.order),
+                    )
+                });
+                let release_message = match release_result {
+                    Some(Ok(_)) => work_claim
+                        .as_ref()
+                        .map(|claim| format!("，协作任务 {} 已释放", claim.task_id))
+                        .unwrap_or_default(),
+                    Some(Err(release_error)) => work_claim
+                        .as_ref()
+                        .map(|claim| {
+                            format!("，协作任务 {} 释放失败：{release_error}", claim.task_id)
+                        })
+                        .unwrap_or_default(),
+                    None => String::new(),
+                };
                 let mut failed_session =
                     store.load(&request.session_version, &request.session_id)?;
                 failed_session.update_step(
                     step.order,
                     AgentStepStatus::Failed,
-                    format!("工具调用失败：{error}"),
+                    format!("工具调用失败：{error}{release_message}。"),
                 )?;
-                failed_session.mark_failed(format!("步骤 {} 工具调用失败：{error}", step.order));
+                failed_session.mark_failed(format!(
+                    "步骤 {} 工具调用失败：{error}{release_message}。",
+                    step.order
+                ));
                 store.save(&failed_session)?;
                 return Err(AgentStepExecutionError::Tool(error));
             }
@@ -600,6 +643,40 @@ impl SelfForgeApp {
                 AgentStepStatus::Completed,
                 format!("工具 {} 调用完成：{}", tool.tool_id, tool.summary),
             )?;
+        }
+
+        if let Some(claim) = &work_claim {
+            let step_status = session
+                .steps
+                .iter()
+                .find(|candidate| candidate.order == step.order)
+                .map(|candidate| candidate.status)
+                .unwrap_or(AgentStepStatus::Failed);
+            match step_status {
+                AgentStepStatus::Completed => {
+                    self.complete_agent_work(
+                        &request.session_version,
+                        &claim.task_id,
+                        &claim.worker_id,
+                        &format!(
+                            "步骤 {} 工具 {} 已完成：{}",
+                            step.order, tool.tool_id, tool.summary
+                        ),
+                    )?;
+                }
+                AgentStepStatus::Failed => {
+                    self.release_agent_work(
+                        &request.session_version,
+                        &claim.task_id,
+                        &claim.worker_id,
+                        &format!(
+                            "步骤 {} 工具 {} 未通过验证：{}",
+                            step.order, tool.tool_id, tool.summary
+                        ),
+                    )?;
+                }
+                AgentStepStatus::Pending | AgentStepStatus::Running => {}
+            }
         }
 
         let session_completed = session
@@ -616,6 +693,8 @@ impl SelfForgeApp {
             session_version: session.version.clone(),
             step_order: step.order,
             agent_id: step.agent_id,
+            work_task_id: work_claim.as_ref().map(|claim| claim.task_id.clone()),
+            work_worker_id: work_claim.as_ref().map(|claim| claim.worker_id.clone()),
             tool,
             session_completed,
         })
@@ -1341,6 +1420,39 @@ impl SelfForgeApp {
         })
     }
 
+    fn claim_work_for_step(
+        &self,
+        session: &AgentSession,
+        step: &AgentSessionStep,
+    ) -> Result<Option<AgentStepWorkClaim>, AgentWorkError> {
+        if let (Some(task_id), Some(worker_id)) = (&step.work_task_id, &step.work_worker_id) {
+            return Ok(Some(AgentStepWorkClaim {
+                task_id: task_id.clone(),
+                worker_id: worker_id.clone(),
+                newly_claimed: false,
+            }));
+        }
+
+        let Some(context) = session.plan_context.as_ref() else {
+            return Ok(None);
+        };
+        if context.work_queue.is_none() {
+            return Ok(None);
+        }
+
+        let worker_id = format!("{}-step-{}", session.id, step.order);
+        let claim = AgentWorkCoordinator::new(&self.root).claim_next(
+            &session.version,
+            &worker_id,
+            Some(&step.agent_id),
+        )?;
+        Ok(Some(AgentStepWorkClaim {
+            task_id: claim.task.id,
+            worker_id: claim.worker_id,
+            newly_claimed: true,
+        }))
+    }
+
     fn attach_plan_context(
         &self,
         session: &mut AgentSession,
@@ -1663,6 +1775,9 @@ impl fmt::Display for AgentStepExecutionError {
         match self {
             AgentStepExecutionError::Session(error) => write!(formatter, "{error}"),
             AgentStepExecutionError::Tool(error) => write!(formatter, "{error}"),
+            AgentStepExecutionError::Work(error) => {
+                write!(formatter, "协作任务板同步失败：{error}")
+            }
             AgentStepExecutionError::NoPendingStep { session_id } => {
                 write!(formatter, "Agent 会话 {session_id} 没有待执行步骤")
             }
@@ -1690,6 +1805,7 @@ impl Error for AgentStepExecutionError {
         match self {
             AgentStepExecutionError::Session(error) => Some(error),
             AgentStepExecutionError::Tool(error) => Some(error),
+            AgentStepExecutionError::Work(error) => Some(error),
             AgentStepExecutionError::NoPendingStep { .. }
             | AgentStepExecutionError::ToolNotInStep { .. }
             | AgentStepExecutionError::NoRunnableTool { .. }
@@ -1707,6 +1823,12 @@ impl From<AgentSessionError> for AgentStepExecutionError {
 impl From<AgentToolInvocationError> for AgentStepExecutionError {
     fn from(error: AgentToolInvocationError) -> Self {
         AgentStepExecutionError::Tool(error)
+    }
+}
+
+impl From<AgentWorkError> for AgentStepExecutionError {
+    fn from(error: AgentWorkError) -> Self {
+        AgentStepExecutionError::Work(error)
     }
 }
 

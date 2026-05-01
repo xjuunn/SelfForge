@@ -37,6 +37,7 @@ pub enum AgentSessionEventKind {
     StepUpdated,
     RuntimeRun,
     WorkQueuePrepared,
+    WorkTaskLinked,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -106,6 +107,10 @@ pub struct AgentSessionStep {
     pub verification: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub result: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work_task_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work_worker_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -252,6 +257,8 @@ impl AgentSessionStore {
                 status: AgentStepStatus::Pending,
                 verification: step.verification.clone(),
                 result: None,
+                work_task_id: None,
+                work_worker_id: None,
             })
             .collect::<Vec<_>>();
 
@@ -566,6 +573,34 @@ impl AgentSession {
         );
     }
 
+    pub fn attach_work_claim(
+        &mut self,
+        order: usize,
+        task_id: impl Into<String>,
+        worker_id: impl Into<String>,
+    ) -> Result<(), AgentSessionError> {
+        let task_id = task_id.into();
+        let worker_id = worker_id.into();
+        {
+            let Some(step) = self.steps.iter_mut().find(|step| step.order == order) else {
+                return Err(AgentSessionError::StepNotFound {
+                    id: self.id.clone(),
+                    order,
+                });
+            };
+
+            step.work_task_id = Some(task_id.clone());
+            step.work_worker_id = Some(worker_id.clone());
+        }
+        self.record_event(
+            AgentSessionEventKind::WorkTaskLinked,
+            Some(order),
+            None,
+            format!("步骤 {order} 已领取协作任务 {task_id}，工作线程 {worker_id}。"),
+        );
+        Ok(())
+    }
+
     fn summary(&self) -> AgentSessionSummary {
         AgentSessionSummary {
             id: self.id.clone(),
@@ -632,6 +667,7 @@ impl fmt::Display for AgentSessionEventKind {
             AgentSessionEventKind::StepUpdated => formatter.write_str("步骤更新"),
             AgentSessionEventKind::RuntimeRun => formatter.write_str("运行记录"),
             AgentSessionEventKind::WorkQueuePrepared => formatter.write_str("协作任务板"),
+            AgentSessionEventKind::WorkTaskLinked => formatter.write_str("协作任务"),
         }
     }
 }
