@@ -9,6 +9,7 @@ mod patch_source_cycle_summary;
 mod patch_source_execution;
 mod patch_source_plan;
 mod patch_source_promotion;
+mod patch_source_task_draft;
 mod registry;
 mod self_upgrade_audit;
 mod self_upgrade_summary;
@@ -62,6 +63,10 @@ pub use patch_source_plan::{
 pub use patch_source_promotion::{
     AiPatchSourcePromotionRecord, AiPatchSourcePromotionStatus, AiPatchSourcePromotionStore,
     AiPatchSourcePromotionStoreError, AiPatchSourcePromotionSummary,
+};
+pub use patch_source_task_draft::{
+    AiPatchSourceTaskDraftRecord, AiPatchSourceTaskDraftStatus, AiPatchSourceTaskDraftStore,
+    AiPatchSourceTaskDraftStoreError, AiPatchSourceTaskDraftSummary,
 };
 pub use registry::AgentRegistry;
 pub use self_upgrade_audit::{
