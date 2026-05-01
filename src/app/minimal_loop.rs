@@ -153,6 +153,7 @@ pub struct AiPatchDraftPreview {
     pub current_version: String,
     pub target_version: String,
     pub goal: String,
+    pub source_task_audit_id: Option<String>,
     pub prompt: String,
     pub request: AiRequestSpec,
     pub preflight: PreflightReport,
@@ -166,6 +167,12 @@ pub struct AiPatchDraftReport {
     pub preview: AiPatchDraftPreview,
     pub ai: AiExecutionReport,
     pub record: AiPatchDraftRecord,
+}
+
+#[derive(Debug, Clone)]
+struct ApprovedPatchDraftSource {
+    id: String,
+    goal: String,
 }
 
 #[derive(Debug, Clone)]
@@ -659,6 +666,7 @@ impl SelfForgeApp {
             current_version: preflight.current_version.clone(),
             target_version,
             goal,
+            source_task_audit_id: None,
             prompt,
             request,
             preflight,
@@ -702,8 +710,10 @@ impl SelfForgeApp {
     where
         F: Fn(&str) -> Option<String>,
     {
-        let goal = self.approved_patch_draft_goal_from_task_audit(task_audit_id)?;
-        self.ai_patch_draft_preview_with_lookup(&goal, process_lookup)
+        let source = self.approved_patch_draft_goal_from_task_audit(task_audit_id)?;
+        let mut preview = self.ai_patch_draft_preview_with_lookup(&source.goal, process_lookup)?;
+        preview.source_task_audit_id = Some(source.id);
+        Ok(preview)
     }
 
     pub fn ai_patch_draft_from_task_audit(
@@ -4282,6 +4292,7 @@ impl SelfForgeApp {
             created_at_unix_seconds: 0,
             status,
             goal: preview.goal.clone(),
+            source_task_audit_id: preview.source_task_audit_id.clone(),
             provider_id: preview.request.provider_id.clone(),
             model: preview.request.model.clone(),
             protocol: preview.request.protocol.clone(),
@@ -4304,7 +4315,7 @@ impl SelfForgeApp {
     fn approved_patch_draft_goal_from_task_audit(
         &self,
         task_audit_id: &str,
-    ) -> Result<String, AiPatchDraftError> {
+    ) -> Result<ApprovedPatchDraftSource, AiPatchDraftError> {
         let preflight = self.preflight().map_err(AiPatchDraftError::Preflight)?;
         if !preflight.open_errors.is_empty() {
             return Err(AiPatchDraftError::Blocked {
@@ -4324,8 +4335,10 @@ impl SelfForgeApp {
             });
         }
 
-        normalize_optional_text(&task_audit.approved_goal)
-            .ok_or_else(|| AiPatchDraftError::EmptyTaskAuditGoal { id: task_audit.id })
+        let id = task_audit.id;
+        let goal = normalize_optional_text(&task_audit.approved_goal)
+            .ok_or_else(|| AiPatchDraftError::EmptyTaskAuditGoal { id: id.clone() })?;
+        Ok(ApprovedPatchDraftSource { id, goal })
     }
 
     fn session_plan_context(&self, insights: &MemoryInsightReport) -> AgentSessionPlanContext {

@@ -238,6 +238,8 @@ AI 补丁草案必须优先使用 `agent-patch-draft [--dry-run] [--timeout-ms N
 
 当补丁草案来自源码覆盖下一任务草案链路时，必须使用 `agent-patch-draft [--dry-run] [--timeout-ms N] --from-task-audit TASK_AUDIT_ID`。该入口只能读取当前版本下已批准的任务草案审计记录，并使用审计记录中的批准目标生成补丁草案；审计记录缺失、状态不是已批准或批准目标为空时必须停止。使用 `--from-task-audit` 时禁止同时提供直接目标文本，防止绕过任务草案审计闸门。该入口仍必须复用普通 `agent-patch-draft` 的预检、记忆读取、AI 请求、草案存储和草案合规校验，禁止新建平行补丁生成流程。
 
+由 `--from-task-audit` 生成的补丁草案预览、成功记录、失败记录、列表摘要和单条查询输出必须显式保存并显示来源任务草案审计编号。普通直接目标生成的补丁草案可以不包含该编号，但读取旧记录时必须向后兼容。后续审计、预演、应用、源码覆盖和候选提升流程需要追溯来源时，必须优先读取补丁草案记录中的来源任务草案审计编号，禁止依赖人工从文本目标中猜测来源。
+
 AI 补丁草案进入真实应用前必须先使用 `agent-patch-audit [--current|--candidate|--version VERSION] DRAFT_RECORD_ID`。审计记录只能写入 `workspaces/vMAJOR/artifacts/agents/patch-audits/`，索引文件为同目录 `index.jsonl`，禁止为小版本创建独立审计目录或文件。审计必须解析草案中的 `允许写入范围`，检查非法路径、绝对路径、受保护目录和协作任务板中已领取任务的写入范围冲突；发现受保护路径或活跃冲突时必须标记失败，禁止继续应用补丁。查询审计使用 `agent-patch-audits [--limit N]`，读取单条审计使用 `agent-patch-audit-record AUDIT_RECORD_ID`。缺少协作任务板时只能作为警告记录，后续多 AI 写入前仍必须初始化或复用任务板。
 
 AI 补丁草案审计通过后，真实写入源码前必须先使用 `agent-patch-preview [--current|--candidate|--version VERSION] AUDIT_RECORD_ID` 生成受控应用预演。预演记录只能写入 `workspaces/vMAJOR/artifacts/agents/patch-previews/`，索引文件为同目录 `index.jsonl`，禁止为小版本创建独立预演目录或文件。预演只能读取审计记录和草案 Markdown，从 `代码草案` 章节提取代码块，生成中文 Markdown 预演报告和结构化 JSON 记录；禁止直接修改源码、Runtime、Supervisor、状态文件或真实候选代码。审计未通过、草案未成功、缺少写入范围或缺少代码块时必须写入已阻断预演记录。查询预演使用 `agent-patch-previews [--limit N]`，读取单条预演使用 `agent-patch-preview-record PREVIEW_RECORD_ID`。后续真实应用补丁必须继续在候选工作区或沙箱中执行，并重新运行测试、验证和预检。

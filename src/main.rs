@@ -1378,12 +1378,13 @@ fn agent_patch_draft(app: &SelfForgeApp, arguments: Vec<String>) -> Result<Strin
         };
         return boxed(preview.map(|preview| {
             format!(
-                "SelfForge AI 补丁草案预览 当前版本 {} 目标版本 {} 提供商 {} 模型 {} 协议 {} 记忆来源 {} 允许写入 {} 必要章节 {} 用户目标 {} 提示词字节 {}",
+                "SelfForge AI 补丁草案预览 当前版本 {} 目标版本 {} 提供商 {} 模型 {} 协议 {} 来源审计 {} 记忆来源 {} 允许写入 {} 必要章节 {} 用户目标 {} 提示词字节 {}",
                 preview.current_version,
                 preview.target_version,
                 preview.request.provider_id,
                 preview.request.model,
                 preview.request.protocol,
+                preview.source_task_audit_id.as_deref().unwrap_or("无"),
                 preview.insights.source_versions.len(),
                 preview.allowed_write_roots.join("、"),
                 preview.required_sections.join("、"),
@@ -1403,11 +1404,16 @@ fn agent_patch_draft(app: &SelfForgeApp, arguments: Vec<String>) -> Result<Strin
         draft_result
             .map(|report| {
                 format!(
-                    "SelfForge AI 补丁草案完成 当前版本 {} 目标版本 {} 提供商 {} 模型 {} 目标 {} 记录 {} 记录文件 {} 草案文件 {} 响应字节 {}",
+                    "SelfForge AI 补丁草案完成 当前版本 {} 目标版本 {} 提供商 {} 模型 {} 来源审计 {} 目标 {} 记录 {} 记录文件 {} 草案文件 {} 响应字节 {}",
                     report.preview.current_version,
                     report.preview.target_version,
                     report.ai.response.provider_id,
                     report.ai.response.model,
+                    report
+                        .record
+                        .source_task_audit_id
+                        .as_deref()
+                        .unwrap_or("无"),
                     report.preview.goal,
                     report.record.id,
                     report.record.file.display(),
@@ -1442,10 +1448,11 @@ fn agent_patch_drafts(
                 )];
                 for record in records {
                     lines.push(format!(
-                        "{} 状态 {} 目标版本 {} 目标 {} 草案 {} 错误 {} 文件 {}",
+                        "{} 状态 {} 目标版本 {} 来源审计 {} 目标 {} 草案 {} 错误 {} 文件 {}",
                         record.id,
                         record.status,
                         record.target_version,
+                        record.source_task_audit_id.as_deref().unwrap_or("无"),
                         record.goal,
                         record
                             .draft_file
@@ -1470,7 +1477,7 @@ fn agent_patch_draft_record(
         app.ai_patch_draft_record(&command.version, &command.id)
             .map(|record| {
                 format!(
-                    "SelfForge AI 补丁草案记录 {} 版本 {} 目标版本 {} 状态 {} 提供商 {} 模型 {} 协议 {} 目标 {} 允许写入 {} 必要章节 {} 草案 {} 错误 {} 文件 {}\nAI 响应摘要 {}",
+                    "SelfForge AI 补丁草案记录 {} 版本 {} 目标版本 {} 状态 {} 提供商 {} 模型 {} 协议 {} 来源审计 {} 目标 {} 允许写入 {} 必要章节 {} 草案 {} 错误 {} 文件 {}\nAI 响应摘要 {}",
                     record.id,
                     record.version,
                     record.target_version,
@@ -1478,6 +1485,7 @@ fn agent_patch_draft_record(
                     record.provider_id,
                     record.model,
                     record.protocol,
+                    record.source_task_audit_id.as_deref().unwrap_or("无"),
                     record.goal,
                     record.allowed_write_roots.join("、"),
                     record.required_sections.join("、"),

@@ -26,6 +26,8 @@ pub struct AiPatchDraftRecord {
     pub created_at_unix_seconds: u64,
     pub status: AiPatchDraftStatus,
     pub goal: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_task_audit_id: Option<String>,
     pub provider_id: String,
     pub model: String,
     pub protocol: String,
@@ -58,6 +60,8 @@ pub struct AiPatchDraftSummary {
     pub created_at_unix_seconds: u64,
     pub status: AiPatchDraftStatus,
     pub goal: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_task_audit_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub draft_file: Option<PathBuf>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -333,6 +337,7 @@ impl AiPatchDraftRecord {
             created_at_unix_seconds: self.created_at_unix_seconds,
             status: self.status,
             goal: self.goal.clone(),
+            source_task_audit_id: self.source_task_audit_id.clone(),
             draft_file: self.draft_file.clone(),
             error: self.error.clone(),
             file: self.file.clone(),
