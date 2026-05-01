@@ -176,6 +176,8 @@ workspace 根目录必须保持极简，只允许 `README.md`、`.gitignore` 和
 
 读取历史经验必须优先使用 `memory-context [--current|--candidate|--version VERSION] [--limit N]`。该命令只能读取当前 major 聚合记忆文件，按语义化版本选择最近记录，默认读取最近 5 条，禁止为了读取记忆创建小版本文件或额外索引。Agent 进化和验证会话必须在第一阶段记录已读取的历史记忆数量。
 
+提取历史经验必须优先使用 `memory-insights [--current|--candidate|--version VERSION] [--limit N]`。该命令只能基于 `memory-context` 的最近记忆读取结果提取成功经验、失败风险、优化建议和可复用经验，禁止直接修改记忆文件，禁止为了经验提取创建额外索引。Agent 进化和验证会话必须在第一阶段记录已提取的可复用经验和优化建议数量。
+
 `advance` 执行前必须检查当前稳定版本是否存在未解决错误。若 `errors --current --open` 能查询到记录，必须停止进化并先解决错误，禁止生成或提升候选版本。
 
 AI 提供商配置必须优先使用环境变量和项目根目录 `.env`，禁止把 API Key 写入源码、Markdown、日志、状态文件或运行记录。真实进程环境变量优先级高于 `.env`，`.env` 只作为本地配置补充，且必须被 `.gitignore` 忽略。支持 `OPENAI_API_KEY`、`DEEPSEEK_API_KEY`、`GEMINI_API_KEY` 和 `GOOGLE_API_KEY`；可用 `SELFFORGE_AI_PROVIDER` 指定 `openai`、`deepseek` 或 `gemini`。模型和基础地址可分别通过 `OPENAI_MODEL`、`DEEPSEEK_MODEL`、`GEMINI_MODEL`、`OPENAI_BASE_URL`、`DEEPSEEK_BASE_URL`、`GEMINI_BASE_URL` 覆盖。检查配置必须使用 `ai-config`，输出只能显示密钥是否存在和来源变量名，不得输出密钥值。

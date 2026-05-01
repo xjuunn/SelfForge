@@ -18,7 +18,9 @@ pub use error_archive::{
     ArchivedErrorEntry, ErrorArchive, ErrorArchiveError, ErrorArchiveReport, ErrorListQuery,
     ErrorResolutionReport,
 };
-pub use memory::{MemoryContextEntry, MemoryContextError, MemoryContextReport};
+pub use memory::{
+    MemoryContextEntry, MemoryContextError, MemoryContextReport, MemoryInsight, MemoryInsightReport,
+};
 pub use minimal_loop::{
     AgentEvolutionError, AgentEvolutionReport, AgentRunError, AgentRunReport,
     AgentSingleEvolutionReport, AgentVerificationReport, MinimalLoopError, MinimalLoopOutcome,

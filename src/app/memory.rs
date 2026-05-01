@@ -20,6 +20,23 @@ pub struct MemoryContextEntry {
     pub body: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MemoryInsightReport {
+    pub version: String,
+    pub archive_path: PathBuf,
+    pub source_versions: Vec<String>,
+    pub success_experiences: Vec<MemoryInsight>,
+    pub failure_experiences: Vec<MemoryInsight>,
+    pub optimization_suggestions: Vec<MemoryInsight>,
+    pub reusable_experiences: Vec<MemoryInsight>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MemoryInsight {
+    pub version: String,
+    pub text: String,
+}
+
 #[derive(Debug)]
 pub enum MemoryContextError {
     Version(VersionError),
@@ -64,6 +81,39 @@ pub fn read_recent_memory_context(
         version,
         archive_path,
         entries,
+    })
+}
+
+pub fn extract_memory_insights(
+    root: impl AsRef<Path>,
+    version: impl AsRef<str>,
+    limit: usize,
+) -> Result<MemoryInsightReport, MemoryContextError> {
+    let context = read_recent_memory_context(root, version, limit)?;
+    let mut success_experiences = Vec::new();
+    let mut failure_experiences = Vec::new();
+    let mut optimization_suggestions = Vec::new();
+    let mut reusable_experiences = Vec::new();
+
+    for entry in &context.entries {
+        success_experiences.extend(extract_heading_items(entry, "评估"));
+        failure_experiences.extend(extract_failure_items(entry));
+        optimization_suggestions.extend(extract_heading_items(entry, "优化建议"));
+        reusable_experiences.extend(extract_heading_items(entry, "可复用经验"));
+    }
+
+    Ok(MemoryInsightReport {
+        version: context.version,
+        archive_path: context.archive_path,
+        source_versions: context
+            .entries
+            .iter()
+            .map(|entry| entry.version.clone())
+            .collect(),
+        success_experiences,
+        failure_experiences,
+        optimization_suggestions,
+        reusable_experiences,
     })
 }
 
@@ -136,6 +186,86 @@ fn should_replace_section(existing: &MemoryContextEntry, candidate: &MemoryConte
 fn version_key(version: &str) -> (u64, u64, u64) {
     let parsed = ForgeVersion::from_str(version).expect("记忆小节版本号应已通过解析");
     (parsed.major(), parsed.minor(), parsed.patch())
+}
+
+fn extract_heading_items(entry: &MemoryContextEntry, heading: &str) -> Vec<MemoryInsight> {
+    heading_section(&entry.body, heading)
+        .lines()
+        .filter_map(normalize_memory_line)
+        .map(|text| MemoryInsight {
+            version: entry.version.clone(),
+            text,
+        })
+        .collect()
+}
+
+fn extract_failure_items(entry: &MemoryContextEntry) -> Vec<MemoryInsight> {
+    extract_heading_items(entry, "错误总结")
+        .into_iter()
+        .filter(|insight| !is_no_failure_summary(&insight.text))
+        .collect()
+}
+
+fn heading_section(body: &str, heading: &str) -> String {
+    let marker = format!("# {heading}");
+    let mut collecting = false;
+    let mut section = Vec::new();
+
+    for line in body.lines() {
+        if line.trim() == marker {
+            collecting = true;
+            continue;
+        }
+        if collecting && line.starts_with("# ") {
+            break;
+        }
+        if collecting {
+            section.push(line);
+        }
+    }
+
+    section.join("\n")
+}
+
+fn normalize_memory_line(line: &str) -> Option<String> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let without_marker = trimmed.trim_start_matches(['-', '*', ' ']);
+    let normalized = strip_number_prefix(without_marker).trim();
+    if normalized.is_empty() || is_placeholder(normalized) {
+        return None;
+    }
+
+    Some(normalized.to_string())
+}
+
+fn strip_number_prefix(value: &str) -> &str {
+    let Some((prefix, rest)) = value.split_once('.') else {
+        return value;
+    };
+    if prefix.chars().all(|character| character.is_ascii_digit()) {
+        rest
+    } else {
+        value
+    }
+}
+
+fn is_placeholder(value: &str) -> bool {
+    matches!(
+        value,
+        "待最终验证后补充。" | "暂无。" | "无。" | "无未解决错误。"
+    )
+}
+
+fn is_no_failure_summary(value: &str) -> bool {
+    value.contains("没有新增未解决错误")
+        || value.contains("未发现功能错误")
+        || value.contains("未发现未解决错误")
+        || value.contains("无未解决错误")
+        || value == "本轮最终验证未发现未解决错误。"
 }
 
 impl fmt::Display for MemoryContextError {

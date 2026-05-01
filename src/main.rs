@@ -46,6 +46,7 @@ fn main() {
         })),
         "preflight" => preflight(&app),
         "memory-context" => memory_context(&app, args.collect()),
+        "memory-insights" => memory_insights(&app, args.collect()),
         "ai-config" => ai_config(&app),
         "ai-request" => ai_request(&app, args.collect()),
         "agents" => agents(&app),
@@ -392,6 +393,46 @@ fn memory_context(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, 
                 lines.join("\n")
             }),
     )
+}
+
+fn memory_insights(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Box<dyn Error>> {
+    let command = parse_memory_context_args(arguments)?;
+    boxed(
+        app.memory_insights(&command.version, command.limit)
+            .map(|report| {
+                let mut lines = vec![format!(
+                    "SelfForge 记忆经验 {}: 来源 {} 成功 {} 风险 {} 建议 {} 经验 {} 文件 {}",
+                    report.version,
+                    report.source_versions.len(),
+                    report.success_experiences.len(),
+                    report.failure_experiences.len(),
+                    report.optimization_suggestions.len(),
+                    report.reusable_experiences.len(),
+                    report.archive_path.display()
+                )];
+                append_insight_lines(&mut lines, "成功经验", &report.success_experiences);
+                append_insight_lines(&mut lines, "失败风险", &report.failure_experiences);
+                append_insight_lines(&mut lines, "优化建议", &report.optimization_suggestions);
+                append_insight_lines(&mut lines, "可复用经验", &report.reusable_experiences);
+                lines.join("\n")
+            }),
+    )
+}
+
+fn append_insight_lines(
+    lines: &mut Vec<String>,
+    title: &str,
+    insights: &[self_forge::MemoryInsight],
+) {
+    if insights.is_empty() {
+        lines.push(format!("{title}: 无"));
+        return;
+    }
+
+    lines.push(format!("{title}: {} 条", insights.len()));
+    for insight in insights {
+        lines.push(format!("- {} {}", insight.version, insight.text));
+    }
 }
 
 fn ai_config(app: &SelfForgeApp) -> Result<String, Box<dyn Error>> {
@@ -1415,7 +1456,7 @@ fn parse_agent_verify_args(arguments: Vec<String>) -> Result<AgentVerifyArgs, Bo
 }
 
 fn help_text() -> &'static str {
-    "SelfForge commands: init, validate, status, preflight, memory-context [--current|--candidate|--version VERSION] [--limit N], ai-config, ai-request [--dry-run] [--timeout-ms N] [prompt], agents, agent-plan [goal], agent-start [--current|--candidate|--version VERSION] [goal], agent-sessions [--current|--candidate|--version VERSION] [--limit N] [--all], agent-session [--current|--candidate|--version VERSION] SESSION_ID, agent-run [--session-version VERSION] [--current|--candidate|--version VERSION] [--step N] [--timeout-ms N] SESSION_ID -- PROGRAM [ARGS...], agent-verify [--current|--candidate|--version VERSION] [--timeout-ms N] [goal] -- PROGRAM [ARGS...], agent-advance [goal], agent-evolve [goal], advance [goal], promote, rollback [reason], cycle, run [--current|--candidate|--version VERSION] [--timeout-ms N] -- PROGRAM [ARGS...], runs [--current|--candidate|--version VERSION] [--limit N] [--failed] [--timed-out], errors [--current|--candidate|--version VERSION] [--limit N] [--open] [--resolved], record-error [--current|--candidate|--version VERSION] [--run-id RUN_ID] [--stage TEXT] [--solution TEXT], resolve-error [--current|--candidate|--version VERSION] --run-id RUN_ID [--verification TEXT], evolve [--patch|--minor|--major] [goal]"
+    "SelfForge commands: init, validate, status, preflight, memory-context [--current|--candidate|--version VERSION] [--limit N], memory-insights [--current|--candidate|--version VERSION] [--limit N], ai-config, ai-request [--dry-run] [--timeout-ms N] [prompt], agents, agent-plan [goal], agent-start [--current|--candidate|--version VERSION] [goal], agent-sessions [--current|--candidate|--version VERSION] [--limit N] [--all], agent-session [--current|--candidate|--version VERSION] SESSION_ID, agent-run [--session-version VERSION] [--current|--candidate|--version VERSION] [--step N] [--timeout-ms N] SESSION_ID -- PROGRAM [ARGS...], agent-verify [--current|--candidate|--version VERSION] [--timeout-ms N] [goal] -- PROGRAM [ARGS...], agent-advance [goal], agent-evolve [goal], advance [goal], promote, rollback [reason], cycle, run [--current|--candidate|--version VERSION] [--timeout-ms N] -- PROGRAM [ARGS...], runs [--current|--candidate|--version VERSION] [--limit N] [--failed] [--timed-out], errors [--current|--candidate|--version VERSION] [--limit N] [--open] [--resolved], record-error [--current|--candidate|--version VERSION] [--run-id RUN_ID] [--stage TEXT] [--solution TEXT], resolve-error [--current|--candidate|--version VERSION] --run-id RUN_ID [--verification TEXT], evolve [--patch|--minor|--major] [goal]"
 }
 
 fn exit_with_error(error: Box<dyn Error>) -> ! {

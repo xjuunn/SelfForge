@@ -7,7 +7,10 @@ use super::ai_provider::{
     AiRequestError, AiRequestSpec,
 };
 use super::error_archive::{ArchivedErrorEntry, ErrorArchive, ErrorArchiveError, ErrorListQuery};
-use super::memory::{MemoryContextError, MemoryContextReport, read_recent_memory_context};
+use super::memory::{
+    MemoryContextError, MemoryContextReport, MemoryInsightReport, extract_memory_insights,
+    read_recent_memory_context,
+};
 use crate::{
     CycleReport, CycleResult, EvolutionError, ExecutionError, ExecutionReport, ForgeError,
     ForgeState, StateError, Supervisor, next_version_after,
@@ -197,6 +200,14 @@ impl SelfForgeApp {
         read_recent_memory_context(&self.root, version, limit)
     }
 
+    pub fn memory_insights(
+        &self,
+        version: &str,
+        limit: usize,
+    ) -> Result<MemoryInsightReport, MemoryContextError> {
+        extract_memory_insights(&self.root, version, limit)
+    }
+
     pub fn start_agent_session(
         &self,
         version: &str,
@@ -340,7 +351,7 @@ impl SelfForgeApp {
         let store = AgentSessionStore::new(&self.root);
         let mut session = store.start(&state.current_version, goal)?;
         session.mark_running();
-        let memory = match self.memory_context(&state.current_version, 5) {
+        let memory = match self.memory_insights(&state.current_version, 5) {
             Ok(report) => report,
             Err(error) => {
                 let source = MinimalLoopError::Memory(error);
@@ -354,8 +365,10 @@ impl SelfForgeApp {
             1,
             AgentStepStatus::Completed,
             format!(
-                "已创建 Agent 验证会话并生成计划，已读取最近 {} 条历史记忆。",
-                memory.entries.len()
+                "已创建 Agent 验证会话并生成计划，已读取最近 {} 条历史记忆，提取 {} 条可复用经验和 {} 条优化建议。",
+                memory.source_versions.len(),
+                memory.reusable_experiences.len(),
+                memory.optimization_suggestions.len()
             ),
         )?;
         session.update_step(
@@ -409,7 +422,7 @@ impl SelfForgeApp {
         let store = AgentSessionStore::new(&self.root);
         let mut session = store.start(&state.current_version, goal)?;
         session.mark_running();
-        let memory = match self.memory_context(&state.current_version, 5) {
+        let memory = match self.memory_insights(&state.current_version, 5) {
             Ok(report) => report,
             Err(error) => {
                 let source = MinimalLoopError::Memory(error);
@@ -426,8 +439,10 @@ impl SelfForgeApp {
             1,
             AgentStepStatus::Completed,
             format!(
-                "已创建 Agent 会话并生成协作计划，已读取最近 {} 条历史记忆。",
-                memory.entries.len()
+                "已创建 Agent 会话并生成协作计划，已读取最近 {} 条历史记忆，提取 {} 条可复用经验和 {} 条优化建议。",
+                memory.source_versions.len(),
+                memory.reusable_experiences.len(),
+                memory.optimization_suggestions.len()
             ),
         )?;
         store.save(&session)?;
@@ -524,7 +539,7 @@ impl SelfForgeApp {
         let store = AgentSessionStore::new(&self.root);
         let mut session = store.start(&state.current_version, goal)?;
         session.mark_running();
-        let memory = match self.memory_context(&state.current_version, 5) {
+        let memory = match self.memory_insights(&state.current_version, 5) {
             Ok(report) => report,
             Err(error) => {
                 let source = MinimalLoopError::Memory(error);
@@ -541,8 +556,10 @@ impl SelfForgeApp {
             1,
             AgentStepStatus::Completed,
             format!(
-                "已创建 Agent 会话并生成单轮完整进化计划，已读取最近 {} 条历史记忆。",
-                memory.entries.len()
+                "已创建 Agent 会话并生成单轮完整进化计划，已读取最近 {} 条历史记忆，提取 {} 条可复用经验和 {} 条优化建议。",
+                memory.source_versions.len(),
+                memory.reusable_experiences.len(),
+                memory.optimization_suggestions.len()
             ),
         )?;
         store.save(&session)?;
