@@ -53,6 +53,7 @@ fn main() {
         "agent-sessions" => agent_sessions(&app, args.collect()),
         "agent-session" => agent_session(&app, args.collect()),
         "agent-run" => agent_run(&app, args.collect()),
+        "agent-verify" => agent_verify(&app, args.collect()),
         "agent-advance" => agent_advance(&app, args.collect()),
         "agent-evolve" => agent_evolve(&app, args.collect()),
         "evolve" => evolve(&supervisor, args.collect()),
@@ -605,6 +606,31 @@ fn agent_run(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Box<d
     )
 }
 
+fn agent_verify(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Box<dyn Error>> {
+    let command = parse_agent_verify_args(arguments)?;
+    boxed(
+        app.agent_verify(
+            &command.goal,
+            &command.target_version,
+            &command.program,
+            &command.args,
+            command.timeout_ms,
+        )
+        .map(|report| {
+            format!(
+                "SelfForge Agent 验证完成 会话 {} 运行 {} 版本 {} 退出码 {:?} 超时 {} 状态 {} 记录 {}",
+                report.session.id,
+                report.run_id,
+                report.execution.version,
+                report.execution.exit_code,
+                report.execution.timed_out,
+                report.session.status,
+                report.execution.run_dir.display()
+            )
+        }),
+    )
+}
+
 fn agent_advance(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Box<dyn Error>> {
     let goal = arguments.join(" ");
     let goal = if goal.trim().is_empty() {
@@ -756,6 +782,14 @@ struct AgentRunArgs {
     session_id: String,
     target_version: String,
     step_order: usize,
+    timeout_ms: u64,
+    program: String,
+    args: Vec<String>,
+}
+
+struct AgentVerifyArgs {
+    goal: String,
+    target_version: String,
     timeout_ms: u64,
     program: String,
     args: Vec<String>,
@@ -1241,8 +1275,72 @@ fn parse_agent_run_args(arguments: Vec<String>) -> Result<AgentRunArgs, Box<dyn 
     })
 }
 
+fn parse_agent_verify_args(arguments: Vec<String>) -> Result<AgentVerifyArgs, Box<dyn Error>> {
+    let state = ForgeState::load(env::current_dir()?)?;
+    let mut target_version = state.current_version.clone();
+    let mut timeout_ms = 30_000;
+    let mut goal_parts = Vec::new();
+    let mut command_start = None;
+    let mut index = 0;
+
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "--" => {
+                command_start = Some(index + 1);
+                break;
+            }
+            "--current" => {
+                target_version = state.current_version.clone();
+                index += 1;
+            }
+            "--candidate" => {
+                target_version = state.candidate_version.clone().ok_or("当前没有候选版本")?;
+                index += 1;
+            }
+            "--version" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--version 需要版本号".into());
+                };
+                target_version = value.clone();
+                index += 2;
+            }
+            "--timeout-ms" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--timeout-ms 需要毫秒数".into());
+                };
+                timeout_ms = value.parse::<u64>()?;
+                index += 2;
+            }
+            other if other.starts_with("--") => {
+                return Err(format!("未知 agent-verify 参数: {other}").into());
+            }
+            other => {
+                goal_parts.push(other.to_string());
+                index += 1;
+            }
+        }
+    }
+
+    let start = command_start.ok_or("agent-verify 需要使用 -- 指定命令")?;
+    let program = arguments.get(start).ok_or("agent-verify 需要命令")?.clone();
+    let args = arguments[start + 1..].to_vec();
+    let goal = if goal_parts.is_empty() {
+        "执行 Agent 验证".to_string()
+    } else {
+        goal_parts.join(" ")
+    };
+
+    Ok(AgentVerifyArgs {
+        goal,
+        target_version,
+        timeout_ms,
+        program,
+        args,
+    })
+}
+
 fn help_text() -> &'static str {
-    "SelfForge commands: init, validate, status, preflight, ai-config, ai-request [--dry-run] [--timeout-ms N] [prompt], agents, agent-plan [goal], agent-start [--current|--candidate|--version VERSION] [goal], agent-sessions [--current|--candidate|--version VERSION] [--limit N] [--all], agent-session [--current|--candidate|--version VERSION] SESSION_ID, agent-run [--session-version VERSION] [--current|--candidate|--version VERSION] [--step N] [--timeout-ms N] SESSION_ID -- PROGRAM [ARGS...], agent-advance [goal], agent-evolve [goal], advance [goal], promote, rollback [reason], cycle, run [--current|--candidate|--version VERSION] [--timeout-ms N] -- PROGRAM [ARGS...], runs [--current|--candidate|--version VERSION] [--limit N] [--failed] [--timed-out], errors [--current|--candidate|--version VERSION] [--limit N] [--open] [--resolved], record-error [--current|--candidate|--version VERSION] [--run-id RUN_ID] [--stage TEXT] [--solution TEXT], resolve-error [--current|--candidate|--version VERSION] --run-id RUN_ID [--verification TEXT], evolve [--patch|--minor|--major] [goal]"
+    "SelfForge commands: init, validate, status, preflight, ai-config, ai-request [--dry-run] [--timeout-ms N] [prompt], agents, agent-plan [goal], agent-start [--current|--candidate|--version VERSION] [goal], agent-sessions [--current|--candidate|--version VERSION] [--limit N] [--all], agent-session [--current|--candidate|--version VERSION] SESSION_ID, agent-run [--session-version VERSION] [--current|--candidate|--version VERSION] [--step N] [--timeout-ms N] SESSION_ID -- PROGRAM [ARGS...], agent-verify [--current|--candidate|--version VERSION] [--timeout-ms N] [goal] -- PROGRAM [ARGS...], agent-advance [goal], agent-evolve [goal], advance [goal], promote, rollback [reason], cycle, run [--current|--candidate|--version VERSION] [--timeout-ms N] -- PROGRAM [ARGS...], runs [--current|--candidate|--version VERSION] [--limit N] [--failed] [--timed-out], errors [--current|--candidate|--version VERSION] [--limit N] [--open] [--resolved], record-error [--current|--candidate|--version VERSION] [--run-id RUN_ID] [--stage TEXT] [--solution TEXT], resolve-error [--current|--candidate|--version VERSION] --run-id RUN_ID [--verification TEXT], evolve [--patch|--minor|--major] [goal]"
 }
 
 fn exit_with_error(error: Box<dyn Error>) -> ! {

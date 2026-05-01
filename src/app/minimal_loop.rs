@@ -76,6 +76,13 @@ pub struct AgentRunReport {
     pub step_order: usize,
 }
 
+#[derive(Debug, Clone)]
+pub struct AgentVerificationReport {
+    pub session: AgentSession,
+    pub execution: ExecutionReport,
+    pub run_id: String,
+}
+
 #[derive(Debug)]
 pub enum MinimalLoopError {
     State(StateError),
@@ -102,6 +109,7 @@ pub enum AgentEvolutionError {
 #[derive(Debug)]
 pub enum AgentRunError {
     Session(AgentSessionError),
+    Setup(MinimalLoopError),
     Execution {
         session: Box<AgentSession>,
         source: ExecutionError,
@@ -305,6 +313,69 @@ impl SelfForgeApp {
             execution,
             run_id,
             step_order,
+        })
+    }
+
+    pub fn agent_verify(
+        &self,
+        goal: &str,
+        target_version: &str,
+        program: &str,
+        args: &[String],
+        timeout_ms: u64,
+    ) -> Result<AgentVerificationReport, AgentRunError> {
+        let state = ForgeState::load(&self.root)
+            .map_err(MinimalLoopError::from)
+            .map_err(AgentRunError::Setup)?;
+        let store = AgentSessionStore::new(&self.root);
+        let mut session = store.start(&state.current_version, goal)?;
+        session.mark_running();
+        session.update_step(
+            1,
+            AgentStepStatus::Completed,
+            "已创建 Agent 验证会话并生成计划。",
+        )?;
+        session.update_step(
+            2,
+            AgentStepStatus::Completed,
+            format!("验证目标版本为 {target_version}。"),
+        )?;
+        session.update_step(
+            3,
+            AgentStepStatus::Completed,
+            "准备通过 Runtime 受控执行验证命令。",
+        )?;
+        store.save(&session)?;
+
+        let run = self.agent_run(
+            &state.current_version,
+            &session.id,
+            target_version,
+            4,
+            program,
+            args,
+            timeout_ms,
+        )?;
+
+        let mut session = run.session;
+        if session.status != AgentSessionStatus::Failed {
+            session.update_step(
+                5,
+                AgentStepStatus::Completed,
+                "Runtime 运行记录已关联到 Agent 会话。",
+            )?;
+            session.update_step(6, AgentStepStatus::Completed, "Agent 验证会话已归档。")?;
+            session.mark_completed(format!(
+                "验证运行 {} 完成，退出码 {:?}，超时 {}。",
+                run.run_id, run.execution.exit_code, run.execution.timed_out
+            ));
+            store.save(&session)?;
+        }
+
+        Ok(AgentVerificationReport {
+            session,
+            execution: run.execution,
+            run_id: run.run_id,
         })
     }
 
@@ -668,6 +739,9 @@ impl fmt::Display for AgentRunError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             AgentRunError::Session(error) => write!(formatter, "{error}"),
+            AgentRunError::Setup(error) => {
+                write!(formatter, "Agent 验证初始化失败：{error}")
+            }
             AgentRunError::Execution { session, source } => write!(
                 formatter,
                 "Agent 会话 {} 执行 Runtime 运行失败：{}",
@@ -687,6 +761,7 @@ impl Error for AgentRunError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             AgentRunError::Session(error) => Some(error),
+            AgentRunError::Setup(error) => Some(error),
             AgentRunError::Execution { source, .. } => Some(source),
             AgentRunError::MissingRunId { .. } => None,
         }
