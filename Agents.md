@@ -232,6 +232,8 @@ AI 自我升级入口必须优先使用 `agent-self-upgrade [--dry-run] [--timeo
 
 AI 自我升级真实执行必须写入结构化审计记录。记录只能写入 `workspaces/vMAJOR/artifacts/agents/self-upgrades/`，索引文件为同目录 `index.jsonl`，禁止为小版本创建独立审计目录或文件。审计记录必须包含版本、状态、用户提示、提供商、模型、协议、提示词字节数、记忆来源、经验数量、AI 响应摘要、归一化目标、Agent 会话、候选版本、提升或回滚结果、当前稳定版本和错误信息。审计记录不得保存 API Key、完整请求体或完整提示词。查询记录必须使用 `agent-self-upgrades [--limit N]`，读取单条记录必须使用 `agent-self-upgrade-record RECORD_ID`。
 
+AI 补丁草案必须优先使用 `agent-patch-draft [--dry-run] [--timeout-ms N] [goal]`。该命令只能生成中文 Markdown 草案和结构化记录，禁止直接修改源码，禁止声称已经写入源码，禁止绕过测试，禁止修改 `runtime` 和 `supervisor`。草案记录只能写入 `workspaces/vMAJOR/artifacts/agents/patch-drafts/`，索引文件为同目录 `index.jsonl`，禁止为小版本创建独立草案目录或文件。草案必须至少包含计划和测试章节；缺少计划、测试、中文内容或包含 Emoji 时必须记录失败并停止。查询草案使用 `agent-patch-drafts [--limit N]`，读取单条记录使用 `agent-patch-draft-record RECORD_ID`。后续真实应用补丁前必须先经过差异审计、冲突检查、测试和验证，禁止直接从 AI 响应写入受保护边界。
+
 ---
 
 # 八、Git 提交规范

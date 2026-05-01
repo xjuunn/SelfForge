@@ -14,8 +14,9 @@ pub use agent::{
     AgentToolInvocation, AgentToolInvocationInput, AgentToolInvocationReport, AgentToolReport,
     AgentWorkClaimReport, AgentWorkCoordinator, AgentWorkError, AgentWorkEvent, AgentWorkQueue,
     AgentWorkQueueReport, AgentWorkReapReport, AgentWorkTask, AgentWorkTaskStatus,
-    AiSelfUpgradeAuditError, AiSelfUpgradeAuditRecord, AiSelfUpgradeAuditStatus,
-    AiSelfUpgradeAuditStore, AiSelfUpgradeAuditSummary,
+    AiPatchDraftRecord, AiPatchDraftStatus, AiPatchDraftStore, AiPatchDraftStoreError,
+    AiPatchDraftSummary, AiSelfUpgradeAuditError, AiSelfUpgradeAuditRecord,
+    AiSelfUpgradeAuditStatus, AiSelfUpgradeAuditStore, AiSelfUpgradeAuditSummary,
 };
 pub use ai_provider::{
     AiConfigError, AiConfigReport, AiExecutionError, AiExecutionReport, AiProviderRegistry,
@@ -34,7 +35,8 @@ pub use minimal_loop::{
     AgentEvolutionError, AgentEvolutionReport, AgentPlanReport, AgentPlanReportError,
     AgentRunError, AgentRunReport, AgentSingleEvolutionReport, AgentStepExecutionError,
     AgentStepRunError, AgentStepRunReport, AgentStepRunStop, AgentToolInvocationError,
-    AgentVerificationReport, AiSelfUpgradeError, AiSelfUpgradePreview, AiSelfUpgradeReport,
-    MinimalLoopError, MinimalLoopOutcome, MinimalLoopReport, PreflightReport, SelfForgeApp,
+    AgentVerificationReport, AiPatchDraftError, AiPatchDraftPreview, AiPatchDraftReport,
+    AiSelfUpgradeError, AiSelfUpgradePreview, AiSelfUpgradeReport, MinimalLoopError,
+    MinimalLoopOutcome, MinimalLoopReport, PreflightReport, SelfForgeApp,
     normalize_ai_self_upgrade_goal,
 };

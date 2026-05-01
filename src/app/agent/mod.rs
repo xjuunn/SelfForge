@@ -1,4 +1,5 @@
 mod coordination;
+mod patch_draft;
 mod registry;
 mod self_upgrade_audit;
 mod session;
@@ -9,6 +10,10 @@ mod types;
 pub use coordination::{
     AgentWorkClaimReport, AgentWorkCoordinator, AgentWorkError, AgentWorkEvent, AgentWorkQueue,
     AgentWorkQueueReport, AgentWorkReapReport, AgentWorkTask, AgentWorkTaskStatus,
+};
+pub use patch_draft::{
+    AiPatchDraftRecord, AiPatchDraftStatus, AiPatchDraftStore, AiPatchDraftStoreError,
+    AiPatchDraftSummary,
 };
 pub use registry::AgentRegistry;
 pub use self_upgrade_audit::{

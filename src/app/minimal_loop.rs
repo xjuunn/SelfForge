@@ -5,10 +5,11 @@ use super::agent::{
     AgentStepExecutionReport, AgentStepExecutionRequest, AgentStepStatus,
     AgentToolConfigInitReport, AgentToolError, AgentToolInvocation, AgentToolInvocationInput,
     AgentToolInvocationReport, AgentToolReport, AgentWorkClaimReport, AgentWorkCoordinator,
-    AgentWorkError, AgentWorkQueueReport, AgentWorkReapReport, AiSelfUpgradeAuditError,
-    AiSelfUpgradeAuditRecord, AiSelfUpgradeAuditStatus, AiSelfUpgradeAuditStore,
-    AiSelfUpgradeAuditSummary, apply_tools_to_plan, initialize_agent_tool_config,
-    load_agent_tool_report,
+    AgentWorkError, AgentWorkQueueReport, AgentWorkReapReport, AiPatchDraftRecord,
+    AiPatchDraftStatus, AiPatchDraftStore, AiPatchDraftStoreError, AiPatchDraftSummary,
+    AiSelfUpgradeAuditError, AiSelfUpgradeAuditRecord, AiSelfUpgradeAuditStatus,
+    AiSelfUpgradeAuditStore, AiSelfUpgradeAuditSummary, apply_tools_to_plan,
+    initialize_agent_tool_config, load_agent_tool_report,
 };
 use super::ai_provider::{
     AiConfigError, AiConfigReport, AiExecutionError, AiExecutionReport, AiProviderRegistry,
@@ -23,6 +24,7 @@ use super::memory::{
 use crate::{
     CycleReport, CycleResult, EvolutionError, ExecutionError, ExecutionReport, ForgeError,
     ForgeState, StateError, Supervisor, VersionError, next_version_after, version_major_file_name,
+    version_major_key,
 };
 use std::error::Error;
 use std::fmt;
@@ -107,6 +109,26 @@ pub struct AiSelfUpgradeReport {
     pub proposed_goal: String,
     pub evolution: AgentSingleEvolutionReport,
     pub audit: AiSelfUpgradeAuditRecord,
+}
+
+#[derive(Debug, Clone)]
+pub struct AiPatchDraftPreview {
+    pub current_version: String,
+    pub target_version: String,
+    pub goal: String,
+    pub prompt: String,
+    pub request: AiRequestSpec,
+    pub preflight: PreflightReport,
+    pub insights: MemoryInsightReport,
+    pub allowed_write_roots: Vec<String>,
+    pub required_sections: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AiPatchDraftReport {
+    pub preview: AiPatchDraftPreview,
+    pub ai: AiExecutionReport,
+    pub record: AiPatchDraftRecord,
 }
 
 #[derive(Debug, Clone)]
@@ -210,6 +232,23 @@ pub enum AiSelfUpgradeError {
         response_preview: String,
     },
     Evolution(AgentEvolutionError),
+}
+
+#[derive(Debug)]
+pub enum AiPatchDraftError {
+    Preflight(MinimalLoopError),
+    Memory(MemoryContextError),
+    Ai(AiExecutionError),
+    Store(AiPatchDraftStoreError),
+    Version(VersionError),
+    Blocked {
+        version: String,
+        open_errors: Vec<ArchivedErrorEntry>,
+    },
+    InvalidDraft {
+        reason: String,
+        response_preview: String,
+    },
 }
 
 #[derive(Debug)]
@@ -325,6 +364,133 @@ impl SelfForgeApp {
         timeout_ms: u64,
     ) -> Result<AiExecutionReport, AiExecutionError> {
         AiProviderRegistry::execute_text_request_project(&self.root, prompt, timeout_ms)
+    }
+
+    pub fn ai_patch_draft_preview(
+        &self,
+        goal: &str,
+    ) -> Result<AiPatchDraftPreview, AiPatchDraftError> {
+        self.ai_patch_draft_preview_with_lookup(goal, |key| std::env::var(key).ok())
+    }
+
+    pub(crate) fn ai_patch_draft_preview_with_lookup<F>(
+        &self,
+        goal: &str,
+        process_lookup: F,
+    ) -> Result<AiPatchDraftPreview, AiPatchDraftError>
+    where
+        F: Fn(&str) -> Option<String>,
+    {
+        let preflight = self.preflight().map_err(AiPatchDraftError::Preflight)?;
+        if !preflight.open_errors.is_empty() {
+            return Err(AiPatchDraftError::Blocked {
+                version: preflight.current_version.clone(),
+                open_errors: preflight.open_errors.clone(),
+            });
+        }
+
+        let target_version = preflight
+            .candidate_version
+            .clone()
+            .map(Ok)
+            .unwrap_or_else(|| {
+                next_version_after(&preflight.current_version).map_err(AiPatchDraftError::Version)
+            })?;
+        let insights = self
+            .memory_insights(&preflight.current_version, 5)
+            .map_err(AiPatchDraftError::Memory)?;
+        let goal =
+            normalize_optional_text(goal).unwrap_or_else(|| "生成下一轮 AI 补丁草案".to_string());
+        let allowed_write_roots = patch_draft_allowed_write_roots(&preflight.current_version)?;
+        let required_sections = patch_draft_required_sections();
+        let prompt = build_ai_patch_draft_prompt(
+            &preflight,
+            &target_version,
+            &insights,
+            &goal,
+            &allowed_write_roots,
+            &required_sections,
+        );
+        let request = AiProviderRegistry::build_text_request_project_with(
+            &self.root,
+            &prompt,
+            process_lookup,
+        )
+        .map_err(AiExecutionError::from)
+        .map_err(AiPatchDraftError::Ai)?;
+
+        Ok(AiPatchDraftPreview {
+            current_version: preflight.current_version.clone(),
+            target_version,
+            goal,
+            prompt,
+            request,
+            preflight,
+            insights,
+            allowed_write_roots,
+            required_sections,
+        })
+    }
+
+    pub fn ai_patch_draft(
+        &self,
+        goal: &str,
+        timeout_ms: u64,
+    ) -> Result<AiPatchDraftReport, AiPatchDraftError> {
+        let preview = self.ai_patch_draft_preview(goal)?;
+        let ai = match self.ai_request(&preview.prompt, timeout_ms) {
+            Ok(report) => report,
+            Err(error) => {
+                self.record_ai_patch_draft_failure(&preview, None, &error.to_string())?;
+                return Err(AiPatchDraftError::Ai(error));
+            }
+        };
+
+        self.finish_ai_patch_draft(preview, ai)
+    }
+
+    pub(crate) fn finish_ai_patch_draft(
+        &self,
+        preview: AiPatchDraftPreview,
+        ai: AiExecutionReport,
+    ) -> Result<AiPatchDraftReport, AiPatchDraftError> {
+        let draft_markdown = match validate_ai_patch_draft_text(&ai.response.text) {
+            Ok(draft_markdown) => draft_markdown,
+            Err(error) => {
+                self.record_ai_patch_draft_failure(&preview, Some(&ai), &error.to_string())?;
+                return Err(error);
+            }
+        };
+        let mut record = self.ai_patch_draft_base(&preview, AiPatchDraftStatus::Succeeded);
+        record.provider_id = ai.response.provider_id.clone();
+        record.model = ai.response.model.clone();
+        record.protocol = ai.response.protocol.clone();
+        record.ai_response_preview = Some(truncate_chars(&ai.response.text, 240));
+        let record = AiPatchDraftStore::new(&self.root)
+            .create(record, Some(&draft_markdown))
+            .map_err(AiPatchDraftError::Store)?;
+
+        Ok(AiPatchDraftReport {
+            preview,
+            ai,
+            record,
+        })
+    }
+
+    pub fn ai_patch_draft_records(
+        &self,
+        version: &str,
+        limit: usize,
+    ) -> Result<Vec<AiPatchDraftSummary>, AiPatchDraftStoreError> {
+        AiPatchDraftStore::new(&self.root).list(version, limit)
+    }
+
+    pub fn ai_patch_draft_record(
+        &self,
+        version: &str,
+        id: &str,
+    ) -> Result<AiPatchDraftRecord, AiPatchDraftStoreError> {
+        AiPatchDraftStore::new(&self.root).load(version, id)
     }
 
     pub fn ai_self_upgrade_preview(
@@ -1867,6 +2033,57 @@ impl SelfForgeApp {
         }
     }
 
+    fn record_ai_patch_draft_failure(
+        &self,
+        preview: &AiPatchDraftPreview,
+        ai: Option<&AiExecutionReport>,
+        error: &str,
+    ) -> Result<AiPatchDraftRecord, AiPatchDraftError> {
+        let mut record = self.ai_patch_draft_base(preview, AiPatchDraftStatus::Failed);
+        if let Some(ai) = ai {
+            record.provider_id = ai.response.provider_id.clone();
+            record.model = ai.response.model.clone();
+            record.protocol = ai.response.protocol.clone();
+            record.ai_response_preview = Some(truncate_chars(&ai.response.text, 240));
+        }
+        record.error = Some(truncate_chars(error, 400));
+
+        AiPatchDraftStore::new(&self.root)
+            .create(record, None)
+            .map_err(AiPatchDraftError::Store)
+    }
+
+    fn ai_patch_draft_base(
+        &self,
+        preview: &AiPatchDraftPreview,
+        status: AiPatchDraftStatus,
+    ) -> AiPatchDraftRecord {
+        AiPatchDraftRecord {
+            id: String::new(),
+            version: preview.current_version.clone(),
+            target_version: preview.target_version.clone(),
+            created_at_unix_seconds: 0,
+            status,
+            goal: preview.goal.clone(),
+            provider_id: preview.request.provider_id.clone(),
+            model: preview.request.model.clone(),
+            protocol: preview.request.protocol.clone(),
+            prompt_bytes: preview.prompt.len(),
+            memory_source_versions: preview.insights.source_versions.clone(),
+            success_experience_count: preview.insights.success_experiences.len(),
+            failure_experience_count: preview.insights.failure_experiences.len(),
+            optimization_suggestion_count: preview.insights.optimization_suggestions.len(),
+            reusable_experience_count: preview.insights.reusable_experiences.len(),
+            open_error_count: preview.preflight.open_errors.len(),
+            allowed_write_roots: preview.allowed_write_roots.clone(),
+            required_sections: preview.required_sections.clone(),
+            ai_response_preview: None,
+            draft_file: None,
+            error: None,
+            file: PathBuf::new(),
+        }
+    }
+
     fn session_plan_context(&self, insights: &MemoryInsightReport) -> AgentSessionPlanContext {
         let archive_file = insights
             .archive_path
@@ -1896,6 +2113,114 @@ fn session_memory_insights(insights: &[MemoryInsight]) -> Vec<AgentSessionMemory
             text: insight.text.clone(),
         })
         .collect()
+}
+
+fn patch_draft_allowed_write_roots(version: &str) -> Result<Vec<String>, AiPatchDraftError> {
+    let major = version_major_key(version).map_err(AiPatchDraftError::Version)?;
+    Ok(vec![format!(
+        "workspaces/{major}/artifacts/agents/patch-drafts/"
+    )])
+}
+
+fn patch_draft_required_sections() -> Vec<String> {
+    vec![
+        "# 补丁目标".to_string(),
+        "# 计划".to_string(),
+        "# 允许写入范围".to_string(),
+        "# 代码草案".to_string(),
+        "# 测试草案".to_string(),
+        "# 验证命令".to_string(),
+        "# 风险与回滚".to_string(),
+    ]
+}
+
+fn build_ai_patch_draft_prompt(
+    preflight: &PreflightReport,
+    target_version: &str,
+    insights: &MemoryInsightReport,
+    goal: &str,
+    allowed_write_roots: &[String],
+    required_sections: &[String],
+) -> String {
+    let mut prompt = String::new();
+    prompt.push_str("你是 SelfForge 的 AI 补丁草案 Agent。\n");
+    prompt.push_str("请基于当前状态和近期记忆，生成一个中文 Markdown 补丁草案。\n");
+    prompt.push_str("必须遵守：只生成草案，不要声称已经修改文件；禁止输出 Emoji；禁止输出 API Key、密钥、完整请求体或敏感配置；禁止修改 runtime 和 supervisor 受保护边界；禁止要求绕过测试；默认只做 patch 级变更。\n");
+    prompt.push_str("草案只能写入下方允许的草案产物目录。代码块中的内容均视为候选草案，不代表真实写入源码。\n\n");
+    prompt.push_str("# 当前状态\n");
+    prompt.push_str(&format!(
+        "- 当前稳定版本：{}\n- 草案目标版本：{}\n- 状态：{}\n- 候选版本：{}\n- 未解决错误：{}\n- 用户目标：{}\n",
+        preflight.current_version,
+        target_version,
+        preflight.status,
+        preflight.candidate_version.as_deref().unwrap_or("无"),
+        preflight.open_errors.len(),
+        goal
+    ));
+    prompt.push_str("\n# 允许写入范围\n");
+    for root in allowed_write_roots {
+        prompt.push_str(&format!("- {root}\n"));
+    }
+    prompt.push_str("\n# 必须包含章节\n");
+    for section in required_sections {
+        prompt.push_str(&format!("- {section}\n"));
+    }
+    prompt.push_str("\n# 近期成功经验\n");
+    prompt.push_str(&format_memory_insight_lines(
+        &insights.success_experiences,
+        5,
+    ));
+    prompt.push_str("\n# 近期失败风险\n");
+    prompt.push_str(&format_memory_insight_lines(
+        &insights.failure_experiences,
+        5,
+    ));
+    prompt.push_str("\n# 近期优化建议\n");
+    prompt.push_str(&format_memory_insight_lines(
+        &insights.optimization_suggestions,
+        5,
+    ));
+    prompt.push_str("\n# 可复用经验\n");
+    prompt.push_str(&format_memory_insight_lines(
+        &insights.reusable_experiences,
+        5,
+    ));
+    prompt.push_str("\n# 输出要求\n");
+    prompt.push_str("请直接输出中文 Markdown，必须先写计划，再写测试草案。不要输出说明前缀，不要包裹在代码围栏中。\n");
+    prompt
+}
+
+fn validate_ai_patch_draft_text(text: &str) -> Result<String, AiPatchDraftError> {
+    let trimmed = text.trim();
+    let response_preview = truncate_chars(trimmed, 160);
+    if trimmed.is_empty() {
+        return Err(AiPatchDraftError::InvalidDraft {
+            reason: "响应为空".to_string(),
+            response_preview,
+        });
+    }
+    if !contains_chinese_text(trimmed) {
+        return Err(AiPatchDraftError::InvalidDraft {
+            reason: "响应缺少中文内容".to_string(),
+            response_preview,
+        });
+    }
+    if trimmed.chars().any(is_disallowed_symbol) {
+        return Err(AiPatchDraftError::InvalidDraft {
+            reason: "响应包含 Emoji 或禁用符号".to_string(),
+            response_preview,
+        });
+    }
+    for required in ["计划", "测试"] {
+        if !has_markdown_section(trimmed, required) {
+            return Err(AiPatchDraftError::InvalidDraft {
+                reason: format!("响应缺少 {required} 章节"),
+                response_preview,
+            });
+        }
+    }
+
+    Ok(trimmed.to_string())
 }
 
 fn build_ai_self_upgrade_prompt(
@@ -2032,6 +2357,20 @@ fn truncate_chars(value: &str, max: usize) -> String {
         output.push_str("...");
     }
     output
+}
+
+fn contains_chinese_text(value: &str) -> bool {
+    value
+        .chars()
+        .any(|character| ('\u{4e00}'..='\u{9fff}').contains(&character))
+}
+
+fn has_markdown_section(value: &str, section: &str) -> bool {
+    value.lines().any(|line| {
+        let line = line.trim_start();
+        let line = line.trim_start_matches('#').trim_start();
+        line.starts_with(section)
+    })
 }
 
 fn is_disallowed_symbol(character: char) -> bool {
@@ -2203,6 +2542,52 @@ impl Error for AiSelfUpgradeError {
             AiSelfUpgradeError::Audit(error) => Some(error),
             AiSelfUpgradeError::Evolution(error) => Some(error),
             AiSelfUpgradeError::Blocked { .. } | AiSelfUpgradeError::EmptyGoal { .. } => None,
+        }
+    }
+}
+
+impl fmt::Display for AiPatchDraftError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AiPatchDraftError::Preflight(error) => {
+                write!(formatter, "AI 补丁草案预检失败：{error}")
+            }
+            AiPatchDraftError::Memory(error) => {
+                write!(formatter, "AI 补丁草案读取记忆失败：{error}")
+            }
+            AiPatchDraftError::Ai(error) => write!(formatter, "AI 补丁草案请求失败：{error}"),
+            AiPatchDraftError::Store(error) => {
+                write!(formatter, "AI 补丁草案记录失败：{error}")
+            }
+            AiPatchDraftError::Version(error) => write!(formatter, "{error}"),
+            AiPatchDraftError::Blocked {
+                version,
+                open_errors,
+            } => write!(
+                formatter,
+                "版本 {version} 存在 {} 条未解决错误，AI 补丁草案已停止",
+                open_errors.len()
+            ),
+            AiPatchDraftError::InvalidDraft {
+                reason,
+                response_preview,
+            } => write!(
+                formatter,
+                "AI 补丁草案响应不合规：{reason}，响应摘要：{response_preview}"
+            ),
+        }
+    }
+}
+
+impl Error for AiPatchDraftError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            AiPatchDraftError::Preflight(error) => Some(error),
+            AiPatchDraftError::Memory(error) => Some(error),
+            AiPatchDraftError::Ai(error) => Some(error),
+            AiPatchDraftError::Store(error) => Some(error),
+            AiPatchDraftError::Version(error) => Some(error),
+            AiPatchDraftError::Blocked { .. } | AiPatchDraftError::InvalidDraft { .. } => None,
         }
     }
 }
