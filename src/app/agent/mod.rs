@@ -1,4 +1,5 @@
 mod coordination;
+mod patch_audit;
 mod patch_draft;
 mod registry;
 mod self_upgrade_audit;
@@ -10,6 +11,10 @@ mod types;
 pub use coordination::{
     AgentWorkClaimReport, AgentWorkCoordinator, AgentWorkError, AgentWorkEvent, AgentWorkQueue,
     AgentWorkQueueReport, AgentWorkReapReport, AgentWorkTask, AgentWorkTaskStatus,
+};
+pub use patch_audit::{
+    AiPatchAuditFinding, AiPatchAuditFindingKind, AiPatchAuditRecord, AiPatchAuditSeverity,
+    AiPatchAuditStatus, AiPatchAuditStore, AiPatchAuditStoreError, AiPatchAuditSummary,
 };
 pub use patch_draft::{
     AiPatchDraftRecord, AiPatchDraftStatus, AiPatchDraftStore, AiPatchDraftStoreError,

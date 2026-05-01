@@ -74,6 +74,9 @@ fn main() {
         "agent-patch-draft" => agent_patch_draft(&app, args.collect()),
         "agent-patch-drafts" => agent_patch_drafts(&app, args.collect()),
         "agent-patch-draft-record" => agent_patch_draft_record(&app, args.collect()),
+        "agent-patch-audit" => agent_patch_audit(&app, args.collect()),
+        "agent-patch-audits" => agent_patch_audits(&app, args.collect()),
+        "agent-patch-audit-record" => agent_patch_audit_record(&app, args.collect()),
         "agent-self-upgrade" => agent_self_upgrade(&app, args.collect()),
         "agent-self-upgrades" => agent_self_upgrades(&app, args.collect()),
         "agent-self-upgrade-record" => agent_self_upgrade_record(&app, args.collect()),
@@ -1426,6 +1429,116 @@ fn agent_patch_draft_record(
     )
 }
 
+fn agent_patch_audit(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Box<dyn Error>> {
+    let command = parse_agent_patch_audit_args(arguments)?;
+    boxed(
+        app.ai_patch_audit(&command.version, &command.draft_id)
+            .map(|report| {
+                let queue_status = report
+                    .queue
+                    .as_ref()
+                    .map(|queue| format!("{} 个任务", queue.queue.tasks.len()))
+                    .unwrap_or_else(|| "无协作队列".to_string());
+                let mut lines = vec![format!(
+                    "SelfForge AI 补丁审计完成 版本 {} 草案 {} 目标版本 {} 状态 {} 写入范围 {} 冲突 {} 发现 {} 协作队列 {} 审计记录 {} 文件 {}",
+                    report.record.version,
+                    report.record.draft_id,
+                    report.record.target_version,
+                    report.record.status,
+                    report.record.normalized_write_scope.len(),
+                    report.record.active_conflict_count,
+                    report.record.finding_count,
+                    queue_status,
+                    report.record.id,
+                    report.record.file.display()
+                )];
+                for finding in &report.record.findings {
+                    lines.push(format!(
+                        "发现 {} {} 路径 {} 任务 {} 线程 {} 说明 {}",
+                        finding.severity,
+                        finding.kind,
+                        finding.path.as_deref().unwrap_or("无"),
+                        finding.task_id.as_deref().unwrap_or("无"),
+                        finding.worker_id.as_deref().unwrap_or("无"),
+                        finding.message
+                    ));
+                }
+                lines.join("\n")
+            }),
+    )
+}
+
+fn agent_patch_audits(
+    app: &SelfForgeApp,
+    arguments: Vec<String>,
+) -> Result<String, Box<dyn Error>> {
+    let command = parse_agent_patch_audits_args(arguments)?;
+    boxed(
+        app.ai_patch_audit_records(&command.version, command.limit)
+            .map(|records| {
+                if records.is_empty() {
+                    return format!("SelfForge AI 补丁审计记录 {}: no records", command.version);
+                }
+
+                let mut lines = vec![format!(
+                    "SelfForge AI 补丁审计记录 {}: {} record(s)",
+                    command.version,
+                    records.len()
+                )];
+                for record in records {
+                    lines.push(format!(
+                        "{} 状态 {} 草案 {} 目标版本 {} 冲突 {} 发现 {} 文件 {}",
+                        record.id,
+                        record.status,
+                        record.draft_id,
+                        record.target_version,
+                        record.active_conflict_count,
+                        record.finding_count,
+                        record.file.display()
+                    ));
+                }
+                lines.join("\n")
+            }),
+    )
+}
+
+fn agent_patch_audit_record(
+    app: &SelfForgeApp,
+    arguments: Vec<String>,
+) -> Result<String, Box<dyn Error>> {
+    let command = parse_agent_patch_audit_record_args(arguments)?;
+    boxed(
+        app.ai_patch_audit_record(&command.version, &command.id)
+            .map(|record| {
+                let mut lines = vec![format!(
+                    "SelfForge AI 补丁审计记录 {} 版本 {} 草案 {} 目标版本 {} 状态 {} 写入范围 {} 受保护根 {} 冲突 {} 发现 {} 文件 {}",
+                    record.id,
+                    record.version,
+                    record.draft_id,
+                    record.target_version,
+                    record.status,
+                    record.normalized_write_scope.join("、"),
+                    record.protected_roots.join("、"),
+                    record.active_conflict_count,
+                    record.finding_count,
+                    record.file.display()
+                )];
+                for finding in &record.findings {
+                    lines.push(format!(
+                        "发现 {} {} 路径 {} 任务 {} 线程 {} 说明 {}",
+                        finding.severity,
+                        finding.kind,
+                        finding.path.as_deref().unwrap_or("无"),
+                        finding.task_id.as_deref().unwrap_or("无"),
+                        finding.worker_id.as_deref().unwrap_or("无"),
+                        finding.message
+                    ));
+                }
+                lines.join("\n")
+            }),
+    )
+}
+
 fn agent_self_upgrades(
     app: &SelfForgeApp,
     arguments: Vec<String>,
@@ -1514,6 +1627,21 @@ struct AgentPatchDraftsArgs {
 }
 
 struct AgentPatchDraftRecordArgs {
+    version: String,
+    id: String,
+}
+
+struct AgentPatchAuditArgs {
+    version: String,
+    draft_id: String,
+}
+
+struct AgentPatchAuditsArgs {
+    version: String,
+    limit: usize,
+}
+
+struct AgentPatchAuditRecordArgs {
     version: String,
     id: String,
 }
@@ -1754,6 +1882,133 @@ fn parse_agent_patch_draft_record_args(
     Ok(AgentPatchDraftRecordArgs {
         version,
         id: id.ok_or("agent-patch-draft-record 需要记录编号")?,
+    })
+}
+
+fn parse_agent_patch_audit_args(
+    arguments: Vec<String>,
+) -> Result<AgentPatchAuditArgs, Box<dyn Error>> {
+    let state = ForgeState::load(env::current_dir()?)?;
+    let mut version = state.current_version.clone();
+    let mut draft_id = None;
+    let mut index = 0;
+
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "--current" => {
+                version = state.current_version.clone();
+                index += 1;
+            }
+            "--candidate" => {
+                version = state.candidate_version.clone().ok_or("当前没有候选版本")?;
+                index += 1;
+            }
+            "--version" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--version 需要版本号".into());
+                };
+                version = value.clone();
+                index += 2;
+            }
+            other if other.starts_with("--") => {
+                return Err(format!("未知 agent-patch-audit 参数: {other}").into());
+            }
+            other => {
+                if draft_id.is_some() {
+                    return Err("agent-patch-audit 只允许一个草案记录编号".into());
+                }
+                draft_id = Some(other.to_string());
+                index += 1;
+            }
+        }
+    }
+
+    Ok(AgentPatchAuditArgs {
+        version,
+        draft_id: draft_id.ok_or("agent-patch-audit 需要草案记录编号")?,
+    })
+}
+
+fn parse_agent_patch_audits_args(
+    arguments: Vec<String>,
+) -> Result<AgentPatchAuditsArgs, Box<dyn Error>> {
+    let state = ForgeState::load(env::current_dir()?)?;
+    let mut version = state.current_version.clone();
+    let mut limit = 10;
+    let mut index = 0;
+
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "--current" => {
+                version = state.current_version.clone();
+                index += 1;
+            }
+            "--candidate" => {
+                version = state.candidate_version.clone().ok_or("当前没有候选版本")?;
+                index += 1;
+            }
+            "--version" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--version 需要版本号".into());
+                };
+                version = value.clone();
+                index += 2;
+            }
+            "--limit" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--limit 需要数量".into());
+                };
+                limit = value.parse::<usize>()?;
+                index += 2;
+            }
+            other => return Err(format!("未知 agent-patch-audits 参数: {other}").into()),
+        }
+    }
+
+    Ok(AgentPatchAuditsArgs { version, limit })
+}
+
+fn parse_agent_patch_audit_record_args(
+    arguments: Vec<String>,
+) -> Result<AgentPatchAuditRecordArgs, Box<dyn Error>> {
+    let state = ForgeState::load(env::current_dir()?)?;
+    let mut version = state.current_version.clone();
+    let mut id = None;
+    let mut index = 0;
+
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "--current" => {
+                version = state.current_version.clone();
+                index += 1;
+            }
+            "--candidate" => {
+                version = state.candidate_version.clone().ok_or("当前没有候选版本")?;
+                index += 1;
+            }
+            "--version" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--version 需要版本号".into());
+                };
+                version = value.clone();
+                index += 2;
+            }
+            other if other.starts_with("--") => {
+                return Err(format!("未知 agent-patch-audit-record 参数: {other}").into());
+            }
+            other => {
+                if id.is_some() {
+                    return Err("agent-patch-audit-record 只允许一个记录编号".into());
+                }
+                id = Some(other.to_string());
+                index += 1;
+            }
+        }
+    }
+
+    Ok(AgentPatchAuditRecordArgs {
+        version,
+        id: id.ok_or("agent-patch-audit-record 需要记录编号")?,
     })
 }
 
@@ -3384,6 +3639,9 @@ agent-advance [goal], agent-evolve [goal]
 agent-patch-draft [--dry-run] [--timeout-ms N] [goal]
 agent-patch-drafts [--current|--candidate|--version VERSION] [--limit N]
 agent-patch-draft-record [--current|--candidate|--version VERSION] RECORD_ID
+agent-patch-audit [--current|--candidate|--version VERSION] DRAFT_RECORD_ID
+agent-patch-audits [--current|--candidate|--version VERSION] [--limit N]
+agent-patch-audit-record [--current|--candidate|--version VERSION] AUDIT_RECORD_ID
 agent-self-upgrade [--dry-run] [--timeout-ms N] [hint]
 agent-self-upgrades [--current|--candidate|--version VERSION] [--limit N]
 agent-self-upgrade-record [--current|--candidate|--version VERSION] RECORD_ID

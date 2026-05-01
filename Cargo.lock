@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "SelfForge"
-version = "0.1.49"
+version = "0.1.50"
 dependencies = [
  "reqwest",
  "serde",
