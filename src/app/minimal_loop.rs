@@ -58,6 +58,12 @@ pub struct PreflightReport {
 }
 
 #[derive(Debug, Clone)]
+pub struct AgentPlanReport {
+    pub plan: AgentPlan,
+    pub insights: MemoryInsightReport,
+}
+
+#[derive(Debug, Clone)]
 pub struct AgentEvolutionReport {
     pub session: AgentSession,
     pub preflight: PreflightReport,
@@ -95,6 +101,12 @@ pub enum MinimalLoopError {
     ErrorArchive(ErrorArchiveError),
     Memory(MemoryContextError),
     OpenErrors { version: String, run_id: String },
+}
+
+#[derive(Debug)]
+pub enum AgentPlanReportError {
+    Agent(AgentError),
+    Memory(MemoryContextError),
 }
 
 #[derive(Debug)]
@@ -190,6 +202,18 @@ impl SelfForgeApp {
 
     pub fn agent_plan(&self, goal: &str) -> Result<AgentPlan, AgentError> {
         AgentRegistry::standard().plan_for_goal(goal)
+    }
+
+    pub fn agent_plan_with_memory(
+        &self,
+        goal: &str,
+        version: &str,
+        limit: usize,
+    ) -> Result<AgentPlanReport, AgentPlanReportError> {
+        let plan = self.agent_plan(goal)?;
+        let insights = self.memory_insights(version, limit)?;
+
+        Ok(AgentPlanReport { plan, insights })
     }
 
     pub fn memory_context(
@@ -764,6 +788,40 @@ impl Error for MinimalLoopError {
             MinimalLoopError::Memory(error) => Some(error),
             MinimalLoopError::OpenErrors { .. } => None,
         }
+    }
+}
+
+impl fmt::Display for AgentPlanReportError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AgentPlanReportError::Agent(error) => {
+                write!(formatter, "Agent 计划生成失败：{error}")
+            }
+            AgentPlanReportError::Memory(error) => {
+                write!(formatter, "Agent 计划记忆读取失败：{error}")
+            }
+        }
+    }
+}
+
+impl Error for AgentPlanReportError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            AgentPlanReportError::Agent(error) => Some(error),
+            AgentPlanReportError::Memory(error) => Some(error),
+        }
+    }
+}
+
+impl From<AgentError> for AgentPlanReportError {
+    fn from(error: AgentError) -> Self {
+        AgentPlanReportError::Agent(error)
+    }
+}
+
+impl From<MemoryContextError> for AgentPlanReportError {
+    fn from(error: MemoryContextError) -> Self {
+        AgentPlanReportError::Memory(error)
     }
 }
 

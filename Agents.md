@@ -190,7 +190,7 @@ AI 响应解析必须优先使用应用层统一文本响应结构。OpenAI、De
 
 源码扩展必须优先进入 `src/app/` 应用用例层。CLI 只能负责参数解析和输出，不允许堆叠业务流程；`supervisor` 负责编排；`runtime` 负责验证和受控执行；`evolution` 负责版本状态机；`state` 只负责持久化读写。最小闭环的简单入口是 `advance [goal]`。
 
-多 Agent 能力必须通过 `src/app/agent/` 扩展。新增 Agent 应优先表现为 `AgentDefinition`、能力集合和计划步骤，不得把 Agent 业务逻辑直接写入 CLI。查询 Agent 目录使用 `agents`，生成协作计划使用 `agent-plan [goal]`。后续接入真实多 Agent 执行时，必须复用注册表、计划结构、状态持久化、沙箱执行和 forge 归档，不得创建并行的 Agent 配置体系。
+多 Agent 能力必须通过 `src/app/agent/` 扩展。新增 Agent 应优先表现为 `AgentDefinition`、能力集合和计划步骤，不得把 Agent 业务逻辑直接写入 CLI。查询 Agent 目录使用 `agents`，生成协作计划使用 `agent-plan [--current|--candidate|--version VERSION] [--limit N] [goal]`。`agent-plan` 必须通过应用层读取 `memory-insights` 并展示来源版本、成功经验、失败风险、优化建议和可复用经验摘要，禁止绕过统一记忆经验结构另建计划上下文。后续接入真实多 Agent 执行时，必须复用注册表、计划结构、状态持久化、沙箱执行和 forge 归档，不得创建并行的 Agent 配置体系。
 
 Agent 会话必须通过 `agent-start [goal]` 创建，并写入 `workspaces/vMAJOR/artifacts/agents/sessions/`；会话摘要必须追加到 `workspaces/vMAJOR/artifacts/agents/index.jsonl`。查询会话使用 `agent-sessions [--limit N]`，读取单个会话使用 `agent-session SESSION_ID`。会话文件只允许进入 `artifacts/agents/` 分层，禁止写入 workspace 根目录，禁止为小版本创建独立会话目录，禁止把会话状态只保存在进程内存中。
 
