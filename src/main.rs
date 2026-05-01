@@ -83,6 +83,9 @@ fn main() {
         "agent-patch-preview-record" => agent_patch_preview_record(&app, args.collect()),
         "agent-patch-apply" => agent_patch_apply(&app, args.collect()),
         "agent-patch-verify" => agent_patch_verify(&app, args.collect()),
+        "agent-patch-source-plan" => agent_patch_source_plan(&app, args.collect()),
+        "agent-patch-source-plans" => agent_patch_source_plans(&app, args.collect()),
+        "agent-patch-source-plan-record" => agent_patch_source_plan_record(&app, args.collect()),
         "agent-patch-applications" => agent_patch_applications(&app, args.collect()),
         "agent-patch-application-record" => agent_patch_application_record(&app, args.collect()),
         "agent-self-upgrade" => agent_self_upgrade(&app, args.collect()),
@@ -1731,6 +1734,111 @@ fn agent_patch_verify(
     )
 }
 
+fn agent_patch_source_plan(
+    app: &SelfForgeApp,
+    arguments: Vec<String>,
+) -> Result<String, Box<dyn Error>> {
+    let command = parse_agent_patch_source_plan_args(arguments)?;
+    boxed(
+        app.ai_patch_source_plan(&command.version, &command.application_id)
+            .map(|report| {
+                format!(
+                    "SelfForge AI 补丁源码覆盖准备完成 版本 {} 应用 {} 状态 {} 文件 {} 记录 {} 报告 {} 错误 {}",
+                    report.record.version,
+                    report.record.application_id,
+                    report.record.status,
+                    report.record.files.len(),
+                    report.record.file.display(),
+                    report
+                        .record
+                        .report_file
+                        .as_ref()
+                        .map(|path| path.display().to_string())
+                        .unwrap_or_else(|| "无".to_string()),
+                    report.record.error.as_deref().unwrap_or("无")
+                )
+            }),
+    )
+}
+
+fn agent_patch_source_plans(
+    app: &SelfForgeApp,
+    arguments: Vec<String>,
+) -> Result<String, Box<dyn Error>> {
+    let command = parse_agent_patch_source_plans_args(arguments)?;
+    boxed(
+        app.ai_patch_source_plan_records(&command.version, command.limit)
+            .map(|records| {
+                if records.is_empty() {
+                    return format!(
+                        "SelfForge AI 补丁源码覆盖准备记录 {}: no records",
+                        command.version
+                    );
+                }
+
+                let mut lines = vec![format!(
+                    "SelfForge AI 补丁源码覆盖准备记录 {}: {} record(s)",
+                    command.version,
+                    records.len()
+                )];
+                for record in records {
+                    lines.push(format!(
+                        "{} 状态 {} 应用 {} 文件 {} 错误 {} JSON {}",
+                        record.id,
+                        record.status,
+                        record.application_id,
+                        record.file_count,
+                        record.error.as_deref().unwrap_or("无"),
+                        record.file.display()
+                    ));
+                }
+                lines.join("\n")
+            }),
+    )
+}
+
+fn agent_patch_source_plan_record(
+    app: &SelfForgeApp,
+    arguments: Vec<String>,
+) -> Result<String, Box<dyn Error>> {
+    let command = parse_agent_patch_source_plan_record_args(arguments)?;
+    boxed(
+        app.ai_patch_source_plan_record(&command.version, &command.id)
+            .map(|record| {
+                let mut lines = vec![format!(
+                    "SelfForge AI 补丁源码覆盖准备 {} 版本 {} 应用 {} 状态 {} 文件 {} 报告 {} JSON {} 错误 {}",
+                    record.id,
+                    record.version,
+                    record.application_id,
+                    record.status,
+                    record.files.len(),
+                    record
+                        .report_file
+                        .as_ref()
+                        .map(|path| path.display().to_string())
+                        .unwrap_or_else(|| "无".to_string()),
+                    record.file.display(),
+                    record.error.as_deref().unwrap_or("无")
+                )];
+                for file in &record.files {
+                    lines.push(format!(
+                        "覆盖文件 来源 {} 镜像 {} 目标 {} 原始字节 {} 新字节 {} 回滚 {}",
+                        file.source_path,
+                        file.mirror_file.display(),
+                        file.target_file.display(),
+                        file.original_bytes,
+                        file.new_bytes,
+                        file.rollback_action
+                    ));
+                }
+                for step in &record.rollback_steps {
+                    lines.push(format!("回滚步骤 {step}"));
+                }
+                lines.join("\n")
+            }),
+    )
+}
+
 fn agent_patch_applications(
     app: &SelfForgeApp,
     arguments: Vec<String>,
@@ -2053,6 +2161,21 @@ struct AgentPatchVerifyArgs {
     version: String,
     id: String,
     timeout_ms: u64,
+}
+
+struct AgentPatchSourcePlanArgs {
+    version: String,
+    application_id: String,
+}
+
+struct AgentPatchSourcePlansArgs {
+    version: String,
+    limit: usize,
+}
+
+struct AgentPatchSourcePlanRecordArgs {
+    version: String,
+    id: String,
 }
 
 struct AgentPatchApplicationsArgs {
@@ -2667,6 +2790,133 @@ fn parse_agent_patch_verify_args(
         version,
         id: id.ok_or("agent-patch-verify 需要候选应用记录编号")?,
         timeout_ms,
+    })
+}
+
+fn parse_agent_patch_source_plan_args(
+    arguments: Vec<String>,
+) -> Result<AgentPatchSourcePlanArgs, Box<dyn Error>> {
+    let state = ForgeState::load(env::current_dir()?)?;
+    let mut version = state.current_version.clone();
+    let mut application_id = None;
+    let mut index = 0;
+
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "--current" => {
+                version = state.current_version.clone();
+                index += 1;
+            }
+            "--candidate" => {
+                version = state.candidate_version.clone().ok_or("当前没有候选版本")?;
+                index += 1;
+            }
+            "--version" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--version 需要版本号".into());
+                };
+                version = value.clone();
+                index += 2;
+            }
+            other if other.starts_with("--") => {
+                return Err(format!("未知 agent-patch-source-plan 参数: {other}").into());
+            }
+            other => {
+                if application_id.is_some() {
+                    return Err("agent-patch-source-plan 只允许一个候选应用记录编号".into());
+                }
+                application_id = Some(other.to_string());
+                index += 1;
+            }
+        }
+    }
+
+    Ok(AgentPatchSourcePlanArgs {
+        version,
+        application_id: application_id.ok_or("agent-patch-source-plan 需要候选应用记录编号")?,
+    })
+}
+
+fn parse_agent_patch_source_plans_args(
+    arguments: Vec<String>,
+) -> Result<AgentPatchSourcePlansArgs, Box<dyn Error>> {
+    let state = ForgeState::load(env::current_dir()?)?;
+    let mut version = state.current_version.clone();
+    let mut limit = 10;
+    let mut index = 0;
+
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "--current" => {
+                version = state.current_version.clone();
+                index += 1;
+            }
+            "--candidate" => {
+                version = state.candidate_version.clone().ok_or("当前没有候选版本")?;
+                index += 1;
+            }
+            "--version" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--version 需要版本号".into());
+                };
+                version = value.clone();
+                index += 2;
+            }
+            "--limit" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--limit 需要数量".into());
+                };
+                limit = value.parse::<usize>()?;
+                index += 2;
+            }
+            other => return Err(format!("未知 agent-patch-source-plans 参数: {other}").into()),
+        }
+    }
+
+    Ok(AgentPatchSourcePlansArgs { version, limit })
+}
+
+fn parse_agent_patch_source_plan_record_args(
+    arguments: Vec<String>,
+) -> Result<AgentPatchSourcePlanRecordArgs, Box<dyn Error>> {
+    let state = ForgeState::load(env::current_dir()?)?;
+    let mut version = state.current_version.clone();
+    let mut id = None;
+    let mut index = 0;
+
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "--current" => {
+                version = state.current_version.clone();
+                index += 1;
+            }
+            "--candidate" => {
+                version = state.candidate_version.clone().ok_or("当前没有候选版本")?;
+                index += 1;
+            }
+            "--version" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--version 需要版本号".into());
+                };
+                version = value.clone();
+                index += 2;
+            }
+            other if other.starts_with("--") => {
+                return Err(format!("未知 agent-patch-source-plan-record 参数: {other}").into());
+            }
+            other => {
+                if id.is_some() {
+                    return Err("agent-patch-source-plan-record 只允许一个记录编号".into());
+                }
+                id = Some(other.to_string());
+                index += 1;
+            }
+        }
+    }
+
+    Ok(AgentPatchSourcePlanRecordArgs {
+        version,
+        id: id.ok_or("agent-patch-source-plan-record 需要记录编号")?,
     })
 }
 
@@ -4515,6 +4765,9 @@ agent-patch-previews [--current|--candidate|--version VERSION] [--limit N]
 agent-patch-preview-record [--current|--candidate|--version VERSION] PREVIEW_RECORD_ID
 agent-patch-apply [--current|--candidate|--version VERSION] PREVIEW_RECORD_ID
 agent-patch-verify [--current|--candidate|--version VERSION] [--timeout-ms N] APPLICATION_RECORD_ID
+agent-patch-source-plan [--current|--candidate|--version VERSION] APPLICATION_RECORD_ID
+agent-patch-source-plans [--current|--candidate|--version VERSION] [--limit N]
+agent-patch-source-plan-record [--current|--candidate|--version VERSION] SOURCE_PLAN_ID
 agent-patch-applications [--current|--candidate|--version VERSION] [--limit N]
 agent-patch-application-record [--current|--candidate|--version VERSION] APPLICATION_RECORD_ID
 agent-self-upgrade [--dry-run] [--timeout-ms N] [hint]

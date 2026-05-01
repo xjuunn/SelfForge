@@ -3,6 +3,7 @@ mod patch_application;
 mod patch_audit;
 mod patch_draft;
 mod patch_preview;
+mod patch_source_plan;
 mod registry;
 mod self_upgrade_audit;
 mod self_upgrade_summary;
@@ -31,6 +32,10 @@ pub use patch_draft::{
 pub use patch_preview::{
     AiPatchPreviewChange, AiPatchPreviewRecord, AiPatchPreviewStatus, AiPatchPreviewStore,
     AiPatchPreviewStoreError, AiPatchPreviewSummary,
+};
+pub use patch_source_plan::{
+    AiPatchSourcePlanFile, AiPatchSourcePlanRecord, AiPatchSourcePlanStatus,
+    AiPatchSourcePlanStore, AiPatchSourcePlanStoreError, AiPatchSourcePlanSummary,
 };
 pub use registry::AgentRegistry;
 pub use self_upgrade_audit::{
