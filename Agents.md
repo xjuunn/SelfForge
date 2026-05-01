@@ -250,6 +250,8 @@ AI 补丁源码覆盖准备通过后，真实覆盖源码必须优先使用 `age
 
 AI 补丁源码覆盖执行成功后，版本提升衔接必须优先使用 `agent-patch-source-promotion [--current|--candidate|--version VERSION] SOURCE_EXECUTION_ID`。衔接记录只能写入 `workspaces/vMAJOR/artifacts/agents/patch-source-promotions/`，索引文件为同目录 `index.jsonl`，禁止为小版本创建独立目录或文件。该命令只能读取源码覆盖执行记录，必须确认执行状态为已覆盖、验证状态为通过、验证运行记录存在、未发生回滚且覆盖文件非空；任一条件不满足时必须写入已阻断衔接记录。衔接记录必须包含源码覆盖执行编号、覆盖准备记录、候选应用记录、验证摘要、建议提交信息、下一候选版本和下一候选目标。该命令只生成可审计衔接记录，禁止直接修改 `state/state.json`、生成候选版本或执行真实 Git 提交。查询衔接记录使用 `agent-patch-source-promotions [--limit N]`，读取单条衔接记录使用 `agent-patch-source-promotion-record PROMOTION_ID`。
 
+AI 补丁源码覆盖提升衔接记录就绪后，候选准备必须优先使用 `agent-patch-source-candidate [--current|--candidate|--version VERSION] PROMOTION_ID`。候选准备记录只能写入 `workspaces/vMAJOR/artifacts/agents/patch-source-candidates/`，索引文件为同目录 `index.jsonl`，禁止为小版本创建独立目录或文件。该命令只能读取已就绪的提升衔接记录，必须检查当前稳定版本、下一候选版本、开放错误和候选状态；无候选时才允许调用受控版本状态机生成下一候选，目标候选已存在且匹配时只能复用并验证布局，存在不同候选或开放错误时必须写入已阻断记录。候选准备记录必须包含提升衔接编号、状态变化、候选工作区、候选验证摘要、阻断原因和后续验证命令。查询候选准备记录使用 `agent-patch-source-candidates [--limit N]`，读取单条候选准备记录使用 `agent-patch-source-candidate-record CANDIDATE_RECORD_ID`。候选准备成功后仍必须继续执行 `validate`、`preflight`、`cycle`、错误归档和记忆记录，禁止跳过验证直接提升。
+
 ---
 
 # 八、Git 提交规范

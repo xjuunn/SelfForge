@@ -3,6 +3,7 @@ mod patch_application;
 mod patch_audit;
 mod patch_draft;
 mod patch_preview;
+mod patch_source_candidate;
 mod patch_source_execution;
 mod patch_source_plan;
 mod patch_source_promotion;
@@ -34,6 +35,10 @@ pub use patch_draft::{
 pub use patch_preview::{
     AiPatchPreviewChange, AiPatchPreviewRecord, AiPatchPreviewStatus, AiPatchPreviewStore,
     AiPatchPreviewStoreError, AiPatchPreviewSummary,
+};
+pub use patch_source_candidate::{
+    AiPatchSourceCandidateRecord, AiPatchSourceCandidateStatus, AiPatchSourceCandidateStore,
+    AiPatchSourceCandidateStoreError, AiPatchSourceCandidateSummary,
 };
 pub use patch_source_execution::{
     AiPatchSourceExecutionFile, AiPatchSourceExecutionRecord, AiPatchSourceExecutionStatus,
