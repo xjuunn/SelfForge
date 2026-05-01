@@ -190,6 +190,8 @@ AI 响应解析必须优先使用应用层统一文本响应结构。OpenAI、De
 
 Agent 会话必须通过 `agent-start [goal]` 创建，并写入 `workspaces/vMAJOR/artifacts/agents/sessions/`；会话摘要必须追加到 `workspaces/vMAJOR/artifacts/agents/index.jsonl`。查询会话使用 `agent-sessions [--limit N]`，读取单个会话使用 `agent-session SESSION_ID`。会话文件只允许进入 `artifacts/agents/` 分层，禁止写入 workspace 根目录，禁止为小版本创建独立会话目录，禁止把会话状态只保存在进程内存中。
 
+Agent 自动进化入口必须优先使用 `agent-advance [goal]`。该命令必须创建 Agent 会话、执行 `preflight`、调用现有 `advance` 最小闭环，并把步骤状态、结果和失败原因写回同一个会话文件。若前置检查发现未解决错误，必须将会话标记为失败并停止进化，禁止生成或提升候选版本。`agent-advance` 只能编排现有受控流程，不得绕过 Supervisor、Runtime、错误归档、版本规则或状态文件。
+
 ---
 
 # 八、Git 提交规范

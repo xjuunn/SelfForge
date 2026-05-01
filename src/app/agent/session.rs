@@ -2,6 +2,7 @@ use super::registry::AgentRegistry;
 use super::types::{AgentCapability, AgentError, AgentPlan};
 use crate::{VersionError, version_major_key};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::error::Error;
 use std::fmt;
 use std::fs::{self, OpenOptions};
@@ -16,11 +17,17 @@ const SESSION_INDEX_FILE: &str = "index.jsonl";
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AgentSessionStatus {
     Planned,
+    Running,
+    Completed,
+    Failed,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AgentStepStatus {
     Pending,
+    Running,
+    Completed,
+    Failed,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -30,8 +37,13 @@ pub struct AgentSession {
     pub goal: String,
     pub status: AgentSessionStatus,
     pub created_at_unix_seconds: u64,
+    pub updated_at_unix_seconds: u64,
     pub plan: AgentPlan,
     pub steps: Vec<AgentSessionStep>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outcome: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
     pub file: PathBuf,
 }
 
@@ -43,6 +55,8 @@ pub struct AgentSessionStep {
     pub capability: AgentCapability,
     pub status: AgentStepStatus,
     pub verification: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -52,7 +66,12 @@ pub struct AgentSessionSummary {
     pub goal: String,
     pub status: AgentSessionStatus,
     pub created_at_unix_seconds: u64,
+    pub updated_at_unix_seconds: u64,
     pub step_count: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outcome: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
     pub file: PathBuf,
 }
 
@@ -69,6 +88,10 @@ pub enum AgentSessionError {
     },
     InvalidSessionId {
         id: String,
+    },
+    StepNotFound {
+        id: String,
+        order: usize,
     },
     NotFound {
         version: String,
@@ -128,7 +151,7 @@ impl AgentSessionStore {
                 break;
             }
         }
-        let Some((id, file, path)) = selected else {
+        let Some((id, file, _path)) = selected else {
             return Err(AgentSessionError::IdExhausted { version });
         };
 
@@ -142,6 +165,7 @@ impl AgentSessionStore {
                 capability: step.capability,
                 status: AgentStepStatus::Pending,
                 verification: step.verification.clone(),
+                result: None,
             })
             .collect::<Vec<_>>();
 
@@ -151,14 +175,28 @@ impl AgentSessionStore {
             goal: plan.goal.clone(),
             status: AgentSessionStatus::Planned,
             created_at_unix_seconds,
+            updated_at_unix_seconds: created_at_unix_seconds,
             plan,
             steps,
+            outcome: None,
+            error: None,
             file: file.clone(),
         };
-        self.write_json(&path, &session)?;
-        self.append_summary(&layout.index_path, session.summary())?;
+        self.save(&session)?;
 
         Ok(session)
+    }
+
+    pub fn save(&self, session: &AgentSession) -> Result<(), AgentSessionError> {
+        validate_session_id(&session.id)?;
+        let layout = self.layout(&session.version)?;
+        fs::create_dir_all(&layout.sessions_dir).map_err(|source| AgentSessionError::Io {
+            path: layout.sessions_dir.clone(),
+            source,
+        })?;
+        let path = layout.sessions_dir.join(format!("{}.json", session.id));
+        self.write_json(&path, session)?;
+        self.append_summary(&layout.index_path, session.summary())
     }
 
     pub fn list(
@@ -182,19 +220,25 @@ impl AgentSessionStore {
                 source,
             })?;
         let mut entries = Vec::new();
-        for line in contents.lines().filter(|line| !line.trim().is_empty()) {
+        let mut seen = HashSet::new();
+        for line in contents
+            .lines()
+            .rev()
+            .filter(|line| !line.trim().is_empty())
+        {
             let entry = serde_json::from_str::<AgentSessionSummary>(line).map_err(|source| {
                 AgentSessionError::Parse {
                     path: layout.index_path.clone(),
                     source,
                 }
             })?;
-            if entry.version == version {
+            if entry.version == version && seen.insert(entry.id.clone()) {
                 entries.push(entry);
+                if entries.len() >= limit {
+                    break;
+                }
             }
         }
-        entries.reverse();
-        entries.truncate(limit);
         Ok(entries)
     }
 
@@ -299,6 +343,44 @@ impl AgentSessionStore {
 }
 
 impl AgentSession {
+    pub fn mark_running(&mut self) {
+        self.status = AgentSessionStatus::Running;
+        self.error = None;
+        self.touch();
+    }
+
+    pub fn mark_completed(&mut self, outcome: impl Into<String>) {
+        self.status = AgentSessionStatus::Completed;
+        self.outcome = Some(outcome.into());
+        self.error = None;
+        self.touch();
+    }
+
+    pub fn mark_failed(&mut self, error: impl Into<String>) {
+        self.status = AgentSessionStatus::Failed;
+        self.error = Some(error.into());
+        self.touch();
+    }
+
+    pub fn update_step(
+        &mut self,
+        order: usize,
+        status: AgentStepStatus,
+        result: impl Into<String>,
+    ) -> Result<(), AgentSessionError> {
+        let Some(step) = self.steps.iter_mut().find(|step| step.order == order) else {
+            return Err(AgentSessionError::StepNotFound {
+                id: self.id.clone(),
+                order,
+            });
+        };
+
+        step.status = status;
+        step.result = Some(result.into());
+        self.touch();
+        Ok(())
+    }
+
     fn summary(&self) -> AgentSessionSummary {
         AgentSessionSummary {
             id: self.id.clone(),
@@ -306,9 +388,19 @@ impl AgentSession {
             goal: self.goal.clone(),
             status: self.status,
             created_at_unix_seconds: self.created_at_unix_seconds,
+            updated_at_unix_seconds: self.updated_at_unix_seconds,
             step_count: self.steps.len(),
+            outcome: self.outcome.clone(),
+            error: self.error.clone(),
             file: self.file.clone(),
         }
+    }
+
+    fn touch(&mut self) {
+        self.updated_at_unix_seconds = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
     }
 }
 
@@ -316,6 +408,9 @@ impl fmt::Display for AgentSessionStatus {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             AgentSessionStatus::Planned => formatter.write_str("已计划"),
+            AgentSessionStatus::Running => formatter.write_str("运行中"),
+            AgentSessionStatus::Completed => formatter.write_str("已完成"),
+            AgentSessionStatus::Failed => formatter.write_str("已失败"),
         }
     }
 }
@@ -324,6 +419,9 @@ impl fmt::Display for AgentStepStatus {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             AgentStepStatus::Pending => formatter.write_str("待执行"),
+            AgentStepStatus::Running => formatter.write_str("运行中"),
+            AgentStepStatus::Completed => formatter.write_str("已完成"),
+            AgentStepStatus::Failed => formatter.write_str("已失败"),
         }
     }
 }
@@ -343,6 +441,9 @@ impl fmt::Display for AgentSessionError {
             }
             AgentSessionError::InvalidSessionId { id } => {
                 write!(formatter, "Agent 会话标识不合法：{id}")
+            }
+            AgentSessionError::StepNotFound { id, order } => {
+                write!(formatter, "Agent 会话 {id} 未找到步骤 {order}")
             }
             AgentSessionError::NotFound { version, id } => {
                 write!(formatter, "版本 {version} 未找到 Agent 会话 {id}")
@@ -368,6 +469,7 @@ impl Error for AgentSessionError {
             AgentSessionError::WorkspaceMissing { .. } => None,
             AgentSessionError::IdExhausted { .. } => None,
             AgentSessionError::InvalidSessionId { .. } => None,
+            AgentSessionError::StepNotFound { .. } => None,
             AgentSessionError::NotFound { .. } => None,
             AgentSessionError::Io { source, .. } => Some(source),
             AgentSessionError::Serialize { source, .. } => Some(source),

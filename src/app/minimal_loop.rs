@@ -1,6 +1,6 @@
 use super::agent::{
     AgentDefinition, AgentError, AgentPlan, AgentRegistry, AgentSession, AgentSessionError,
-    AgentSessionStore, AgentSessionSummary,
+    AgentSessionStore, AgentSessionSummary, AgentStepStatus,
 };
 use super::ai_provider::{
     AiConfigError, AiConfigReport, AiExecutionError, AiExecutionReport, AiProviderRegistry,
@@ -52,6 +52,13 @@ pub struct PreflightReport {
     pub can_advance: bool,
 }
 
+#[derive(Debug, Clone)]
+pub struct AgentEvolutionReport {
+    pub session: AgentSession,
+    pub preflight: PreflightReport,
+    pub minimal_loop: MinimalLoopReport,
+}
+
 #[derive(Debug)]
 pub enum MinimalLoopError {
     State(StateError),
@@ -59,6 +66,20 @@ pub enum MinimalLoopError {
     Evolution(EvolutionError),
     ErrorArchive(ErrorArchiveError),
     OpenErrors { version: String, run_id: String },
+}
+
+#[derive(Debug)]
+pub enum AgentEvolutionError {
+    Session(AgentSessionError),
+    Setup(MinimalLoopError),
+    MinimalLoop {
+        session: Box<AgentSession>,
+        source: MinimalLoopError,
+    },
+    Blocked {
+        session: Box<AgentSession>,
+        open_errors: Vec<ArchivedErrorEntry>,
+    },
 }
 
 impl SelfForgeApp {
@@ -152,6 +173,102 @@ impl SelfForgeApp {
         AgentSessionStore::new(&self.root).load(version, id)
     }
 
+    pub fn agent_advance(&self, goal: &str) -> Result<AgentEvolutionReport, AgentEvolutionError> {
+        let state = ForgeState::load(&self.root)
+            .map_err(MinimalLoopError::from)
+            .map_err(AgentEvolutionError::Setup)?;
+        let store = AgentSessionStore::new(&self.root);
+        let mut session = store.start(&state.current_version, goal)?;
+        session.mark_running();
+        session.update_step(
+            1,
+            AgentStepStatus::Completed,
+            "已创建 Agent 会话并生成协作计划。",
+        )?;
+        store.save(&session)?;
+
+        let preflight = match self.preflight() {
+            Ok(report) => report,
+            Err(error) => {
+                session.update_step(2, AgentStepStatus::Failed, error.to_string())?;
+                session.mark_failed(error.to_string());
+                store.save(&session)?;
+                return Err(AgentEvolutionError::MinimalLoop {
+                    session: Box::new(session),
+                    source: error,
+                });
+            }
+        };
+        session.update_step(
+            2,
+            AgentStepStatus::Completed,
+            "前置检查通过，当前版本布局和未解决错误状态可用于进化。",
+        )?;
+        store.save(&session)?;
+
+        if !preflight.can_advance {
+            session.update_step(
+                3,
+                AgentStepStatus::Failed,
+                "前置检查发现未解决错误，停止 Agent 自动进化。",
+            )?;
+            session.mark_failed("前置检查发现未解决错误。");
+            store.save(&session)?;
+            return Err(AgentEvolutionError::Blocked {
+                session: Box::new(session),
+                open_errors: preflight.open_errors,
+            });
+        }
+
+        let minimal_loop = match self.advance(goal) {
+            Ok(report) => report,
+            Err(error) => {
+                session.update_step(3, AgentStepStatus::Failed, error.to_string())?;
+                session.mark_failed(error.to_string());
+                store.save(&session)?;
+                return Err(AgentEvolutionError::MinimalLoop {
+                    session: Box::new(session),
+                    source: error,
+                });
+            }
+        };
+
+        session.update_step(
+            3,
+            AgentStepStatus::Completed,
+            "已调用 advance 执行受控进化状态机。",
+        )?;
+        session.update_step(
+            4,
+            AgentStepStatus::Completed,
+            "advance 已完成候选验证、提升或回滚相关处理。",
+        )?;
+        session.update_step(
+            5,
+            AgentStepStatus::Completed,
+            "未发现阻断继续推进的未解决错误。",
+        )?;
+        session.update_step(
+            6,
+            AgentStepStatus::Completed,
+            "Agent 会话、计划步骤和进化结果已持久化。",
+        )?;
+        let outcome = format!(
+            "结果 {:?}，稳定版本 {}，候选版本 {}",
+            minimal_loop.outcome,
+            minimal_loop.stable_version,
+            minimal_loop.candidate_version.as_deref().unwrap_or("无")
+        );
+        session.mark_completed(outcome);
+        store.save(&session)?;
+
+        Ok(AgentEvolutionReport {
+            session,
+            preflight,
+            minimal_loop,
+        })
+    }
+
     pub fn advance(&self, goal: &str) -> Result<MinimalLoopReport, MinimalLoopError> {
         let state = ForgeState::load(&self.root)?;
         let starting_version = state.current_version.clone();
@@ -231,6 +348,48 @@ impl Error for MinimalLoopError {
             MinimalLoopError::ErrorArchive(error) => Some(error),
             MinimalLoopError::OpenErrors { .. } => None,
         }
+    }
+}
+
+impl fmt::Display for AgentEvolutionError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AgentEvolutionError::Session(error) => write!(formatter, "{error}"),
+            AgentEvolutionError::Setup(error) => {
+                write!(formatter, "Agent 自动进化初始化失败：{error}")
+            }
+            AgentEvolutionError::MinimalLoop { session, source } => write!(
+                formatter,
+                "Agent 会话 {} 执行进化失败：{}",
+                session.id, source
+            ),
+            AgentEvolutionError::Blocked {
+                session,
+                open_errors,
+            } => write!(
+                formatter,
+                "Agent 会话 {} 因 {} 个未解决错误停止进化",
+                session.id,
+                open_errors.len()
+            ),
+        }
+    }
+}
+
+impl Error for AgentEvolutionError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            AgentEvolutionError::Session(error) => Some(error),
+            AgentEvolutionError::Setup(error) => Some(error),
+            AgentEvolutionError::MinimalLoop { source, .. } => Some(source),
+            AgentEvolutionError::Blocked { .. } => None,
+        }
+    }
+}
+
+impl From<AgentSessionError> for AgentEvolutionError {
+    fn from(error: AgentSessionError) -> Self {
+        AgentEvolutionError::Session(error)
     }
 }
 

@@ -23,7 +23,7 @@ pub use version::{
     version_major_file_name, version_major_key,
 };
 
-pub const CURRENT_VERSION: &str = "v0.1.26";
+pub const CURRENT_VERSION: &str = "v0.1.27";
 
 #[cfg(test)]
 mod tests {
@@ -159,11 +159,11 @@ mod tests {
             .prepare_next_version("prepare the next controlled candidate")
             .expect("evolution should prepare a candidate version");
 
-        assert_eq!(report.current_version, "v0.1.26");
-        assert_eq!(report.next_version, "v0.1.27");
+        assert_eq!(report.current_version, "v0.1.27");
+        assert_eq!(report.next_version, "v0.1.28");
         assert!(root.join("workspaces").join("v0").is_dir());
         assert_workspace_structure(&root);
-        assert!(!root.join("workspaces").join("v0.1.27").exists());
+        assert!(!root.join("workspaces").join("v0.1.28").exists());
         assert!(root.join("forge").join("memory").join("v0.md").is_file());
         assert!(root.join("forge").join("tasks").join("v0.md").is_file());
         assert!(root.join("forge").join("errors").join("v0.md").is_file());
@@ -172,26 +172,26 @@ mod tests {
             !root
                 .join("forge")
                 .join("versions")
-                .join("v0.1.27.md")
+                .join("v0.1.28.md")
                 .exists()
         );
         let version_record = fs::read_to_string(root.join("forge").join("versions").join("v0.md"))
             .expect("major version record should be readable");
-        assert!(version_record.contains("## v0.1.27"));
-        assert_eq!(report.state.current_version, "v0.1.26");
+        assert!(version_record.contains("## v0.1.28"));
+        assert_eq!(report.state.current_version, "v0.1.27");
         assert_eq!(report.state.status, "candidate_prepared");
         assert_eq!(
             report.state.version_scheme.as_deref(),
             Some("semantic:vMAJOR.MINOR.PATCH")
         );
-        assert_eq!(report.state.candidate_version.as_deref(), Some("v0.1.27"));
+        assert_eq!(report.state.candidate_version.as_deref(), Some("v0.1.28"));
         assert_eq!(
             report.state.candidate_workspace.as_deref(),
             Some("workspaces/v0")
         );
 
         supervisor
-            .verify_version("v0.1.27")
+            .verify_version("v0.1.28")
             .expect("candidate layout should validate");
 
         cleanup(&root);
@@ -206,7 +206,7 @@ mod tests {
             .initialize_current_version()
             .expect("bootstrap should succeed before evolution");
         let mut state = ForgeState::load(&root).expect("state should be readable");
-        state.workspace = "workspaces/v0.1.26".to_string();
+        state.workspace = "workspaces/v0.1.27".to_string();
         state.save(&root).expect("state should be writable");
 
         let report = supervisor
@@ -241,7 +241,7 @@ mod tests {
         let task = fs::read_to_string(root.join("forge").join("tasks").join("v0.md"))
             .expect("task should remain readable");
         assert!(task.contains("人工任务计划"));
-        assert!(task.contains("## v0.1.27"));
+        assert!(task.contains("## v0.1.28"));
 
         cleanup(&root);
     }
@@ -277,10 +277,10 @@ mod tests {
             .promote_candidate()
             .expect("candidate should promote after validation");
 
-        assert_eq!(report.previous_version, "v0.1.26");
-        assert_eq!(report.promoted_version, "v0.1.27");
-        assert_eq!(report.state.current_version, "v0.1.27");
-        assert_eq!(report.state.parent_version.as_deref(), Some("v0.1.26"));
+        assert_eq!(report.previous_version, "v0.1.27");
+        assert_eq!(report.promoted_version, "v0.1.28");
+        assert_eq!(report.state.current_version, "v0.1.28");
+        assert_eq!(report.state.parent_version.as_deref(), Some("v0.1.27"));
         assert_eq!(report.state.candidate_version, None);
         assert_eq!(report.state.status, "active");
 
@@ -303,12 +303,12 @@ mod tests {
             .run_candidate_cycle()
             .expect("valid candidate should complete the cycle");
 
-        assert_eq!(report.previous_version, "v0.1.26");
-        assert_eq!(report.candidate_version, "v0.1.27");
+        assert_eq!(report.previous_version, "v0.1.27");
+        assert_eq!(report.candidate_version, "v0.1.28");
         assert_eq!(report.result, CycleResult::Promoted);
         assert!(report.candidate_validation.is_some());
         assert_eq!(report.failure, None);
-        assert_eq!(report.state.current_version, "v0.1.27");
+        assert_eq!(report.state.current_version, "v0.1.28");
         assert_eq!(report.state.candidate_version, None);
         assert_eq!(report.state.status, "active");
 
@@ -331,10 +331,10 @@ mod tests {
             .rollback_candidate("测试回滚")
             .expect("rollback should clear candidate state");
 
-        assert_eq!(report.current_version, "v0.1.26");
-        assert_eq!(report.rolled_back_version, "v0.1.27");
+        assert_eq!(report.current_version, "v0.1.27");
+        assert_eq!(report.rolled_back_version, "v0.1.28");
         assert_eq!(report.state.status, "rolled_back");
-        assert_eq!(report.state.current_version, "v0.1.26");
+        assert_eq!(report.state.current_version, "v0.1.27");
         assert_eq!(report.state.candidate_version, None);
         assert!(root.join("workspaces").join("v0").is_dir());
 
@@ -361,12 +361,12 @@ mod tests {
             .run_candidate_cycle()
             .expect("invalid candidate should roll back without promoting");
 
-        assert_eq!(report.previous_version, "v0.1.26");
+        assert_eq!(report.previous_version, "v0.1.27");
         assert_eq!(report.candidate_version, "v9.0.0");
         assert_eq!(report.result, CycleResult::RolledBack);
         assert!(report.candidate_validation.is_none());
         assert!(report.failure.is_some());
-        assert_eq!(report.state.current_version, "v0.1.26");
+        assert_eq!(report.state.current_version, "v0.1.27");
         assert_eq!(report.state.candidate_version, None);
         assert_eq!(report.state.status, "rolled_back");
 
@@ -387,10 +387,10 @@ mod tests {
             .expect("advance should prepare a candidate when none exists");
 
         assert_eq!(report.outcome, MinimalLoopOutcome::Prepared);
-        assert_eq!(report.starting_version, "v0.1.26");
-        assert_eq!(report.stable_version, "v0.1.26");
-        assert_eq!(report.candidate_version.as_deref(), Some("v0.1.27"));
-        assert_eq!(report.next_expected_version.as_deref(), Some("v0.1.28"));
+        assert_eq!(report.starting_version, "v0.1.27");
+        assert_eq!(report.stable_version, "v0.1.27");
+        assert_eq!(report.candidate_version.as_deref(), Some("v0.1.28"));
+        assert_eq!(report.next_expected_version.as_deref(), Some("v0.1.29"));
 
         cleanup(&root);
     }
@@ -412,10 +412,10 @@ mod tests {
             .expect("advance should promote valid candidate and prepare the next one");
 
         assert_eq!(report.outcome, MinimalLoopOutcome::PromotedAndPrepared);
-        assert_eq!(report.starting_version, "v0.1.26");
-        assert_eq!(report.stable_version, "v0.1.27");
-        assert_eq!(report.candidate_version.as_deref(), Some("v0.1.28"));
-        assert_eq!(report.next_expected_version.as_deref(), Some("v0.1.29"));
+        assert_eq!(report.starting_version, "v0.1.27");
+        assert_eq!(report.stable_version, "v0.1.28");
+        assert_eq!(report.candidate_version.as_deref(), Some("v0.1.29"));
+        assert_eq!(report.next_expected_version.as_deref(), Some("v0.1.30"));
 
         cleanup(&root);
     }
@@ -441,8 +441,8 @@ mod tests {
             .expect("advance should roll back invalid candidate");
 
         assert_eq!(report.outcome, MinimalLoopOutcome::RolledBack);
-        assert_eq!(report.starting_version, "v0.1.26");
-        assert_eq!(report.stable_version, "v0.1.26");
+        assert_eq!(report.starting_version, "v0.1.27");
+        assert_eq!(report.stable_version, "v0.1.27");
         assert_eq!(report.candidate_version.as_deref(), Some("v9.0.0"));
         assert_eq!(report.next_expected_version, None);
         assert!(report.failure.is_some());
@@ -832,6 +832,168 @@ mod tests {
             invalid,
             AgentSessionError::InvalidSessionId { .. }
         ));
+
+        cleanup(&root);
+    }
+
+    #[test]
+    fn agent_session_save_updates_latest_summary_without_duplicate_listing() {
+        let root = temp_root("agent-session-save");
+        let app = SelfForgeApp::new(&root);
+
+        app.supervisor()
+            .initialize_current_version()
+            .expect("bootstrap should succeed before session save test");
+
+        let store = AgentSessionStore::new(&root);
+        let mut session = store
+            .start(CURRENT_VERSION, "更新会话状态")
+            .expect("session should be created");
+        session.mark_running();
+        session
+            .update_step(1, AgentStepStatus::Completed, "计划已生成")
+            .expect("session step should update");
+        session.mark_completed("会话状态已更新");
+        store.save(&session).expect("session should be saved");
+
+        let listed = app
+            .agent_sessions(CURRENT_VERSION, 10)
+            .expect("session index should be readable");
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].id, session.id);
+        assert_eq!(listed[0].status, AgentSessionStatus::Completed);
+        assert_eq!(listed[0].outcome.as_deref(), Some("会话状态已更新"));
+
+        cleanup(&root);
+    }
+
+    #[test]
+    fn agent_advance_prepares_candidate_and_completes_session() {
+        let root = temp_root("agent-advance-prepare");
+        let app = SelfForgeApp::new(&root);
+
+        app.supervisor()
+            .initialize_current_version()
+            .expect("bootstrap should succeed before agent advance");
+
+        let report = app
+            .agent_advance("Agent 驱动候选生成")
+            .expect("agent advance should prepare a candidate");
+
+        assert_eq!(report.minimal_loop.outcome, MinimalLoopOutcome::Prepared);
+        assert_eq!(report.minimal_loop.starting_version, CURRENT_VERSION);
+        assert_eq!(report.minimal_loop.stable_version, CURRENT_VERSION);
+        assert_eq!(
+            report.minimal_loop.candidate_version.as_deref(),
+            Some("v0.1.28")
+        );
+        assert_eq!(report.session.status, AgentSessionStatus::Completed);
+        assert!(
+            report
+                .session
+                .steps
+                .iter()
+                .all(|step| step.status == AgentStepStatus::Completed)
+        );
+
+        let state = ForgeState::load(&root).expect("state should remain readable");
+        assert_eq!(state.current_version, CURRENT_VERSION);
+        assert_eq!(state.candidate_version.as_deref(), Some("v0.1.28"));
+        let sessions = app
+            .agent_sessions(CURRENT_VERSION, 10)
+            .expect("completed agent session should be listed");
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].status, AgentSessionStatus::Completed);
+
+        cleanup(&root);
+    }
+
+    #[test]
+    fn agent_advance_promotes_existing_candidate_and_prepares_next() {
+        let root = temp_root("agent-advance-promote");
+        let app = SelfForgeApp::new(&root);
+
+        app.supervisor()
+            .initialize_current_version()
+            .expect("bootstrap should succeed before agent advance");
+        app.supervisor()
+            .prepare_next_version("prepare candidate")
+            .expect("candidate should be prepared before agent advance");
+
+        let report = app
+            .agent_advance("Agent 推进候选提升")
+            .expect("agent advance should promote and prepare");
+
+        assert_eq!(
+            report.minimal_loop.outcome,
+            MinimalLoopOutcome::PromotedAndPrepared
+        );
+        assert_eq!(report.minimal_loop.starting_version, CURRENT_VERSION);
+        assert_eq!(report.minimal_loop.stable_version, "v0.1.28");
+        assert_eq!(
+            report.minimal_loop.candidate_version.as_deref(),
+            Some("v0.1.29")
+        );
+        assert_eq!(report.session.status, AgentSessionStatus::Completed);
+
+        let state = ForgeState::load(&root).expect("state should remain readable");
+        assert_eq!(state.current_version, "v0.1.28");
+        assert_eq!(state.candidate_version.as_deref(), Some("v0.1.29"));
+
+        cleanup(&root);
+    }
+
+    #[test]
+    fn agent_advance_stops_and_marks_session_failed_when_open_errors_exist() {
+        let root = temp_root("agent-advance-open-errors");
+        let app = SelfForgeApp::new(&root);
+
+        app.supervisor()
+            .initialize_current_version()
+            .expect("bootstrap should succeed before open error guard test");
+        let program = std::env::current_exe()
+            .expect("test executable path should be available")
+            .to_string_lossy()
+            .into_owned();
+        let failed = app
+            .supervisor()
+            .execute_in_workspace(
+                CURRENT_VERSION,
+                &program,
+                &["--self-forge-invalid-test-flag".to_string()],
+                5_000,
+            )
+            .expect("failed command should produce a run record");
+        let run_id = failed
+            .run_dir
+            .file_name()
+            .and_then(|name| name.to_str())
+            .expect("run directory should have a valid file name")
+            .to_string();
+        ErrorArchive::new(&root)
+            .record_failed_run(CURRENT_VERSION, Some(&run_id), "", "")
+            .expect("failed run should be archived before agent advance");
+
+        let error = app
+            .agent_advance("存在错误时停止")
+            .expect_err("agent advance must stop when current version has open errors");
+
+        assert!(matches!(
+            error,
+            AgentEvolutionError::Blocked {
+                ref open_errors,
+                ..
+            } if open_errors.len() == 1
+        ));
+        let sessions = app
+            .agent_sessions(CURRENT_VERSION, 10)
+            .expect("failed agent session should be listed");
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].status, AgentSessionStatus::Failed);
+
+        let state = ForgeState::load(&root).expect("state should remain readable");
+        assert_eq!(state.current_version, CURRENT_VERSION);
+        assert_eq!(state.candidate_version, None);
 
         cleanup(&root);
     }
@@ -1922,11 +2084,12 @@ mod tests {
     }
 }
 pub use app::{
-    AgentCapability, AgentDefinition, AgentError, AgentPlan, AgentPlanStep, AgentRegistry,
-    AgentSession, AgentSessionError, AgentSessionStatus, AgentSessionStep, AgentSessionStore,
-    AgentSessionSummary, AgentStepStatus, AiConfigError, AiConfigReport, AiExecutionError,
-    AiExecutionReport, AiProviderRegistry, AiProviderStatus, AiRawHttpResponse, AiRequestError,
-    AiRequestSpec, AiResponseError, AiTextResponse, ArchivedErrorEntry, ErrorArchive,
-    ErrorArchiveError, ErrorArchiveReport, ErrorListQuery, ErrorResolutionReport, MinimalLoopError,
-    MinimalLoopOutcome, MinimalLoopReport, PreflightReport, SelfForgeApp,
+    AgentCapability, AgentDefinition, AgentError, AgentEvolutionError, AgentEvolutionReport,
+    AgentPlan, AgentPlanStep, AgentRegistry, AgentSession, AgentSessionError, AgentSessionStatus,
+    AgentSessionStep, AgentSessionStore, AgentSessionSummary, AgentStepStatus, AiConfigError,
+    AiConfigReport, AiExecutionError, AiExecutionReport, AiProviderRegistry, AiProviderStatus,
+    AiRawHttpResponse, AiRequestError, AiRequestSpec, AiResponseError, AiTextResponse,
+    ArchivedErrorEntry, ErrorArchive, ErrorArchiveError, ErrorArchiveReport, ErrorListQuery,
+    ErrorResolutionReport, MinimalLoopError, MinimalLoopOutcome, MinimalLoopReport,
+    PreflightReport, SelfForgeApp,
 };
