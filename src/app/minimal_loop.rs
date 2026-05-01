@@ -12,14 +12,16 @@ use super::agent::{
     AiPatchAuditStatus, AiPatchAuditStore, AiPatchAuditStoreError, AiPatchAuditSummary,
     AiPatchDraftRecord, AiPatchDraftStatus, AiPatchDraftStore, AiPatchDraftStoreError,
     AiPatchDraftSummary, AiPatchPreviewChange, AiPatchPreviewRecord, AiPatchPreviewStatus,
-    AiPatchPreviewStore, AiPatchPreviewStoreError, AiPatchPreviewSummary, AiPatchSourcePlanFile,
-    AiPatchSourcePlanRecord, AiPatchSourcePlanStatus, AiPatchSourcePlanStore,
-    AiPatchSourcePlanStoreError, AiPatchSourcePlanSummary, AiPatchVerificationCommandRecord,
-    AiPatchVerificationStatus, AiSelfUpgradeAuditError, AiSelfUpgradeAuditRecord,
-    AiSelfUpgradeAuditStatus, AiSelfUpgradeAuditStore, AiSelfUpgradeAuditSummary,
-    AiSelfUpgradeSummaryIndexEntry, AiSelfUpgradeSummaryRecord, AiSelfUpgradeSummaryStatus,
-    AiSelfUpgradeSummaryStore, AiSelfUpgradeSummaryStoreError, apply_tools_to_plan,
-    initialize_agent_tool_config, load_agent_tool_report,
+    AiPatchPreviewStore, AiPatchPreviewStoreError, AiPatchPreviewSummary,
+    AiPatchSourceExecutionFile, AiPatchSourceExecutionRecord, AiPatchSourceExecutionStatus,
+    AiPatchSourceExecutionStore, AiPatchSourceExecutionStoreError, AiPatchSourceExecutionSummary,
+    AiPatchSourcePlanFile, AiPatchSourcePlanRecord, AiPatchSourcePlanStatus,
+    AiPatchSourcePlanStore, AiPatchSourcePlanStoreError, AiPatchSourcePlanSummary,
+    AiPatchVerificationCommandRecord, AiPatchVerificationStatus, AiSelfUpgradeAuditError,
+    AiSelfUpgradeAuditRecord, AiSelfUpgradeAuditStatus, AiSelfUpgradeAuditStore,
+    AiSelfUpgradeAuditSummary, AiSelfUpgradeSummaryIndexEntry, AiSelfUpgradeSummaryRecord,
+    AiSelfUpgradeSummaryStatus, AiSelfUpgradeSummaryStore, AiSelfUpgradeSummaryStoreError,
+    apply_tools_to_plan, initialize_agent_tool_config, load_agent_tool_report,
 };
 use super::ai_provider::{
     AiConfigError, AiConfigReport, AiExecutionError, AiExecutionReport, AiProviderRegistry,
@@ -187,6 +189,12 @@ pub struct AiPatchVerificationReport {
 pub struct AiPatchSourcePlanReport {
     pub application: AiPatchApplicationRecord,
     pub record: AiPatchSourcePlanRecord,
+}
+
+#[derive(Debug, Clone)]
+pub struct AiPatchSourceExecutionReport {
+    pub source_plan: AiPatchSourcePlanRecord,
+    pub record: AiPatchSourceExecutionRecord,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -366,6 +374,15 @@ pub enum AiPatchVerificationError {
 pub enum AiPatchSourcePlanError {
     Application(AiPatchApplicationStoreError),
     Store(AiPatchSourcePlanStoreError),
+    Io { path: PathBuf, source: io::Error },
+    InvalidPath { path: String, reason: String },
+}
+
+#[derive(Debug)]
+pub enum AiPatchSourceExecutionError {
+    SourcePlan(AiPatchSourcePlanStoreError),
+    Store(AiPatchSourceExecutionStoreError),
+    Verification(AiPatchVerificationError),
     Io { path: PathBuf, source: io::Error },
     InvalidPath { path: String, reason: String },
 }
@@ -1333,6 +1350,366 @@ impl SelfForgeApp {
         id: &str,
     ) -> Result<AiPatchSourcePlanRecord, AiPatchSourcePlanStoreError> {
         AiPatchSourcePlanStore::new(&self.root).load(version, id)
+    }
+
+    pub fn ai_patch_source_execute(
+        &self,
+        version: &str,
+        source_plan_id: &str,
+        timeout_ms: u64,
+    ) -> Result<AiPatchSourceExecutionReport, AiPatchSourceExecutionError> {
+        let root = self.root.clone();
+        self.ai_patch_source_execute_with_runner(
+            version,
+            source_plan_id,
+            timeout_ms,
+            |spec, timeout_ms| run_patch_verification_command(&root, spec, timeout_ms),
+        )
+    }
+
+    pub(crate) fn ai_patch_source_execute_with_runner<F>(
+        &self,
+        version: &str,
+        source_plan_id: &str,
+        timeout_ms: u64,
+        mut runner: F,
+    ) -> Result<AiPatchSourceExecutionReport, AiPatchSourceExecutionError>
+    where
+        F: FnMut(
+            &AiPatchVerificationCommandSpec,
+            u64,
+        ) -> Result<AiPatchVerificationCommandRecord, AiPatchVerificationError>,
+    {
+        let source_plan = AiPatchSourcePlanStore::new(&self.root)
+            .load(version, source_plan_id)
+            .map_err(AiPatchSourceExecutionError::SourcePlan)?;
+        let execution_id = make_patch_source_execution_id(&self.root, version)?;
+        let major = version_major_key(version).map_err(|error| {
+            AiPatchSourceExecutionError::Store(AiPatchSourceExecutionStoreError::Version(error))
+        })?;
+        let relative_execution_dir = PathBuf::from("workspaces")
+            .join(&major)
+            .join("artifacts")
+            .join("agents")
+            .join("patch-source-executions")
+            .join(&execution_id);
+
+        let mut status = AiPatchSourceExecutionStatus::Applied;
+        let mut error = None;
+        let mut files = Vec::new();
+        let mut prepared_files = Vec::new();
+        let mut verification_runs = Vec::new();
+        let mut verification_status = AiPatchVerificationStatus::Skipped;
+        let mut rollback_performed = false;
+        let mut rollback_steps = Vec::new();
+
+        if source_plan.status != AiPatchSourcePlanStatus::Prepared {
+            status = AiPatchSourceExecutionStatus::Blocked;
+            error = Some("源码覆盖准备记录不是已准备状态，禁止执行覆盖。".to_string());
+        } else if source_plan.files.is_empty() {
+            status = AiPatchSourceExecutionStatus::Blocked;
+            error = Some("源码覆盖准备记录没有可执行文件。".to_string());
+        } else {
+            for file in &source_plan.files {
+                let prepared =
+                    match self.prepare_patch_source_execution_file(file, &relative_execution_dir) {
+                        Ok(prepared) => prepared,
+                        Err(reason) => {
+                            status = AiPatchSourceExecutionStatus::Blocked;
+                            error = Some(reason);
+                            break;
+                        }
+                    };
+                files.push(prepared.record_file.clone());
+                prepared_files.push(prepared);
+            }
+        }
+
+        if status == AiPatchSourceExecutionStatus::Applied {
+            let execution_dir = self.root.join(&relative_execution_dir);
+            fs::create_dir_all(&execution_dir).map_err(|source| {
+                AiPatchSourceExecutionError::Io {
+                    path: execution_dir.clone(),
+                    source,
+                }
+            })?;
+
+            for prepared in &prepared_files {
+                if let Some(backup_file) = prepared.record_file.execution_backup_file.as_ref() {
+                    let backup_path = self.root.join(backup_file);
+                    if let Some(parent) = backup_path.parent() {
+                        fs::create_dir_all(parent).map_err(|source| {
+                            AiPatchSourceExecutionError::Io {
+                                path: parent.to_path_buf(),
+                                source,
+                            }
+                        })?;
+                    }
+                    fs::write(&backup_path, &prepared.before_contents).map_err(|source| {
+                        AiPatchSourceExecutionError::Io {
+                            path: backup_path,
+                            source,
+                        }
+                    })?;
+                }
+            }
+
+            let mut written_count = 0;
+            for prepared in &prepared_files {
+                if let Some(parent) = prepared.target_path.parent() {
+                    if let Err(source) = fs::create_dir_all(parent) {
+                        status = AiPatchSourceExecutionStatus::RolledBack;
+                        verification_status = AiPatchVerificationStatus::Failed;
+                        error = Some(format!(
+                            "源码覆盖创建父目录失败 {}：{}",
+                            parent.display(),
+                            source
+                        ));
+                        break;
+                    }
+                }
+                if let Err(source) = fs::write(&prepared.target_path, &prepared.new_contents) {
+                    status = AiPatchSourceExecutionStatus::RolledBack;
+                    verification_status = AiPatchVerificationStatus::Failed;
+                    error = Some(format!(
+                        "源码覆盖写入失败 {}：{}",
+                        prepared.record_file.target_file.display(),
+                        source
+                    ));
+                    break;
+                }
+                written_count += 1;
+            }
+
+            if status == AiPatchSourceExecutionStatus::RolledBack {
+                rollback_performed = true;
+                rollback_steps = rollback_patch_source_execution(&prepared_files[..written_count]);
+            } else {
+                let commands = patch_application_verification_commands();
+                let specs = patch_application_verification_specs(&commands)
+                    .map_err(AiPatchSourceExecutionError::Verification)?;
+                for spec in specs {
+                    let run = runner(&spec, timeout_ms)
+                        .map_err(AiPatchSourceExecutionError::Verification)?;
+                    let failed = run.status != AiPatchVerificationStatus::Passed;
+                    verification_runs.push(run);
+                    if failed {
+                        break;
+                    }
+                }
+                verification_status = if verification_runs
+                    .iter()
+                    .all(|run| run.status == AiPatchVerificationStatus::Passed)
+                {
+                    AiPatchVerificationStatus::Passed
+                } else {
+                    AiPatchVerificationStatus::Failed
+                };
+                if verification_status != AiPatchVerificationStatus::Passed {
+                    status = AiPatchSourceExecutionStatus::RolledBack;
+                    rollback_performed = true;
+                    rollback_steps = rollback_patch_source_execution(&prepared_files);
+                    error = Some("源码覆盖后验证未通过，已按执行级备份回滚。".to_string());
+                }
+            }
+        } else {
+            files.clear();
+        }
+
+        let record = AiPatchSourceExecutionRecord {
+            id: execution_id,
+            version: version.to_string(),
+            source_plan_id: source_plan.id.clone(),
+            application_id: source_plan.application_id.clone(),
+            candidate_version: source_plan.candidate_version.clone(),
+            preview_id: source_plan.preview_id.clone(),
+            audit_id: source_plan.audit_id.clone(),
+            draft_id: source_plan.draft_id.clone(),
+            created_at_unix_seconds: 0,
+            status,
+            execution_dir: if status == AiPatchSourceExecutionStatus::Blocked {
+                None
+            } else {
+                Some(relative_execution_dir)
+            },
+            files,
+            verification_commands: if status == AiPatchSourceExecutionStatus::Blocked {
+                Vec::new()
+            } else {
+                patch_application_verification_commands()
+            },
+            verification_runs,
+            verification_status,
+            rollback_performed,
+            rollback_steps,
+            report_file: None,
+            error,
+            file: PathBuf::new(),
+        };
+        let markdown = build_ai_patch_source_execution_markdown(&record);
+        let record = AiPatchSourceExecutionStore::new(&self.root)
+            .create(record, Some(&markdown))
+            .map_err(AiPatchSourceExecutionError::Store)?;
+
+        Ok(AiPatchSourceExecutionReport {
+            source_plan,
+            record,
+        })
+    }
+
+    pub fn ai_patch_source_execution_records(
+        &self,
+        version: &str,
+        limit: usize,
+    ) -> Result<Vec<AiPatchSourceExecutionSummary>, AiPatchSourceExecutionStoreError> {
+        AiPatchSourceExecutionStore::new(&self.root).list(version, limit)
+    }
+
+    pub fn ai_patch_source_execution_record(
+        &self,
+        version: &str,
+        id: &str,
+    ) -> Result<AiPatchSourceExecutionRecord, AiPatchSourceExecutionStoreError> {
+        AiPatchSourceExecutionStore::new(&self.root).load(version, id)
+    }
+
+    fn prepare_patch_source_execution_file(
+        &self,
+        file: &AiPatchSourcePlanFile,
+        relative_execution_dir: &Path,
+    ) -> Result<PreparedPatchSourceExecutionFile, String> {
+        let safe_path = patch_application_safe_relative_path(&file.source_path)
+            .map_err(|error| format!("源码覆盖执行路径不合法 {}：{}", file.source_path, error))?;
+        if safe_path != file.target_file {
+            return Err(format!(
+                "源码覆盖准备记录路径不一致：来源 {}，计划目标 {}。",
+                file.source_path,
+                file.target_file.display()
+            ));
+        }
+
+        let mirror_path = self.root.join(&file.mirror_file);
+        let new_contents = fs::read(&mirror_path).map_err(|source| {
+            format!(
+                "源码覆盖候选镜像文件不可读 {}：{}",
+                file.mirror_file.display(),
+                source
+            )
+        })?;
+        if new_contents.len() != file.new_bytes {
+            return Err(format!(
+                "源码覆盖候选镜像字节数已变化 {}：计划 {}，当前 {}。",
+                file.mirror_file.display(),
+                file.new_bytes,
+                new_contents.len()
+            ));
+        }
+
+        let target_path = self.root.join(&file.target_file);
+        let target_exists_now = target_path.exists();
+        if target_exists_now != file.target_exists {
+            return Err(format!(
+                "源码覆盖目标存在状态已变化 {}：计划 {}，当前 {}。",
+                file.target_file.display(),
+                if file.target_exists {
+                    "存在"
+                } else {
+                    "不存在"
+                },
+                if target_exists_now {
+                    "存在"
+                } else {
+                    "不存在"
+                }
+            ));
+        }
+        if target_exists_now && !target_path.is_file() {
+            return Err(format!(
+                "源码覆盖目标路径不是文件，禁止覆盖：{}",
+                file.target_file.display()
+            ));
+        }
+
+        let before_contents = if target_exists_now {
+            fs::read(&target_path).map_err(|source| {
+                format!(
+                    "源码覆盖目标文件不可读 {}：{}",
+                    file.target_file.display(),
+                    source
+                )
+            })?
+        } else {
+            Vec::new()
+        };
+        if before_contents.len() != file.original_bytes {
+            return Err(format!(
+                "源码覆盖目标文件字节数已变化 {}：计划 {}，当前 {}。",
+                file.target_file.display(),
+                file.original_bytes,
+                before_contents.len()
+            ));
+        }
+        if target_exists_now {
+            let Some(plan_backup_file) = file.rollback_backup_file.as_ref() else {
+                return Err(format!(
+                    "源码覆盖准备记录缺少目标文件回滚备份：{}",
+                    file.target_file.display()
+                ));
+            };
+            let plan_backup_contents =
+                fs::read(self.root.join(plan_backup_file)).map_err(|source| {
+                    format!(
+                        "源码覆盖准备回滚备份不可读 {}：{}",
+                        plan_backup_file.display(),
+                        source
+                    )
+                })?;
+            if plan_backup_contents != before_contents {
+                return Err(format!(
+                    "源码覆盖目标文件已在准备后变化，禁止使用过期计划：{}",
+                    file.target_file.display()
+                ));
+            }
+        }
+
+        let execution_backup_file = if target_exists_now {
+            Some(relative_execution_dir.join("rollback").join(&safe_path))
+        } else {
+            None
+        };
+        let action = if target_exists_now {
+            "覆盖已有文件".to_string()
+        } else {
+            "创建新文件".to_string()
+        };
+        let rollback_action = if let Some(backup_file) = execution_backup_file.as_ref() {
+            format!(
+                "从执行级备份 {} 恢复到 {}。",
+                backup_file.display(),
+                file.target_file.display()
+            )
+        } else {
+            format!("删除执行中新建的文件 {}。", file.target_file.display())
+        };
+        let before_bytes = before_contents.len();
+        let after_bytes = new_contents.len();
+
+        Ok(PreparedPatchSourceExecutionFile {
+            target_path,
+            before_contents,
+            new_contents: new_contents.clone(),
+            record_file: AiPatchSourceExecutionFile {
+                source_path: file.source_path.clone(),
+                mirror_file: file.mirror_file.clone(),
+                target_file: file.target_file.clone(),
+                target_existed_before: target_exists_now,
+                before_bytes,
+                after_bytes,
+                execution_backup_file,
+                action,
+                rollback_action,
+            },
+        })
     }
 
     pub fn ai_self_upgrade_preview(
@@ -3725,6 +4102,89 @@ fn make_patch_source_plan_id(root: &Path, version: &str) -> Result<String, AiPat
     ))
 }
 
+fn make_patch_source_execution_id(
+    root: &Path,
+    version: &str,
+) -> Result<String, AiPatchSourceExecutionError> {
+    let major = version_major_key(version).map_err(|error| {
+        AiPatchSourceExecutionError::Store(AiPatchSourceExecutionStoreError::Version(error))
+    })?;
+    let clock = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    let id_seed = clock.as_nanos();
+    for attempt in 0..1000 {
+        let id = format!("patch-source-execution-{id_seed}-{attempt:03}");
+        let record_path = root
+            .join("workspaces")
+            .join(&major)
+            .join("artifacts")
+            .join("agents")
+            .join("patch-source-executions")
+            .join(format!("{id}.json"));
+        let execution_dir = root
+            .join("workspaces")
+            .join(&major)
+            .join("artifacts")
+            .join("agents")
+            .join("patch-source-executions")
+            .join(&id);
+        if !record_path.exists() && !execution_dir.exists() {
+            return Ok(id);
+        }
+    }
+
+    Err(AiPatchSourceExecutionError::Store(
+        AiPatchSourceExecutionStoreError::IdExhausted {
+            version: version.to_string(),
+        },
+    ))
+}
+
+#[derive(Debug, Clone)]
+struct PreparedPatchSourceExecutionFile {
+    target_path: PathBuf,
+    before_contents: Vec<u8>,
+    new_contents: Vec<u8>,
+    record_file: AiPatchSourceExecutionFile,
+}
+
+fn rollback_patch_source_execution(
+    prepared_files: &[PreparedPatchSourceExecutionFile],
+) -> Vec<String> {
+    let mut steps = Vec::new();
+    for prepared in prepared_files.iter().rev() {
+        if prepared.record_file.target_existed_before {
+            match fs::write(&prepared.target_path, &prepared.before_contents) {
+                Ok(()) => steps.push(prepared.record_file.rollback_action.clone()),
+                Err(source) => steps.push(format!(
+                    "回滚失败，无法恢复 {}：{}。",
+                    prepared.record_file.target_file.display(),
+                    source
+                )),
+            }
+        } else if prepared.target_path.exists() {
+            match fs::remove_file(&prepared.target_path) {
+                Ok(()) => steps.push(prepared.record_file.rollback_action.clone()),
+                Err(source) => steps.push(format!(
+                    "回滚失败，无法删除新建文件 {}：{}。",
+                    prepared.record_file.target_file.display(),
+                    source
+                )),
+            }
+        } else {
+            steps.push(format!(
+                "回滚跳过，新建文件已经不存在：{}。",
+                prepared.record_file.target_file.display()
+            ));
+        }
+    }
+    if steps.is_empty() {
+        steps.push("没有需要回滚的源码文件。".to_string());
+    }
+    steps
+}
+
 fn patch_source_plan_prerequisites() -> Vec<String> {
     vec![
         "候选应用状态必须为已应用。".to_string(),
@@ -3924,6 +4384,95 @@ fn build_ai_patch_source_plan_markdown(record: &AiPatchSourcePlanRecord) -> Stri
     markdown.push_str("# 下一步\n\n");
     markdown.push_str("- 该记录只允许作为源码覆盖前的人工复核材料，禁止视为已经覆盖源码。\n");
     markdown.push_str("- 真实覆盖源码必须继续通过独立命令执行，并在完成后重新运行完整验证。\n");
+    markdown
+}
+
+fn build_ai_patch_source_execution_markdown(record: &AiPatchSourceExecutionRecord) -> String {
+    let mut markdown = String::new();
+    markdown.push_str("# AI 补丁源码覆盖执行记录\n\n");
+    markdown.push_str("# 基本信息\n\n");
+    markdown.push_str(&format!(
+        "- 源版本：{}\n- 候选版本：{}\n- 覆盖准备记录：{}\n- 候选应用记录：{}\n- 预演记录：{}\n- 审计记录：{}\n- 草案记录：{}\n- 执行状态：{}\n- 验证状态：{}\n- 是否回滚：{}\n- 执行目录：{}\n- 错误信息：{}\n\n",
+        record.version,
+        record.candidate_version,
+        record.source_plan_id,
+        record.application_id,
+        record.preview_id,
+        record.audit_id,
+        record.draft_id,
+        record.status,
+        record.verification_status,
+        if record.rollback_performed { "是" } else { "否" },
+        record
+            .execution_dir
+            .as_ref()
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|| "无".to_string()),
+        record.error.as_deref().unwrap_or("无")
+    ));
+
+    markdown.push_str("# 覆盖文件\n\n");
+    if record.files.is_empty() {
+        markdown.push_str("- 本次没有执行源码覆盖。\n\n");
+    } else {
+        for file in &record.files {
+            markdown.push_str(&format!(
+                "- 来源路径：{}；镜像文件：{}；目标文件：{}；动作：{}；覆盖前存在：{}；覆盖前字节：{}；覆盖后字节：{}；执行级备份：{}\n",
+                file.source_path,
+                file.mirror_file.display(),
+                file.target_file.display(),
+                file.action,
+                if file.target_existed_before { "是" } else { "否" },
+                file.before_bytes,
+                file.after_bytes,
+                file.execution_backup_file
+                    .as_ref()
+                    .map(|path| path.display().to_string())
+                    .unwrap_or_else(|| "无".to_string())
+            ));
+        }
+        markdown.push('\n');
+    }
+
+    markdown.push_str("# 验证结果\n\n");
+    if record.verification_runs.is_empty() {
+        markdown.push_str("- 本次没有执行验证命令。\n\n");
+    } else {
+        for run in &record.verification_runs {
+            markdown.push_str(&format!(
+                "- 命令：`{}`；状态：{}；退出码：{}；超时：{}；耗时毫秒：{}；标准输出字节：{}；标准错误字节：{}\n",
+                run.command,
+                run.status,
+                run.exit_code
+                    .map(|value| value.to_string())
+                    .unwrap_or_else(|| "无".to_string()),
+                if run.timed_out { "是" } else { "否" },
+                run.duration_ms,
+                run.stdout_bytes,
+                run.stderr_bytes
+            ));
+        }
+        markdown.push('\n');
+    }
+
+    markdown.push_str("# 回滚记录\n\n");
+    if record.rollback_steps.is_empty() {
+        markdown.push_str("- 本次没有执行回滚。\n\n");
+    } else {
+        for step in &record.rollback_steps {
+            markdown.push_str(&format!("- {step}\n"));
+        }
+        markdown.push('\n');
+    }
+
+    markdown.push_str("# 下一步\n\n");
+    if record.status == AiPatchSourceExecutionStatus::Applied {
+        markdown.push_str("- 覆盖已通过验证，可进入版本提升衔接记录和后续候选生成。\n");
+    } else if record.status == AiPatchSourceExecutionStatus::RolledBack {
+        markdown.push_str("- 覆盖已回滚，必须先分析验证失败原因，再重新生成补丁或准备记录。\n");
+    } else {
+        markdown.push_str("- 覆盖被阻断，必须先修复阻断原因，再重新准备或执行。\n");
+    }
     markdown
 }
 
@@ -4789,6 +5338,43 @@ impl Error for AiPatchSourcePlanError {
             AiPatchSourcePlanError::Store(error) => Some(error),
             AiPatchSourcePlanError::Io { source, .. } => Some(source),
             AiPatchSourcePlanError::InvalidPath { .. } => None,
+        }
+    }
+}
+
+impl fmt::Display for AiPatchSourceExecutionError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AiPatchSourceExecutionError::SourcePlan(error) => {
+                write!(formatter, "AI 补丁源码覆盖执行读取准备记录失败：{error}")
+            }
+            AiPatchSourceExecutionError::Store(error) => {
+                write!(formatter, "AI 补丁源码覆盖执行记录失败：{error}")
+            }
+            AiPatchSourceExecutionError::Verification(error) => {
+                write!(formatter, "AI 补丁源码覆盖执行验证失败：{error}")
+            }
+            AiPatchSourceExecutionError::Io { path, source } => write!(
+                formatter,
+                "AI 补丁源码覆盖执行文件读写失败 {}：{}",
+                path.display(),
+                source
+            ),
+            AiPatchSourceExecutionError::InvalidPath { path, reason } => {
+                write!(formatter, "AI 补丁源码覆盖执行路径不合法 {path}：{reason}")
+            }
+        }
+    }
+}
+
+impl Error for AiPatchSourceExecutionError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            AiPatchSourceExecutionError::SourcePlan(error) => Some(error),
+            AiPatchSourceExecutionError::Store(error) => Some(error),
+            AiPatchSourceExecutionError::Verification(error) => Some(error),
+            AiPatchSourceExecutionError::Io { source, .. } => Some(source),
+            AiPatchSourceExecutionError::InvalidPath { .. } => None,
         }
     }
 }

@@ -246,6 +246,8 @@ AI 补丁候选应用写入后，验证执行必须优先使用 `agent-patch-ver
 
 AI 补丁候选应用验证通过后，源码覆盖前必须优先使用 `agent-patch-source-plan [--current|--candidate|--version VERSION] APPLICATION_RECORD_ID` 生成受控源码覆盖准备记录。准备记录只能写入 `workspaces/vMAJOR/artifacts/agents/patch-source-plans/`，索引文件为同目录 `index.jsonl`，回滚备份只能写入该准备记录目录下的 `rollback/` 分层，禁止为小版本创建独立目录或文件。该命令只能读取已应用且验证状态为通过的候选应用记录，必须生成目标源码路径、候选镜像路径、目标是否存在、原始字节数、新字节数、差异摘要和回滚动作；禁止直接覆盖仓库源码、Runtime、Supervisor 或状态文件。候选应用未应用、验证未通过、镜像文件缺失或目标路径非法时必须写入已阻断准备记录。查询准备记录使用 `agent-patch-source-plans [--limit N]`，读取单条准备记录使用 `agent-patch-source-plan-record SOURCE_PLAN_ID`。后续真实源码覆盖必须继续执行受控覆盖、完整测试、验证、错误归档和回滚记录。
 
+AI 补丁源码覆盖准备通过后，真实覆盖源码必须优先使用 `agent-patch-source-execute [--current|--candidate|--version VERSION] [--timeout-ms N] SOURCE_PLAN_ID`。执行记录只能写入 `workspaces/vMAJOR/artifacts/agents/patch-source-executions/`，索引文件为同目录 `index.jsonl`，执行级回滚备份只能写入单条执行目录下的 `rollback/` 分层，禁止为小版本创建独立目录或文件。该命令只能读取已准备的源码覆盖计划，执行前必须重新校验目标路径、候选镜像、目标文件存在状态、字节数和准备级回滚备份，若目标文件在准备后变化必须阻断。执行覆盖后必须运行固定验证命令：`cargo fmt --check`、`cargo test`、`cargo run -- validate` 和 `cargo run -- preflight`。验证失败或写入失败时必须按执行级备份回滚，并在同一条执行记录中保存覆盖文件、验证结果、回滚步骤和错误信息。查询执行记录使用 `agent-patch-source-executions [--limit N]`，读取单条执行记录使用 `agent-patch-source-execution-record SOURCE_EXECUTION_ID`。源码覆盖执行成功后，才允许进入版本提升衔接记录和下一候选生成。
+
 ---
 
 # 八、Git 提交规范

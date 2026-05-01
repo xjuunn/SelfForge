@@ -86,6 +86,11 @@ fn main() {
         "agent-patch-source-plan" => agent_patch_source_plan(&app, args.collect()),
         "agent-patch-source-plans" => agent_patch_source_plans(&app, args.collect()),
         "agent-patch-source-plan-record" => agent_patch_source_plan_record(&app, args.collect()),
+        "agent-patch-source-execute" => agent_patch_source_execute(&app, args.collect()),
+        "agent-patch-source-executions" => agent_patch_source_executions(&app, args.collect()),
+        "agent-patch-source-execution-record" => {
+            agent_patch_source_execution_record(&app, args.collect())
+        }
         "agent-patch-applications" => agent_patch_applications(&app, args.collect()),
         "agent-patch-application-record" => agent_patch_application_record(&app, args.collect()),
         "agent-self-upgrade" => agent_self_upgrade(&app, args.collect()),
@@ -1839,6 +1844,132 @@ fn agent_patch_source_plan_record(
     )
 }
 
+fn agent_patch_source_execute(
+    app: &SelfForgeApp,
+    arguments: Vec<String>,
+) -> Result<String, Box<dyn Error>> {
+    let command = parse_agent_patch_source_execute_args(arguments)?;
+    boxed(
+        app.ai_patch_source_execute(&command.version, &command.source_plan_id, command.timeout_ms)
+            .map(|report| {
+                format!(
+                    "SelfForge AI 补丁源码覆盖执行完成 版本 {} 准备 {} 状态 {} 文件 {} 验证 {} 回滚 {} 记录 {} 报告 {} 错误 {}",
+                    report.record.version,
+                    report.record.source_plan_id,
+                    report.record.status,
+                    report.record.files.len(),
+                    report.record.verification_status,
+                    if report.record.rollback_performed { "是" } else { "否" },
+                    report.record.file.display(),
+                    report
+                        .record
+                        .report_file
+                        .as_ref()
+                        .map(|path| path.display().to_string())
+                        .unwrap_or_else(|| "无".to_string()),
+                    report.record.error.as_deref().unwrap_or("无")
+                )
+            }),
+    )
+}
+
+fn agent_patch_source_executions(
+    app: &SelfForgeApp,
+    arguments: Vec<String>,
+) -> Result<String, Box<dyn Error>> {
+    let command = parse_agent_patch_source_executions_args(arguments)?;
+    boxed(
+        app.ai_patch_source_execution_records(&command.version, command.limit)
+            .map(|records| {
+                if records.is_empty() {
+                    return format!(
+                        "SelfForge AI 补丁源码覆盖执行记录 {}: no records",
+                        command.version
+                    );
+                }
+
+                let mut lines = vec![format!(
+                    "SelfForge AI 补丁源码覆盖执行记录 {}: {} record(s)",
+                    command.version,
+                    records.len()
+                )];
+                for record in records {
+                    lines.push(format!(
+                        "{} 状态 {} 准备 {} 文件 {} 验证 {} 回滚 {} 错误 {} JSON {}",
+                        record.id,
+                        record.status,
+                        record.source_plan_id,
+                        record.file_count,
+                        record.verification_status,
+                        if record.rollback_performed {
+                            "是"
+                        } else {
+                            "否"
+                        },
+                        record.error.as_deref().unwrap_or("无"),
+                        record.file.display()
+                    ));
+                }
+                lines.join("\n")
+            }),
+    )
+}
+
+fn agent_patch_source_execution_record(
+    app: &SelfForgeApp,
+    arguments: Vec<String>,
+) -> Result<String, Box<dyn Error>> {
+    let command = parse_agent_patch_source_execution_record_args(arguments)?;
+    boxed(
+        app.ai_patch_source_execution_record(&command.version, &command.id)
+            .map(|record| {
+                let mut lines = vec![format!(
+                    "SelfForge AI 补丁源码覆盖执行 {} 版本 {} 准备 {} 状态 {} 文件 {} 验证 {} 回滚 {} 报告 {} JSON {} 错误 {}",
+                    record.id,
+                    record.version,
+                    record.source_plan_id,
+                    record.status,
+                    record.files.len(),
+                    record.verification_status,
+                    if record.rollback_performed { "是" } else { "否" },
+                    record
+                        .report_file
+                        .as_ref()
+                        .map(|path| path.display().to_string())
+                        .unwrap_or_else(|| "无".to_string()),
+                    record.file.display(),
+                    record.error.as_deref().unwrap_or("无")
+                )];
+                for file in &record.files {
+                    lines.push(format!(
+                        "覆盖文件 来源 {} 镜像 {} 目标 {} 动作 {} 覆盖前字节 {} 覆盖后字节 {} 备份 {} 回滚 {}",
+                        file.source_path,
+                        file.mirror_file.display(),
+                        file.target_file.display(),
+                        file.action,
+                        file.before_bytes,
+                        file.after_bytes,
+                        file.execution_backup_file
+                            .as_ref()
+                            .map(|path| path.display().to_string())
+                            .unwrap_or_else(|| "无".to_string()),
+                        file.rollback_action
+                    ));
+                }
+                for run in &record.verification_runs {
+                    lines.push(format!(
+                        "验证命令 {} 状态 {} 退出码 {:?} 超时 {} 耗时毫秒 {}",
+                        run.command, run.status, run.exit_code, run.timed_out, run.duration_ms
+                    ));
+                }
+                for step in &record.rollback_steps {
+                    lines.push(format!("回滚记录 {step}"));
+                }
+                lines.join("\n")
+            }),
+    )
+}
+
 fn agent_patch_applications(
     app: &SelfForgeApp,
     arguments: Vec<String>,
@@ -2174,6 +2305,22 @@ struct AgentPatchSourcePlansArgs {
 }
 
 struct AgentPatchSourcePlanRecordArgs {
+    version: String,
+    id: String,
+}
+
+struct AgentPatchSourceExecuteArgs {
+    version: String,
+    timeout_ms: u64,
+    source_plan_id: String,
+}
+
+struct AgentPatchSourceExecutionsArgs {
+    version: String,
+    limit: usize,
+}
+
+struct AgentPatchSourceExecutionRecordArgs {
     version: String,
     id: String,
 }
@@ -2917,6 +3064,145 @@ fn parse_agent_patch_source_plan_record_args(
     Ok(AgentPatchSourcePlanRecordArgs {
         version,
         id: id.ok_or("agent-patch-source-plan-record 需要记录编号")?,
+    })
+}
+
+fn parse_agent_patch_source_execute_args(
+    arguments: Vec<String>,
+) -> Result<AgentPatchSourceExecuteArgs, Box<dyn Error>> {
+    let state = ForgeState::load(env::current_dir()?)?;
+    let mut version = state.current_version.clone();
+    let mut timeout_ms = DEFAULT_PATCH_VERIFICATION_TIMEOUT_MS;
+    let mut source_plan_id = None;
+    let mut index = 0;
+
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "--current" => {
+                version = state.current_version.clone();
+                index += 1;
+            }
+            "--candidate" => {
+                version = state.candidate_version.clone().ok_or("当前没有候选版本")?;
+                index += 1;
+            }
+            "--version" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--version 需要版本号".into());
+                };
+                version = value.clone();
+                index += 2;
+            }
+            "--timeout-ms" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--timeout-ms 需要毫秒数".into());
+                };
+                timeout_ms = value.parse::<u64>()?;
+                index += 2;
+            }
+            other if other.starts_with("--") => {
+                return Err(format!("未知 agent-patch-source-execute 参数: {other}").into());
+            }
+            other => {
+                if source_plan_id.is_some() {
+                    return Err("agent-patch-source-execute 只允许一个源码覆盖准备记录编号".into());
+                }
+                source_plan_id = Some(other.to_string());
+                index += 1;
+            }
+        }
+    }
+
+    Ok(AgentPatchSourceExecuteArgs {
+        version,
+        timeout_ms,
+        source_plan_id: source_plan_id
+            .ok_or("agent-patch-source-execute 需要源码覆盖准备记录编号")?,
+    })
+}
+
+fn parse_agent_patch_source_executions_args(
+    arguments: Vec<String>,
+) -> Result<AgentPatchSourceExecutionsArgs, Box<dyn Error>> {
+    let state = ForgeState::load(env::current_dir()?)?;
+    let mut version = state.current_version.clone();
+    let mut limit = 10;
+    let mut index = 0;
+
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "--current" => {
+                version = state.current_version.clone();
+                index += 1;
+            }
+            "--candidate" => {
+                version = state.candidate_version.clone().ok_or("当前没有候选版本")?;
+                index += 1;
+            }
+            "--version" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--version 需要版本号".into());
+                };
+                version = value.clone();
+                index += 2;
+            }
+            "--limit" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--limit 需要数量".into());
+                };
+                limit = value.parse::<usize>()?;
+                index += 2;
+            }
+            other => return Err(format!("未知 agent-patch-source-executions 参数: {other}").into()),
+        }
+    }
+
+    Ok(AgentPatchSourceExecutionsArgs { version, limit })
+}
+
+fn parse_agent_patch_source_execution_record_args(
+    arguments: Vec<String>,
+) -> Result<AgentPatchSourceExecutionRecordArgs, Box<dyn Error>> {
+    let state = ForgeState::load(env::current_dir()?)?;
+    let mut version = state.current_version.clone();
+    let mut id = None;
+    let mut index = 0;
+
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "--current" => {
+                version = state.current_version.clone();
+                index += 1;
+            }
+            "--candidate" => {
+                version = state.candidate_version.clone().ok_or("当前没有候选版本")?;
+                index += 1;
+            }
+            "--version" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--version 需要版本号".into());
+                };
+                version = value.clone();
+                index += 2;
+            }
+            other if other.starts_with("--") => {
+                return Err(
+                    format!("未知 agent-patch-source-execution-record 参数: {other}").into(),
+                );
+            }
+            other => {
+                if id.is_some() {
+                    return Err("agent-patch-source-execution-record 只允许一个记录编号".into());
+                }
+                id = Some(other.to_string());
+                index += 1;
+            }
+        }
+    }
+
+    Ok(AgentPatchSourceExecutionRecordArgs {
+        version,
+        id: id.ok_or("agent-patch-source-execution-record 需要记录编号")?,
     })
 }
 
@@ -4768,6 +5054,9 @@ agent-patch-verify [--current|--candidate|--version VERSION] [--timeout-ms N] AP
 agent-patch-source-plan [--current|--candidate|--version VERSION] APPLICATION_RECORD_ID
 agent-patch-source-plans [--current|--candidate|--version VERSION] [--limit N]
 agent-patch-source-plan-record [--current|--candidate|--version VERSION] SOURCE_PLAN_ID
+agent-patch-source-execute [--current|--candidate|--version VERSION] [--timeout-ms N] SOURCE_PLAN_ID
+agent-patch-source-executions [--current|--candidate|--version VERSION] [--limit N]
+agent-patch-source-execution-record [--current|--candidate|--version VERSION] SOURCE_EXECUTION_ID
 agent-patch-applications [--current|--candidate|--version VERSION] [--limit N]
 agent-patch-application-record [--current|--candidate|--version VERSION] APPLICATION_RECORD_ID
 agent-self-upgrade [--dry-run] [--timeout-ms N] [hint]
