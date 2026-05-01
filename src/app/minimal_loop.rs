@@ -25,6 +25,8 @@ use super::agent::{
     AiPatchSourcePlanStatus, AiPatchSourcePlanStore, AiPatchSourcePlanStoreError,
     AiPatchSourcePlanSummary, AiPatchSourcePromotionRecord, AiPatchSourcePromotionStatus,
     AiPatchSourcePromotionStore, AiPatchSourcePromotionStoreError, AiPatchSourcePromotionSummary,
+    AiPatchSourceTaskAuditFinding, AiPatchSourceTaskAuditRecord, AiPatchSourceTaskAuditStatus,
+    AiPatchSourceTaskAuditStore, AiPatchSourceTaskAuditStoreError, AiPatchSourceTaskAuditSummary,
     AiPatchSourceTaskDraftRecord, AiPatchSourceTaskDraftStatus, AiPatchSourceTaskDraftStore,
     AiPatchSourceTaskDraftStoreError, AiPatchSourceTaskDraftSummary,
     AiPatchVerificationCommandRecord, AiPatchVerificationStatus, AiSelfUpgradeAuditError,
@@ -235,6 +237,12 @@ pub struct AiPatchSourceCycleSummaryReport {
 pub struct AiPatchSourceTaskDraftReport {
     pub summary: AiPatchSourceCycleFollowUpRecord,
     pub record: AiPatchSourceTaskDraftRecord,
+}
+
+#[derive(Debug, Clone)]
+pub struct AiPatchSourceTaskAuditReport {
+    pub task_draft: AiPatchSourceTaskDraftRecord,
+    pub record: AiPatchSourceTaskAuditRecord,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -460,6 +468,13 @@ pub enum AiPatchSourceCycleSummaryError {
 pub enum AiPatchSourceTaskDraftError {
     Summary(AiPatchSourceCycleFollowUpStoreError),
     Store(AiPatchSourceTaskDraftStoreError),
+    Version(VersionError),
+}
+
+#[derive(Debug)]
+pub enum AiPatchSourceTaskAuditError {
+    TaskDraft(AiPatchSourceTaskDraftStoreError),
+    Store(AiPatchSourceTaskAuditStoreError),
     Version(VersionError),
 }
 
@@ -2360,6 +2375,78 @@ impl SelfForgeApp {
         id: &str,
     ) -> Result<AiPatchSourceTaskDraftRecord, AiPatchSourceTaskDraftStoreError> {
         AiPatchSourceTaskDraftStore::new(&self.root).load(version, id)
+    }
+
+    pub fn ai_patch_source_task_audit(
+        &self,
+        version: &str,
+        task_draft_id: &str,
+    ) -> Result<AiPatchSourceTaskAuditReport, AiPatchSourceTaskAuditError> {
+        let task_draft = AiPatchSourceTaskDraftStore::new(&self.root)
+            .load(version, task_draft_id)
+            .map_err(AiPatchSourceTaskAuditError::TaskDraft)?;
+        let expected_target_version = next_version_after(&task_draft.stable_version_after)
+            .map_err(AiPatchSourceTaskAuditError::Version)?;
+        let findings = patch_source_task_audit_findings(&task_draft, &expected_target_version);
+        let failed_messages = findings
+            .iter()
+            .filter(|finding| !finding.passed)
+            .map(|finding| finding.message.clone())
+            .collect::<Vec<_>>();
+        let status = if failed_messages.is_empty() {
+            AiPatchSourceTaskAuditStatus::Approved
+        } else {
+            AiPatchSourceTaskAuditStatus::Blocked
+        };
+        let blocked_reason = if failed_messages.is_empty() {
+            None
+        } else {
+            Some(failed_messages.join("；"))
+        };
+        let approved_goal = patch_source_task_audit_goal(&task_draft);
+        let follow_up_commands =
+            patch_source_task_audit_follow_up_commands(status, &task_draft, &approved_goal);
+        let record = AiPatchSourceTaskAuditRecord {
+            id: String::new(),
+            version: version.to_string(),
+            task_draft_id: task_draft.id.clone(),
+            summary_id: task_draft.summary_id.clone(),
+            cycle_id: task_draft.cycle_id.clone(),
+            created_at_unix_seconds: 0,
+            status,
+            source_task_status: task_draft.status,
+            proposed_task_title: task_draft.proposed_task_title.clone(),
+            proposed_task_description: task_draft.proposed_task_description.clone(),
+            suggested_target_version: task_draft.suggested_target_version.clone(),
+            approved_goal,
+            findings,
+            follow_up_commands,
+            blocked_reason,
+            markdown_file: PathBuf::new(),
+            file: PathBuf::new(),
+        };
+        let markdown = build_ai_patch_source_task_audit_markdown(&record, &task_draft);
+        let record = AiPatchSourceTaskAuditStore::new(&self.root)
+            .create(record, &markdown)
+            .map_err(AiPatchSourceTaskAuditError::Store)?;
+
+        Ok(AiPatchSourceTaskAuditReport { task_draft, record })
+    }
+
+    pub fn ai_patch_source_task_audit_records(
+        &self,
+        version: &str,
+        limit: usize,
+    ) -> Result<Vec<AiPatchSourceTaskAuditSummary>, AiPatchSourceTaskAuditStoreError> {
+        AiPatchSourceTaskAuditStore::new(&self.root).list(version, limit)
+    }
+
+    pub fn ai_patch_source_task_audit_record(
+        &self,
+        version: &str,
+        id: &str,
+    ) -> Result<AiPatchSourceTaskAuditRecord, AiPatchSourceTaskAuditStoreError> {
+        AiPatchSourceTaskAuditStore::new(&self.root).load(version, id)
     }
 
     fn prepare_patch_source_execution_file(
@@ -5766,6 +5853,231 @@ fn build_ai_patch_source_task_draft_markdown(
     markdown
 }
 
+fn patch_source_task_audit_findings(
+    task_draft: &AiPatchSourceTaskDraftRecord,
+    expected_target_version: &str,
+) -> Vec<AiPatchSourceTaskAuditFinding> {
+    let required_checks = patch_source_task_draft_acceptance_checks();
+    let mut findings = Vec::new();
+
+    findings.push(AiPatchSourceTaskAuditFinding {
+        check: "草案状态".to_string(),
+        passed: task_draft.status == AiPatchSourceTaskDraftStatus::Drafted,
+        message: if task_draft.status == AiPatchSourceTaskDraftStatus::Drafted {
+            "草案状态允许进入审计。".to_string()
+        } else {
+            "草案状态不是已生成草案，禁止进入补丁草案流程。".to_string()
+        },
+    });
+    findings.push(AiPatchSourceTaskAuditFinding {
+        check: "审计要求".to_string(),
+        passed: task_draft.required_audit,
+        message: if task_draft.required_audit {
+            "草案要求审计，符合流程。".to_string()
+        } else {
+            "草案未标记为需要审计，禁止批准。".to_string()
+        },
+    });
+    findings.push(AiPatchSourceTaskAuditFinding {
+        check: "目标版本".to_string(),
+        passed: task_draft.suggested_target_version == expected_target_version,
+        message: if task_draft.suggested_target_version == expected_target_version {
+            "建议目标版本符合 patch 递增规则。".to_string()
+        } else {
+            format!(
+                "建议目标版本应为 {}，当前为 {}。",
+                expected_target_version, task_draft.suggested_target_version
+            )
+        },
+    });
+    findings.push(non_empty_task_audit_finding(
+        "草案标题",
+        &task_draft.proposed_task_title,
+        "草案标题存在。",
+        "草案标题为空，禁止批准。",
+    ));
+    findings.push(non_empty_task_audit_finding(
+        "草案描述",
+        &task_draft.proposed_task_description,
+        "草案描述存在。",
+        "草案描述为空，禁止批准。",
+    ));
+    findings.push(non_empty_task_audit_finding(
+        "来源目标",
+        &task_draft.source_next_goal,
+        "来源目标存在。",
+        "来源目标为空，禁止批准。",
+    ));
+    findings.push(non_empty_task_audit_finding(
+        "来源任务",
+        &task_draft.source_next_task,
+        "来源任务存在。",
+        "来源任务为空，禁止批准。",
+    ));
+    for check in required_checks {
+        let passed = task_draft
+            .acceptance_checks
+            .iter()
+            .any(|existing| existing == &check);
+        findings.push(AiPatchSourceTaskAuditFinding {
+            check: format!("验收检查 {check}"),
+            passed,
+            message: if passed {
+                format!("已包含 `{check}`。")
+            } else {
+                format!("缺少必要验收检查 `{check}`。")
+            },
+        });
+    }
+    let has_agent_plan = task_draft
+        .follow_up_commands
+        .iter()
+        .any(|command| command.contains("agent-plan"));
+    findings.push(AiPatchSourceTaskAuditFinding {
+        check: "后续计划命令".to_string(),
+        passed: has_agent_plan,
+        message: if has_agent_plan {
+            "后续命令包含 `agent-plan`。".to_string()
+        } else {
+            "后续命令缺少 `agent-plan`，禁止批准。".to_string()
+        },
+    });
+    let has_patch_draft = task_draft
+        .follow_up_commands
+        .iter()
+        .any(|command| command.contains("agent-patch-draft"));
+    findings.push(AiPatchSourceTaskAuditFinding {
+        check: "后续补丁草案命令".to_string(),
+        passed: has_patch_draft,
+        message: if has_patch_draft {
+            "后续命令包含 `agent-patch-draft`。".to_string()
+        } else {
+            "后续命令缺少 `agent-patch-draft`，禁止批准。".to_string()
+        },
+    });
+
+    findings
+}
+
+fn non_empty_task_audit_finding(
+    check: &str,
+    value: &str,
+    passed_message: &str,
+    failed_message: &str,
+) -> AiPatchSourceTaskAuditFinding {
+    let passed = normalize_optional_text(value).is_some();
+    AiPatchSourceTaskAuditFinding {
+        check: check.to_string(),
+        passed,
+        message: if passed {
+            passed_message.to_string()
+        } else {
+            failed_message.to_string()
+        },
+    }
+}
+
+fn patch_source_task_audit_goal(task_draft: &AiPatchSourceTaskDraftRecord) -> String {
+    format!(
+        "{}：{}",
+        task_draft.proposed_task_title, task_draft.source_next_task
+    )
+}
+
+fn patch_source_task_audit_follow_up_commands(
+    status: AiPatchSourceTaskAuditStatus,
+    task_draft: &AiPatchSourceTaskDraftRecord,
+    approved_goal: &str,
+) -> Vec<String> {
+    match status {
+        AiPatchSourceTaskAuditStatus::Approved => vec![
+            "cargo run -- preflight".to_string(),
+            format!(
+                "cargo run -- agent-plan \"{}\"",
+                task_draft.proposed_task_title
+            ),
+            format!("cargo run -- agent-patch-draft \"{approved_goal}\""),
+            "cargo run -- agent-patch-source-task-audit-record TASK_AUDIT_ID".to_string(),
+        ],
+        AiPatchSourceTaskAuditStatus::Blocked => vec![
+            "cargo run -- preflight".to_string(),
+            format!(
+                "cargo run -- agent-patch-source-task-draft-record {}",
+                task_draft.id
+            ),
+        ],
+    }
+}
+
+fn build_ai_patch_source_task_audit_markdown(
+    record: &AiPatchSourceTaskAuditRecord,
+    task_draft: &AiPatchSourceTaskDraftRecord,
+) -> String {
+    let mut markdown = String::new();
+    markdown.push_str("# AI 补丁源码覆盖任务草案审计\n\n");
+    markdown.push_str("# 基本信息\n\n");
+    markdown.push_str(&format!(
+        "- 源版本：{}\n- 任务草案：{}\n- 来源总结：{}\n- 来源 cycle：{}\n- 审计状态：{}\n- 草案状态：{}\n- 建议目标版本：{}\n- 阻断原因：{}\n\n",
+        record.version,
+        record.task_draft_id,
+        record.summary_id,
+        record.cycle_id,
+        record.status,
+        record.source_task_status,
+        record.suggested_target_version,
+        record.blocked_reason.as_deref().unwrap_or("无")
+    ));
+
+    markdown.push_str("# 来源草案\n\n");
+    markdown.push_str(&format!(
+        "- 草案文件：{}\n- 草案 JSON：{}\n- 草案标题：{}\n- 草案描述：{}\n- 来源目标：{}\n- 来源任务：{}\n\n",
+        task_draft.markdown_file.display(),
+        task_draft.file.display(),
+        task_draft.proposed_task_title,
+        task_draft.proposed_task_description,
+        task_draft.source_next_goal,
+        task_draft.source_next_task
+    ));
+
+    markdown.push_str("# 审计发现\n\n");
+    for finding in &record.findings {
+        markdown.push_str(&format!(
+            "- {}：{}，{}\n",
+            finding.check,
+            if finding.passed {
+                "通过"
+            } else {
+                "未通过"
+            },
+            finding.message
+        ));
+    }
+    markdown.push('\n');
+
+    markdown.push_str("# 批准目标\n\n");
+    markdown.push_str(&format!("- {}\n\n", record.approved_goal));
+
+    markdown.push_str("# 后续命令\n\n");
+    for command in &record.follow_up_commands {
+        markdown.push_str(&format!("- `{command}`\n"));
+    }
+    markdown.push('\n');
+
+    markdown.push_str("# 下一步\n\n");
+    match record.status {
+        AiPatchSourceTaskAuditStatus::Approved => {
+            markdown.push_str(
+                "- 草案已通过审计，可以在再次预检后进入 AI 补丁草案流程，后续仍必须执行测试和验证。\n",
+            );
+        }
+        AiPatchSourceTaskAuditStatus::Blocked => {
+            markdown
+                .push_str("- 草案未通过审计，必须先修复草案或重新生成任务草案，再重新执行审计。\n");
+        }
+    }
+    markdown
+}
+
 #[derive(Debug)]
 struct PatchWriteScopeAudit {
     normalized_write_scope: Vec<String>,
@@ -6817,6 +7129,32 @@ impl Error for AiPatchSourceTaskDraftError {
             AiPatchSourceTaskDraftError::Summary(error) => Some(error),
             AiPatchSourceTaskDraftError::Store(error) => Some(error),
             AiPatchSourceTaskDraftError::Version(error) => Some(error),
+        }
+    }
+}
+
+impl fmt::Display for AiPatchSourceTaskAuditError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AiPatchSourceTaskAuditError::TaskDraft(error) => {
+                write!(formatter, "读取源码覆盖下一任务草案失败：{error}")
+            }
+            AiPatchSourceTaskAuditError::Store(error) => {
+                write!(formatter, "写入源码覆盖任务草案审计失败：{error}")
+            }
+            AiPatchSourceTaskAuditError::Version(error) => {
+                write!(formatter, "计算源码覆盖任务草案审计目标版本失败：{error}")
+            }
+        }
+    }
+}
+
+impl Error for AiPatchSourceTaskAuditError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            AiPatchSourceTaskAuditError::TaskDraft(error) => Some(error),
+            AiPatchSourceTaskAuditError::Store(error) => Some(error),
+            AiPatchSourceTaskAuditError::Version(error) => Some(error),
         }
     }
 }
