@@ -560,12 +560,18 @@ fn agent_start(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Box
     boxed(
         app.start_agent_session(&command.version, &command.goal)
             .map(|session| {
+                let context = session
+                    .plan_context
+                    .as_ref()
+                    .map(format_plan_context_summary)
+                    .unwrap_or_else(|| "计划依据 无".to_string());
                 format!(
-                    "SelfForge Agent 会话已创建 {} 版本 {} 状态 {} 步骤 {} 文件 {}",
+                    "SelfForge Agent 会话已创建 {} 版本 {} 状态 {} 步骤 {} {} 文件 {}",
                     session.id,
                     session.version,
                     session.status,
                     session.steps.len(),
+                    context,
                     session.file.display()
                 )
             }),
@@ -619,6 +625,17 @@ fn agent_session(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, B
                     "SelfForge Agent 会话 {} 版本 {} 状态 {} 目标 {}",
                     session.id, session.version, session.status, session.goal
                 )];
+                if let Some(context) = session.plan_context.as_ref() {
+                    lines.push(format_plan_context_summary(context));
+                    if !context.source_versions.is_empty() {
+                        lines.push(format!(
+                            "计划依据来源 {}",
+                            context.source_versions.join("、")
+                        ));
+                    }
+                } else {
+                    lines.push("计划依据 无".to_string());
+                }
                 for step in session.steps {
                     lines.push(format!(
                         "{}. [{}] {} 状态 {} 验证 {}",
@@ -667,6 +684,19 @@ fn agent_session(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, B
                 lines.push(format!("文件 {}", session.file.display()));
                 lines.join("\n")
             }),
+    )
+}
+
+fn format_plan_context_summary(context: &self_forge::AgentSessionPlanContext) -> String {
+    format!(
+        "计划依据 记忆版本 {} 来源 {} 成功 {} 风险 {} 建议 {} 经验 {} 文件 {}",
+        context.memory_version,
+        context.source_versions.len(),
+        context.success_experiences.len(),
+        context.failure_experiences.len(),
+        context.optimization_suggestions.len(),
+        context.reusable_experiences.len(),
+        context.memory_archive_file
     )
 }
 

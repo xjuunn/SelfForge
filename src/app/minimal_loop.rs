@@ -1,6 +1,7 @@
 use super::agent::{
     AgentDefinition, AgentError, AgentPlan, AgentRegistry, AgentRunReference, AgentSession,
-    AgentSessionError, AgentSessionStatus, AgentSessionStore, AgentSessionSummary, AgentStepStatus,
+    AgentSessionError, AgentSessionMemoryInsight, AgentSessionPlanContext, AgentSessionStatus,
+    AgentSessionStore, AgentSessionSummary, AgentStepStatus,
 };
 use super::ai_provider::{
     AiConfigError, AiConfigReport, AiExecutionError, AiExecutionReport, AiProviderRegistry,
@@ -8,8 +9,8 @@ use super::ai_provider::{
 };
 use super::error_archive::{ArchivedErrorEntry, ErrorArchive, ErrorArchiveError, ErrorListQuery};
 use super::memory::{
-    MemoryContextError, MemoryContextReport, MemoryInsightReport, extract_memory_insights,
-    read_recent_memory_context,
+    MemoryContextError, MemoryContextReport, MemoryInsight, MemoryInsightReport,
+    extract_memory_insights, read_recent_memory_context,
 };
 use crate::{
     CycleReport, CycleResult, EvolutionError, ExecutionError, ExecutionReport, ForgeError,
@@ -237,7 +238,20 @@ impl SelfForgeApp {
         version: &str,
         goal: &str,
     ) -> Result<AgentSession, AgentSessionError> {
-        AgentSessionStore::new(&self.root).start(version, goal)
+        let store = AgentSessionStore::new(&self.root);
+        let mut session = store.start(version, goal)?;
+        match self.attach_plan_context(&mut session, version, 5) {
+            Ok(_) => {
+                store.save(&session)?;
+                Ok(session)
+            }
+            Err(error) => {
+                let message = error.to_string();
+                session.mark_failed(message.clone());
+                store.save(&session)?;
+                Err(AgentSessionError::PlanContext { message })
+            }
+        }
     }
 
     pub fn agent_sessions(
@@ -375,7 +389,7 @@ impl SelfForgeApp {
         let store = AgentSessionStore::new(&self.root);
         let mut session = store.start(&state.current_version, goal)?;
         session.mark_running();
-        let memory = match self.memory_insights(&state.current_version, 5) {
+        let memory = match self.attach_plan_context(&mut session, &state.current_version, 5) {
             Ok(report) => report,
             Err(error) => {
                 let source = MinimalLoopError::Memory(error);
@@ -446,7 +460,7 @@ impl SelfForgeApp {
         let store = AgentSessionStore::new(&self.root);
         let mut session = store.start(&state.current_version, goal)?;
         session.mark_running();
-        let memory = match self.memory_insights(&state.current_version, 5) {
+        let memory = match self.attach_plan_context(&mut session, &state.current_version, 5) {
             Ok(report) => report,
             Err(error) => {
                 let source = MinimalLoopError::Memory(error);
@@ -563,7 +577,7 @@ impl SelfForgeApp {
         let store = AgentSessionStore::new(&self.root);
         let mut session = store.start(&state.current_version, goal)?;
         session.mark_running();
-        let memory = match self.memory_insights(&state.current_version, 5) {
+        let memory = match self.attach_plan_context(&mut session, &state.current_version, 5) {
             Ok(report) => report,
             Err(error) => {
                 let source = MinimalLoopError::Memory(error);
@@ -760,6 +774,46 @@ impl SelfForgeApp {
 
         Ok(())
     }
+
+    fn attach_plan_context(
+        &self,
+        session: &mut AgentSession,
+        version: &str,
+        limit: usize,
+    ) -> Result<MemoryInsightReport, MemoryContextError> {
+        let insights = self.memory_insights(version, limit)?;
+        session.plan_context = Some(self.session_plan_context(&insights));
+        Ok(insights)
+    }
+
+    fn session_plan_context(&self, insights: &MemoryInsightReport) -> AgentSessionPlanContext {
+        let archive_file = insights
+            .archive_path
+            .strip_prefix(&self.root)
+            .unwrap_or(&insights.archive_path)
+            .to_string_lossy()
+            .into_owned();
+
+        AgentSessionPlanContext {
+            memory_version: insights.version.clone(),
+            memory_archive_file: archive_file,
+            source_versions: insights.source_versions.clone(),
+            success_experiences: session_memory_insights(&insights.success_experiences),
+            failure_experiences: session_memory_insights(&insights.failure_experiences),
+            optimization_suggestions: session_memory_insights(&insights.optimization_suggestions),
+            reusable_experiences: session_memory_insights(&insights.reusable_experiences),
+        }
+    }
+}
+
+fn session_memory_insights(insights: &[MemoryInsight]) -> Vec<AgentSessionMemoryInsight> {
+    insights
+        .iter()
+        .map(|insight| AgentSessionMemoryInsight {
+            version: insight.version.clone(),
+            text: insight.text.clone(),
+        })
+        .collect()
 }
 
 impl fmt::Display for MinimalLoopError {

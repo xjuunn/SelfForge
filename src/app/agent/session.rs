@@ -47,6 +47,8 @@ pub struct AgentSession {
     pub created_at_unix_seconds: u64,
     pub updated_at_unix_seconds: u64,
     pub plan: AgentPlan,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan_context: Option<AgentSessionPlanContext>,
     pub steps: Vec<AgentSessionStep>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub outcome: Option<String>,
@@ -55,6 +57,28 @@ pub struct AgentSession {
     #[serde(default)]
     pub events: Vec<AgentSessionEvent>,
     pub file: PathBuf,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentSessionPlanContext {
+    pub memory_version: String,
+    pub memory_archive_file: String,
+    #[serde(default)]
+    pub source_versions: Vec<String>,
+    #[serde(default)]
+    pub success_experiences: Vec<AgentSessionMemoryInsight>,
+    #[serde(default)]
+    pub failure_experiences: Vec<AgentSessionMemoryInsight>,
+    #[serde(default)]
+    pub optimization_suggestions: Vec<AgentSessionMemoryInsight>,
+    #[serde(default)]
+    pub reusable_experiences: Vec<AgentSessionMemoryInsight>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentSessionMemoryInsight {
+    pub version: String,
+    pub text: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -142,6 +166,9 @@ pub enum AgentSessionError {
         path: PathBuf,
         source: serde_json::Error,
     },
+    PlanContext {
+        message: String,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -163,6 +190,16 @@ impl AgentSessionStore {
     ) -> Result<AgentSession, AgentSessionError> {
         let version = version.as_ref().to_string();
         let plan = AgentRegistry::standard().plan_for_goal(goal)?;
+        self.start_with_plan_context(version, plan, None)
+    }
+
+    pub fn start_with_plan_context(
+        &self,
+        version: impl AsRef<str>,
+        plan: AgentPlan,
+        plan_context: Option<AgentSessionPlanContext>,
+    ) -> Result<AgentSession, AgentSessionError> {
+        let version = version.as_ref().to_string();
         let layout = self.layout(&version)?;
         fs::create_dir_all(&layout.sessions_dir).map_err(|source| AgentSessionError::Io {
             path: layout.sessions_dir.clone(),
@@ -210,6 +247,7 @@ impl AgentSessionStore {
             created_at_unix_seconds,
             updated_at_unix_seconds: created_at_unix_seconds,
             plan,
+            plan_context,
             steps,
             outcome: None,
             error: None,
@@ -602,6 +640,9 @@ impl fmt::Display for AgentSessionError {
             AgentSessionError::Parse { path, source } => {
                 write!(formatter, "解析 {} 失败：{}", path.display(), source)
             }
+            AgentSessionError::PlanContext { message } => {
+                write!(formatter, "Agent 会话计划上下文生成失败：{message}")
+            }
         }
     }
 }
@@ -619,6 +660,7 @@ impl Error for AgentSessionError {
             AgentSessionError::Io { source, .. } => Some(source),
             AgentSessionError::Serialize { source, .. } => Some(source),
             AgentSessionError::Parse { source, .. } => Some(source),
+            AgentSessionError::PlanContext { .. } => None,
         }
     }
 }
