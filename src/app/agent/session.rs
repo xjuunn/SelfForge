@@ -30,6 +30,13 @@ pub enum AgentStepStatus {
     Failed,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AgentSessionEventKind {
+    SessionCreated,
+    SessionStatusChanged,
+    StepUpdated,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentSession {
     pub id: String,
@@ -44,6 +51,8 @@ pub struct AgentSession {
     pub outcome: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    #[serde(default)]
+    pub events: Vec<AgentSessionEvent>,
     pub file: PathBuf,
 }
 
@@ -60,6 +69,16 @@ pub struct AgentSessionStep {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentSessionEvent {
+    pub order: usize,
+    pub timestamp_unix_seconds: u64,
+    pub kind: AgentSessionEventKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub step_order: Option<usize>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AgentSessionSummary {
     pub id: String,
     pub version: String,
@@ -72,6 +91,8 @@ pub struct AgentSessionSummary {
     pub outcome: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    #[serde(default)]
+    pub event_count: usize,
     pub file: PathBuf,
 }
 
@@ -169,7 +190,7 @@ impl AgentSessionStore {
             })
             .collect::<Vec<_>>();
 
-        let session = AgentSession {
+        let mut session = AgentSession {
             id: id.clone(),
             version: version.clone(),
             goal: plan.goal.clone(),
@@ -180,8 +201,14 @@ impl AgentSessionStore {
             steps,
             outcome: None,
             error: None,
+            events: Vec::new(),
             file: file.clone(),
         };
+        session.record_event(
+            AgentSessionEventKind::SessionCreated,
+            None,
+            "会话已创建并生成 Agent 协作计划。",
+        );
         self.save(&session)?;
 
         Ok(session)
@@ -371,20 +398,34 @@ impl AgentSession {
     pub fn mark_running(&mut self) {
         self.status = AgentSessionStatus::Running;
         self.error = None;
-        self.touch();
+        self.record_event(
+            AgentSessionEventKind::SessionStatusChanged,
+            None,
+            "会话进入运行中状态。",
+        );
     }
 
     pub fn mark_completed(&mut self, outcome: impl Into<String>) {
+        let outcome = outcome.into();
         self.status = AgentSessionStatus::Completed;
-        self.outcome = Some(outcome.into());
+        self.outcome = Some(outcome.clone());
         self.error = None;
-        self.touch();
+        self.record_event(
+            AgentSessionEventKind::SessionStatusChanged,
+            None,
+            format!("会话已完成：{outcome}"),
+        );
     }
 
     pub fn mark_failed(&mut self, error: impl Into<String>) {
+        let error = error.into();
         self.status = AgentSessionStatus::Failed;
-        self.error = Some(error.into());
-        self.touch();
+        self.error = Some(error.clone());
+        self.record_event(
+            AgentSessionEventKind::SessionStatusChanged,
+            None,
+            format!("会话已失败：{error}"),
+        );
     }
 
     pub fn update_step(
@@ -393,16 +434,24 @@ impl AgentSession {
         status: AgentStepStatus,
         result: impl Into<String>,
     ) -> Result<(), AgentSessionError> {
-        let Some(step) = self.steps.iter_mut().find(|step| step.order == order) else {
-            return Err(AgentSessionError::StepNotFound {
-                id: self.id.clone(),
-                order,
-            });
-        };
+        let result = result.into();
+        let status_text = status.to_string();
+        {
+            let Some(step) = self.steps.iter_mut().find(|step| step.order == order) else {
+                return Err(AgentSessionError::StepNotFound {
+                    id: self.id.clone(),
+                    order,
+                });
+            };
 
-        step.status = status;
-        step.result = Some(result.into());
-        self.touch();
+            step.status = status;
+            step.result = Some(result.clone());
+        }
+        self.record_event(
+            AgentSessionEventKind::StepUpdated,
+            Some(order),
+            format!("步骤 {order} 状态更新为 {status_text}：{result}"),
+        );
         Ok(())
     }
 
@@ -417,15 +466,26 @@ impl AgentSession {
             step_count: self.steps.len(),
             outcome: self.outcome.clone(),
             error: self.error.clone(),
+            event_count: self.events.len(),
             file: self.file.clone(),
         }
     }
 
-    fn touch(&mut self) {
-        self.updated_at_unix_seconds = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
+    fn record_event(
+        &mut self,
+        kind: AgentSessionEventKind,
+        step_order: Option<usize>,
+        message: impl Into<String>,
+    ) {
+        let timestamp_unix_seconds = current_unix_seconds();
+        self.updated_at_unix_seconds = timestamp_unix_seconds;
+        self.events.push(AgentSessionEvent {
+            order: self.events.len() + 1,
+            timestamp_unix_seconds,
+            kind,
+            step_order,
+            message: message.into(),
+        });
     }
 }
 
@@ -447,6 +507,16 @@ impl fmt::Display for AgentStepStatus {
             AgentStepStatus::Running => formatter.write_str("运行中"),
             AgentStepStatus::Completed => formatter.write_str("已完成"),
             AgentStepStatus::Failed => formatter.write_str("已失败"),
+        }
+    }
+}
+
+impl fmt::Display for AgentSessionEventKind {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AgentSessionEventKind::SessionCreated => formatter.write_str("会话创建"),
+            AgentSessionEventKind::SessionStatusChanged => formatter.write_str("会话状态"),
+            AgentSessionEventKind::StepUpdated => formatter.write_str("步骤更新"),
         }
     }
 }
@@ -531,4 +601,11 @@ fn validate_session_id(id: &str) -> Result<(), AgentSessionError> {
     } else {
         Err(AgentSessionError::InvalidSessionId { id: id.to_string() })
     }
+}
+
+fn current_unix_seconds() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
 }

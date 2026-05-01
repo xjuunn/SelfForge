@@ -502,11 +502,12 @@ fn agent_sessions(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, 
         )];
         for session in sessions {
             lines.push(format!(
-                "{} 版本 {} 状态 {} 步骤 {} 目标 {} 文件 {}",
+                "{} 版本 {} 状态 {} 步骤 {} 事件 {} 目标 {} 文件 {}",
                 session.id,
                 session.version,
                 session.status,
                 session.step_count,
+                session.event_count,
                 session.goal,
                 session.file.display()
             ));
@@ -528,6 +529,26 @@ fn agent_session(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, B
                     lines.push(format!(
                         "{}. [{}] {} 状态 {} 验证 {}",
                         step.order, step.agent_id, step.title, step.status, step.verification
+                    ));
+                    if let Some(result) = step.result {
+                        lines.push(format!("   结果 {}", result));
+                    }
+                }
+                if let Some(outcome) = session.outcome {
+                    lines.push(format!("结果 {}", outcome));
+                }
+                if let Some(error) = session.error {
+                    lines.push(format!("错误 {}", error));
+                }
+                lines.push(format!("事件 {} 条", session.events.len()));
+                for event in session.events {
+                    let step = event
+                        .step_order
+                        .map(|order| format!(" 步骤 {order}"))
+                        .unwrap_or_default();
+                    lines.push(format!(
+                        "事件 {} 时间 {} 类型 {}{} 内容 {}",
+                        event.order, event.timestamp_unix_seconds, event.kind, step, event.message
                     ));
                 }
                 lines.push(format!("文件 {}", session.file.display()));
