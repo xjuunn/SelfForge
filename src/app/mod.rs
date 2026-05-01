@@ -8,9 +8,10 @@ pub use agent::{
     AgentCapability, AgentDefinition, AgentError, AgentPlan, AgentPlanStep, AgentRegistry,
     AgentRunReference, AgentSession, AgentSessionError, AgentSessionEvent, AgentSessionEventKind,
     AgentSessionMemoryInsight, AgentSessionPlanContext, AgentSessionStatus, AgentSessionStep,
-    AgentSessionStore, AgentSessionSummary, AgentStepStatus, AgentToolAssignment, AgentToolBinding,
-    AgentToolConfig, AgentToolConfigInitReport, AgentToolDefinition, AgentToolError,
-    AgentToolInvocation, AgentToolInvocationInput, AgentToolInvocationReport, AgentToolReport,
+    AgentSessionStore, AgentSessionSummary, AgentStepExecutionReport, AgentStepExecutionRequest,
+    AgentStepStatus, AgentToolAssignment, AgentToolBinding, AgentToolConfig,
+    AgentToolConfigInitReport, AgentToolDefinition, AgentToolError, AgentToolInvocation,
+    AgentToolInvocationInput, AgentToolInvocationReport, AgentToolReport,
 };
 pub use ai_provider::{
     AiConfigError, AiConfigReport, AiExecutionError, AiExecutionReport, AiProviderRegistry,
@@ -26,7 +27,7 @@ pub use memory::{
 };
 pub use minimal_loop::{
     AgentEvolutionError, AgentEvolutionReport, AgentPlanReport, AgentPlanReportError,
-    AgentRunError, AgentRunReport, AgentSingleEvolutionReport, AgentToolInvocationError,
-    AgentVerificationReport, MinimalLoopError, MinimalLoopOutcome, MinimalLoopReport,
-    PreflightReport, SelfForgeApp,
+    AgentRunError, AgentRunReport, AgentSingleEvolutionReport, AgentStepExecutionError,
+    AgentToolInvocationError, AgentVerificationReport, MinimalLoopError, MinimalLoopOutcome,
+    MinimalLoopReport, PreflightReport, SelfForgeApp,
 };

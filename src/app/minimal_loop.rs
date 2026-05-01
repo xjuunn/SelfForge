@@ -1,9 +1,10 @@
 use super::agent::{
     AgentDefinition, AgentError, AgentPlan, AgentRegistry, AgentRunReference, AgentSession,
     AgentSessionError, AgentSessionMemoryInsight, AgentSessionPlanContext, AgentSessionStatus,
-    AgentSessionStore, AgentSessionSummary, AgentStepStatus, AgentToolConfigInitReport,
-    AgentToolError, AgentToolInvocation, AgentToolInvocationInput, AgentToolInvocationReport,
-    AgentToolReport, apply_tools_to_plan, initialize_agent_tool_config, load_agent_tool_report,
+    AgentSessionStep, AgentSessionStore, AgentSessionSummary, AgentStepExecutionReport,
+    AgentStepExecutionRequest, AgentStepStatus, AgentToolConfigInitReport, AgentToolError,
+    AgentToolInvocation, AgentToolInvocationInput, AgentToolInvocationReport, AgentToolReport,
+    apply_tools_to_plan, initialize_agent_tool_config, load_agent_tool_report,
 };
 use super::ai_provider::{
     AiConfigError, AiConfigReport, AiExecutionError, AiExecutionReport, AiProviderRegistry,
@@ -154,6 +155,27 @@ pub enum AgentToolInvocationError {
     ToolNotAssigned { agent_id: String, tool_id: String },
     UnsupportedInput { tool_id: String, expected: String },
     ToolRunnerMissing { tool_id: String },
+}
+
+#[derive(Debug)]
+pub enum AgentStepExecutionError {
+    Session(AgentSessionError),
+    Tool(AgentToolInvocationError),
+    NoPendingStep {
+        session_id: String,
+    },
+    ToolNotInStep {
+        step_order: usize,
+        tool_id: String,
+    },
+    NoRunnableTool {
+        step_order: usize,
+    },
+    InputRequired {
+        step_order: usize,
+        tool_id: String,
+        input: String,
+    },
 }
 
 impl SelfForgeApp {
@@ -458,6 +480,71 @@ impl SelfForgeApp {
             },
             _ => Err(AgentToolInvocationError::ToolRunnerMissing { tool_id }),
         }
+    }
+
+    pub fn execute_next_agent_step(
+        &self,
+        request: AgentStepExecutionRequest,
+    ) -> Result<AgentStepExecutionReport, AgentStepExecutionError> {
+        let store = AgentSessionStore::new(&self.root);
+        let mut session = store.load(&request.session_version, &request.session_id)?;
+        let step = session
+            .steps
+            .iter()
+            .find(|step| step.status == AgentStepStatus::Pending)
+            .cloned()
+            .ok_or_else(|| AgentStepExecutionError::NoPendingStep {
+                session_id: session.id.clone(),
+            })?;
+
+        if session.status == AgentSessionStatus::Planned {
+            session.mark_running();
+            store.save(&session)?;
+        }
+
+        let invocation = self.step_invocation(&request, &step)?;
+        let tool = match self.invoke_agent_tool(invocation) {
+            Ok(report) => report,
+            Err(error) => {
+                let mut failed_session =
+                    store.load(&request.session_version, &request.session_id)?;
+                failed_session.update_step(
+                    step.order,
+                    AgentStepStatus::Failed,
+                    format!("工具调用失败：{error}"),
+                )?;
+                failed_session.mark_failed(format!("步骤 {} 工具调用失败：{error}", step.order));
+                store.save(&failed_session)?;
+                return Err(AgentStepExecutionError::Tool(error));
+            }
+        };
+
+        let mut session = store.load(&request.session_version, &request.session_id)?;
+        if tool.run.is_none() {
+            session.update_step(
+                step.order,
+                AgentStepStatus::Completed,
+                format!("工具 {} 调用完成：{}", tool.tool_id, tool.summary),
+            )?;
+        }
+
+        let session_completed = session
+            .steps
+            .iter()
+            .all(|step| step.status == AgentStepStatus::Completed);
+        if session_completed && session.status != AgentSessionStatus::Completed {
+            session.mark_completed("所有计划步骤已完成。");
+        }
+        store.save(&session)?;
+
+        Ok(AgentStepExecutionReport {
+            session_id: session.id.clone(),
+            session_version: session.version.clone(),
+            step_order: step.order,
+            agent_id: step.agent_id,
+            tool,
+            session_completed,
+        })
     }
 
     pub fn memory_context(
@@ -1034,6 +1121,113 @@ impl SelfForgeApp {
         store.start_with_plan_context(version, plan, None)
     }
 
+    fn step_invocation(
+        &self,
+        request: &AgentStepExecutionRequest,
+        step: &AgentSessionStep,
+    ) -> Result<AgentToolInvocation, AgentStepExecutionError> {
+        if let Some(tool_id) = &request.tool_id {
+            if !step.tool_ids.iter().any(|candidate| candidate == tool_id) {
+                return Err(AgentStepExecutionError::ToolNotInStep {
+                    step_order: step.order,
+                    tool_id: tool_id.clone(),
+                });
+            }
+            return self.step_invocation_for_tool(request, step, tool_id);
+        }
+
+        let mut input_required = None;
+        for tool_id in &step.tool_ids {
+            match self.step_invocation_for_tool(request, step, tool_id) {
+                Ok(invocation) => return Ok(invocation),
+                Err(AgentStepExecutionError::InputRequired {
+                    step_order,
+                    tool_id,
+                    input,
+                }) => {
+                    if input_required.is_none() {
+                        input_required = Some(AgentStepExecutionError::InputRequired {
+                            step_order,
+                            tool_id,
+                            input,
+                        });
+                    }
+                }
+                Err(AgentStepExecutionError::NoRunnableTool { .. }) => {}
+                Err(error) => return Err(error),
+            }
+        }
+
+        Err(
+            input_required.unwrap_or(AgentStepExecutionError::NoRunnableTool {
+                step_order: step.order,
+            }),
+        )
+    }
+
+    fn step_invocation_for_tool(
+        &self,
+        request: &AgentStepExecutionRequest,
+        step: &AgentSessionStep,
+        tool_id: &str,
+    ) -> Result<AgentToolInvocation, AgentStepExecutionError> {
+        let input = match tool_id {
+            "memory.context" => AgentToolInvocationInput::MemoryContext {
+                limit: request.limit,
+            },
+            "memory.insights" => AgentToolInvocationInput::MemoryInsights {
+                limit: request.limit,
+            },
+            "agent.session" => AgentToolInvocationInput::AgentSessions {
+                limit: request.limit,
+                all_major: true,
+            },
+            "forge.archive" => AgentToolInvocationInput::ForgeArchiveStatus,
+            "runtime.run" => {
+                let Some(program) = &request.program else {
+                    return Err(AgentStepExecutionError::InputRequired {
+                        step_order: step.order,
+                        tool_id: tool_id.to_string(),
+                        input: "PROGRAM".to_string(),
+                    });
+                };
+                AgentToolInvocationInput::RuntimeRun {
+                    session_version: request.session_version.clone(),
+                    session_id: request.session_id.clone(),
+                    target_version: request.target_version.clone(),
+                    step_order: step.order,
+                    program: program.clone(),
+                    args: request.args.clone(),
+                    timeout_ms: request.timeout_ms,
+                }
+            }
+            "ai.request" => {
+                let Some(prompt) = &request.prompt else {
+                    return Err(AgentStepExecutionError::InputRequired {
+                        step_order: step.order,
+                        tool_id: tool_id.to_string(),
+                        input: "prompt".to_string(),
+                    });
+                };
+                AgentToolInvocationInput::AiRequestPreview {
+                    prompt: prompt.clone(),
+                }
+            }
+            _ => {
+                return Err(AgentStepExecutionError::NoRunnableTool {
+                    step_order: step.order,
+                });
+            }
+        };
+
+        Ok(AgentToolInvocation {
+            agent_id: step.agent_id.clone(),
+            tool_id: tool_id.to_string(),
+            version: request.session_version.clone(),
+            input,
+        })
+    }
+
     fn attach_plan_context(
         &self,
         session: &mut AgentSession,
@@ -1309,6 +1503,58 @@ impl From<MinimalLoopError> for AgentToolInvocationError {
 impl From<VersionError> for AgentToolInvocationError {
     fn from(error: VersionError) -> Self {
         AgentToolInvocationError::Version(error)
+    }
+}
+
+impl fmt::Display for AgentStepExecutionError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AgentStepExecutionError::Session(error) => write!(formatter, "{error}"),
+            AgentStepExecutionError::Tool(error) => write!(formatter, "{error}"),
+            AgentStepExecutionError::NoPendingStep { session_id } => {
+                write!(formatter, "Agent 会话 {session_id} 没有待执行步骤")
+            }
+            AgentStepExecutionError::ToolNotInStep {
+                step_order,
+                tool_id,
+            } => write!(formatter, "步骤 {step_order} 未绑定工具 {tool_id}"),
+            AgentStepExecutionError::NoRunnableTool { step_order } => {
+                write!(formatter, "步骤 {step_order} 没有可自动执行的工具")
+            }
+            AgentStepExecutionError::InputRequired {
+                step_order,
+                tool_id,
+                input,
+            } => write!(
+                formatter,
+                "步骤 {step_order} 的工具 {tool_id} 需要输入 {input}"
+            ),
+        }
+    }
+}
+
+impl Error for AgentStepExecutionError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            AgentStepExecutionError::Session(error) => Some(error),
+            AgentStepExecutionError::Tool(error) => Some(error),
+            AgentStepExecutionError::NoPendingStep { .. }
+            | AgentStepExecutionError::ToolNotInStep { .. }
+            | AgentStepExecutionError::NoRunnableTool { .. }
+            | AgentStepExecutionError::InputRequired { .. } => None,
+        }
+    }
+}
+
+impl From<AgentSessionError> for AgentStepExecutionError {
+    fn from(error: AgentSessionError) -> Self {
+        AgentStepExecutionError::Session(error)
+    }
+}
+
+impl From<AgentToolInvocationError> for AgentStepExecutionError {
+    fn from(error: AgentToolInvocationError) -> Self {
+        AgentStepExecutionError::Tool(error)
     }
 }
 

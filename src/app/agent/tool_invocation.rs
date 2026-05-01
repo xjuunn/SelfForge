@@ -48,3 +48,30 @@ pub struct AgentToolInvocationReport {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub run: Option<AgentRunReference>,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentStepExecutionRequest {
+    pub session_version: String,
+    pub session_id: String,
+    pub target_version: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_id: Option<String>,
+    pub limit: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub program: Option<String>,
+    #[serde(default)]
+    pub args: Vec<String>,
+    pub timeout_ms: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentStepExecutionReport {
+    pub session_id: String,
+    pub session_version: String,
+    pub step_order: usize,
+    pub agent_id: String,
+    pub tool: AgentToolInvocationReport,
+    pub session_completed: bool,
+}

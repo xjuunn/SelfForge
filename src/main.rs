@@ -1,7 +1,7 @@
 use self_forge::{
-    AgentToolInvocation, AgentToolInvocationInput, CURRENT_VERSION, CycleResult, ErrorArchive,
-    ErrorListQuery, ForgeState, MinimalLoopOutcome, RunQuery, SelfForgeApp, Supervisor,
-    VersionBump,
+    AgentStepExecutionRequest, AgentToolInvocation, AgentToolInvocationInput, CURRENT_VERSION,
+    CycleResult, ErrorArchive, ErrorListQuery, ForgeState, MinimalLoopOutcome, RunQuery,
+    SelfForgeApp, Supervisor, VersionBump,
 };
 use std::env;
 use std::error::Error;
@@ -53,6 +53,7 @@ fn main() {
         "agents" => agents(&app),
         "agent-tools" => agent_tools(&app, args.collect()),
         "agent-tool-run" => agent_tool_run(&app, args.collect()),
+        "agent-step" => agent_step(&app, args.collect()),
         "agent-plan" => agent_plan(&app, args.collect()),
         "agent-start" => agent_start(&app, args.collect()),
         "agent-sessions" => agent_sessions(&app, args.collect()),
@@ -608,6 +609,38 @@ fn agent_tool_run(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, 
     }))
 }
 
+fn agent_step(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Box<dyn Error>> {
+    let request = parse_agent_step_args(arguments)?;
+
+    boxed(app.execute_next_agent_step(request).map(|report| {
+        let completed = if report.session_completed {
+            "是"
+        } else {
+            "否"
+        };
+        let mut lines = vec![format!(
+            "SelfForge Agent 步进 会话 {} 版本 {} 步骤 {} Agent {} 工具 {} 完成会话 {} 摘要 {}",
+            report.session_id,
+            report.session_version,
+            report.step_order,
+            report.agent_id,
+            report.tool.tool_id,
+            completed,
+            report.tool.summary
+        )];
+        for detail in report.tool.details {
+            lines.push(format!("- {detail}"));
+        }
+        if let Some(run) = report.tool.run {
+            lines.push(format!(
+                "运行记录 {} 退出码 {:?} 超时 {} 报告 {}",
+                run.run_id, run.exit_code, run.timed_out, run.report_file
+            ));
+        }
+        lines.join("\n")
+    }))
+}
+
 fn agent_plan(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Box<dyn Error>> {
     let command = parse_agent_plan_args(arguments)?;
     let report = app.agent_plan_with_memory(&command.goal, &command.version, command.limit);
@@ -1054,6 +1087,18 @@ struct AgentToolRunArgs {
     session_id: Option<String>,
     step_order: usize,
     target_version: String,
+    timeout_ms: u64,
+    prompt: Option<String>,
+    command_start: Option<usize>,
+    arguments: Vec<String>,
+}
+
+struct AgentStepArgs {
+    session_version: String,
+    session_id: String,
+    target_version: String,
+    tool_id: Option<String>,
+    limit: usize,
     timeout_ms: u64,
     prompt: Option<String>,
     command_start: Option<usize>,
@@ -1634,6 +1679,138 @@ fn parse_agent_tool_run_command(
     })
 }
 
+fn parse_agent_step_args(
+    arguments: Vec<String>,
+) -> Result<AgentStepExecutionRequest, Box<dyn Error>> {
+    let command = parse_agent_step_command(arguments)?;
+    let (program, args) = if let Some(start) = command.command_start {
+        let program = command
+            .arguments
+            .get(start)
+            .ok_or("agent-step 的 -- 后需要命令")?
+            .clone();
+        (Some(program), command.arguments[start + 1..].to_vec())
+    } else {
+        (None, Vec::new())
+    };
+
+    Ok(AgentStepExecutionRequest {
+        session_version: command.session_version,
+        session_id: command.session_id,
+        target_version: command.target_version,
+        tool_id: command.tool_id,
+        limit: command.limit,
+        program,
+        args,
+        timeout_ms: command.timeout_ms,
+        prompt: command.prompt,
+    })
+}
+
+fn parse_agent_step_command(arguments: Vec<String>) -> Result<AgentStepArgs, Box<dyn Error>> {
+    let state = ForgeState::load(env::current_dir()?)?;
+    let mut session_version = state.current_version.clone();
+    let mut target_version = state.current_version.clone();
+    let mut session_id = None;
+    let mut tool_id = None;
+    let mut limit = 5;
+    let mut timeout_ms = 30_000;
+    let mut prompt = None;
+    let mut command_start = None;
+    let mut index = 0;
+
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "--" => {
+                command_start = Some(index + 1);
+                break;
+            }
+            "--session-version" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--session-version 需要版本号".into());
+                };
+                session_version = value.clone();
+                index += 2;
+            }
+            "--current" => {
+                session_version = state.current_version.clone();
+                index += 1;
+            }
+            "--candidate" => {
+                session_version = state.candidate_version.clone().ok_or("当前没有候选版本")?;
+                index += 1;
+            }
+            "--target-current" => {
+                target_version = state.current_version.clone();
+                index += 1;
+            }
+            "--target-candidate" => {
+                target_version = state.candidate_version.clone().ok_or("当前没有候选版本")?;
+                index += 1;
+            }
+            "--target-version" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--target-version 需要版本号".into());
+                };
+                target_version = value.clone();
+                index += 2;
+            }
+            "--tool" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--tool 需要工具标识".into());
+                };
+                tool_id = Some(value.clone());
+                index += 2;
+            }
+            "--limit" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--limit 需要数量".into());
+                };
+                limit = value.parse::<usize>()?;
+                index += 2;
+            }
+            "--timeout-ms" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--timeout-ms 需要毫秒数".into());
+                };
+                timeout_ms = value.parse::<u64>()?;
+                index += 2;
+            }
+            "--prompt" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--prompt 需要提示词".into());
+                };
+                prompt = Some(value.clone());
+                index += 2;
+            }
+            other if other.starts_with("--") => {
+                return Err(format!("未知 agent-step 参数: {other}").into());
+            }
+            other => {
+                if session_id.is_none() {
+                    session_id = Some(other.to_string());
+                    index += 1;
+                } else {
+                    command_start = Some(index);
+                    break;
+                }
+            }
+        }
+    }
+
+    Ok(AgentStepArgs {
+        session_version,
+        session_id: session_id.ok_or("agent-step 需要会话标识")?,
+        target_version,
+        tool_id,
+        limit,
+        timeout_ms,
+        prompt,
+        command_start,
+        arguments,
+    })
+}
+
 fn parse_agent_start_args(arguments: Vec<String>) -> Result<AgentStartArgs, Box<dyn Error>> {
     let state = ForgeState::load(env::current_dir()?)?;
     let mut version = state.current_version.clone();
@@ -1912,7 +2089,7 @@ fn parse_agent_verify_args(arguments: Vec<String>) -> Result<AgentVerifyArgs, Bo
 }
 
 fn help_text() -> &'static str {
-    "SelfForge commands: init, validate, status, preflight, memory-context [--current|--candidate|--version VERSION] [--limit N], memory-insights [--current|--candidate|--version VERSION] [--limit N], ai-config, ai-request [--dry-run] [--timeout-ms N] [prompt], agents, agent-tools [--current|--candidate|--version VERSION] [--init], agent-tool-run TOOL_ID --agent AGENT_ID [--current|--candidate|--version VERSION] [--limit N] [--all] [--session SESSION_ID] [--session-version VERSION] [--step N] [--target-version VERSION] [--timeout-ms N] [--prompt TEXT] [-- PROGRAM ARGS...], agent-plan [--current|--candidate|--version VERSION] [--limit N] [goal], agent-start [--current|--candidate|--version VERSION] [goal], agent-sessions [--current|--candidate|--version VERSION] [--limit N] [--all], agent-session [--current|--candidate|--version VERSION] SESSION_ID, agent-run [--session-version VERSION] [--current|--candidate|--version VERSION] [--step N] [--timeout-ms N] SESSION_ID -- PROGRAM [ARGS...], agent-verify [--current|--candidate|--version VERSION] [--timeout-ms N] [goal] -- PROGRAM [ARGS...], agent-advance [goal], agent-evolve [goal], advance [goal], promote, rollback [reason], cycle, run [--current|--candidate|--version VERSION] [--timeout-ms N] -- PROGRAM [ARGS...], runs [--current|--candidate|--version VERSION] [--limit N] [--failed] [--timed-out], errors [--current|--candidate|--version VERSION] [--limit N] [--open] [--resolved], record-error [--current|--candidate|--version VERSION] [--run-id RUN_ID] [--stage TEXT] [--solution TEXT], resolve-error [--current|--candidate|--version VERSION] --run-id RUN_ID [--verification TEXT], evolve [--patch|--minor|--major] [goal]"
+    "SelfForge commands: init, validate, status, preflight, memory-context [--current|--candidate|--version VERSION] [--limit N], memory-insights [--current|--candidate|--version VERSION] [--limit N], ai-config, ai-request [--dry-run] [--timeout-ms N] [prompt], agents, agent-tools [--current|--candidate|--version VERSION] [--init], agent-tool-run TOOL_ID --agent AGENT_ID [--current|--candidate|--version VERSION] [--limit N] [--all] [--session SESSION_ID] [--session-version VERSION] [--step N] [--target-version VERSION] [--timeout-ms N] [--prompt TEXT] [-- PROGRAM ARGS...], agent-step [--session-version VERSION] [--target-version VERSION] [--tool TOOL_ID] [--limit N] [--timeout-ms N] [--prompt TEXT] SESSION_ID [-- PROGRAM ARGS...], agent-plan [--current|--candidate|--version VERSION] [--limit N] [goal], agent-start [--current|--candidate|--version VERSION] [goal], agent-sessions [--current|--candidate|--version VERSION] [--limit N] [--all], agent-session [--current|--candidate|--version VERSION] SESSION_ID, agent-run [--session-version VERSION] [--current|--candidate|--version VERSION] [--step N] [--timeout-ms N] SESSION_ID -- PROGRAM [ARGS...], agent-verify [--current|--candidate|--version VERSION] [--timeout-ms N] [goal] -- PROGRAM [ARGS...], agent-advance [goal], agent-evolve [goal], advance [goal], promote, rollback [reason], cycle, run [--current|--candidate|--version VERSION] [--timeout-ms N] -- PROGRAM [ARGS...], runs [--current|--candidate|--version VERSION] [--limit N] [--failed] [--timed-out], errors [--current|--candidate|--version VERSION] [--limit N] [--open] [--resolved], record-error [--current|--candidate|--version VERSION] [--run-id RUN_ID] [--stage TEXT] [--solution TEXT], resolve-error [--current|--candidate|--version VERSION] --run-id RUN_ID [--verification TEXT], evolve [--patch|--minor|--major] [goal]"
 }
 
 fn exit_with_error(error: Box<dyn Error>) -> ! {

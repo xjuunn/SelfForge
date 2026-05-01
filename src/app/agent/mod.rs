@@ -11,7 +11,8 @@ pub use session::{
     AgentSessionStore, AgentSessionSummary, AgentStepStatus,
 };
 pub use tool_invocation::{
-    AgentToolInvocation, AgentToolInvocationInput, AgentToolInvocationReport,
+    AgentStepExecutionReport, AgentStepExecutionRequest, AgentToolInvocation,
+    AgentToolInvocationInput, AgentToolInvocationReport,
 };
 pub use tools::{
     AgentToolAssignment, AgentToolBinding, AgentToolConfig, AgentToolConfigInitReport,
