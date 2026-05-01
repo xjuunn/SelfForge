@@ -194,11 +194,13 @@ AI 响应解析必须优先使用应用层统一文本响应结构。OpenAI、De
 
 多 Agent 能力必须通过 `src/app/agent/` 扩展。新增 Agent 应优先表现为 `AgentDefinition`、能力集合和计划步骤，不得把 Agent 业务逻辑直接写入 CLI。查询 Agent 目录使用 `agents`，生成协作计划使用 `agent-plan [--current|--candidate|--version VERSION] [--limit N] [goal]`。`agent-plan` 必须通过应用层读取 `memory-insights` 并展示来源版本、成功经验、失败风险、优化建议和可复用经验摘要，禁止绕过统一记忆经验结构另建计划上下文。后续接入真实多 Agent 执行时，必须复用注册表、计划结构、状态持久化、沙箱执行和 forge 归档，不得创建并行的 Agent 配置体系。
 
-多 AI 同步修改代码必须使用协作任务板。初始化使用 `agent-work-init [--current|--candidate|--version VERSION] [--threads N] [goal]`，队列只能写入 `workspaces/vMAJOR/artifacts/agents/coordination/work-queue.json`，禁止为小版本创建独立队列目录或文件。查询使用 `agent-work-status`，领取使用 `agent-work-claim [--worker ID] [--agent AGENT_ID]`，完成使用 `agent-work-complete TASK_ID --worker ID --summary TEXT`，释放使用 `agent-work-release TASK_ID --worker ID --reason TEXT`。
+多 AI 同步修改代码必须使用协作任务板。初始化使用 `agent-work-init [--current|--candidate|--version VERSION] [--threads N] [goal]`，队列只能写入 `workspaces/vMAJOR/artifacts/agents/coordination/work-queue.json`，禁止为小版本创建独立队列目录或文件。查询使用 `agent-work-status`，领取使用 `agent-work-claim [--worker ID] [--agent AGENT_ID] [--lease-seconds N]`，完成使用 `agent-work-complete TASK_ID --worker ID --summary TEXT`，释放使用 `agent-work-release TASK_ID --worker ID --reason TEXT`，清理过期领取使用 `agent-work-reap [--reason TEXT]`。
 
 所有 AI 线程在修改任何文件前必须先领取任务。单 AI 线程可以使用默认 `ai-1` 自动领取当前最高优先级可执行任务；多个 AI 线程必须使用不同 `--worker` 标识，并优先领取状态为待领取、依赖已完成、写入范围不冲突的任务。领取结果中的提示词是该线程的执行边界，线程只能处理当前任务的写入范围、验收标准和归档要求，禁止主动实现其他未领取任务，禁止覆盖其他线程已领取任务的写入范围。
 
 协作冲突必须显式处理。若发现依赖缺失、写入范围重叠、测试阻断、职责不清或任务已经被其他线程完成，当前线程必须执行 `agent-work-release` 写明原因，或在任务板中保持未完成状态等待重新分配，禁止静默继续修改。任务完成必须写入摘要，并由后续验证任务统一执行测试、审查和中文归档。任务板是多 AI 协作的唯一调度事实来源，不得以聊天记录、进程内存或临时文本替代。
+
+协作任务领取必须带有租约。默认租约由队列写入，临时验证可用 `--lease-seconds N` 缩短租约；状态查询必须展示租约信息。若线程中断、超时或无法继续，其他线程不得直接覆盖该任务，必须先使用 `agent-work-reap` 释放已过期任务，或等待持有线程主动 `agent-work-release`。释放和过期清理都必须写入队列事件，恢复候选任务提示词，确保后续线程重新领取时获得新的执行边界。
 
 Agent Tool 能力必须通过 `src/app/agent/` 扩展。工具定义必须表现为结构化 `AgentToolDefinition`，并通过 `agent-tools [--current|--candidate|--version VERSION] [--init]` 查询或初始化配置。动态配置文件只允许写入 `workspaces/vMAJOR/artifacts/agents/tool-config.json`，禁止为小版本创建独立工具配置文件。Agent 可以通过能力匹配和 `agent_bindings` 自由组合工具，但工具配置必须验证 Agent 标识、工具标识、启用状态和重复定义，禁止未知工具静默进入计划。`agent-plan` 和 Agent 会话必须展示或持久化工具绑定结果，CLI 不得绕过应用层直接解析工具配置。
 

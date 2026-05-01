@@ -1,9 +1,10 @@
 {
-  "version": "v0.1.41",
+  "version": "v0.1.42",
   "goal": "多 AI 协作修改代码",
   "thread_count": 3,
-  "created_at_unix_seconds": 1777629772,
-  "updated_at_unix_seconds": 1777629773,
+  "lease_duration_seconds": 3600,
+  "created_at_unix_seconds": 1777630213,
+  "updated_at_unix_seconds": 1777630216,
   "conflict_policy": "同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。",
   "prompt_policy": "每个线程只执行领取到的任务，必须遵守写入范围、依赖关系、验收标准和归档规则。",
   "tasks": [
@@ -42,7 +43,7 @@
         "领取必须防止重复任务和写入范围冲突。"
       ],
       "status": "Pending",
-      "result": "最终提示词验证完成，释放任务保持队列可复用。",
+      "result": "真实租约过期验证",
       "prompt": "你是 SelfForge 多 AI 协作任务的候选执行者。\n\n全局目标：多 AI 协作修改代码\n任务编号：coord-002-application\n任务标题：实现应用层协作队列\n职责 Agent：builder\n\n任务描述：实现任务板持久化、领取、完成、释放和冲突检测。\n\n写入范围：src/app/agent/，src/app/minimal_loop.rs，src/app/mod.rs\n\n验收标准：队列必须写入 major 工作区 artifacts/agents/coordination；领取必须防止重复任务和写入范围冲突\n\n协作规则：先领取任务，再修改代码；只处理领取到的任务；不得修改其他任务的写入范围；发现冲突时释放任务并记录原因。"
     },
     {
@@ -112,25 +113,25 @@
   "events": [
     {
       "order": 1,
-      "timestamp_unix_seconds": 1777629772,
+      "timestamp_unix_seconds": 1777630213,
       "action": "init",
       "message": "多 AI 协作队列已初始化。"
     },
     {
       "order": 2,
-      "timestamp_unix_seconds": 1777629773,
+      "timestamp_unix_seconds": 1777630214,
       "action": "claim",
-      "worker_id": "ai-1",
+      "worker_id": "ai-lease",
       "task_id": "coord-002-application",
       "message": "任务已被工作线程领取。"
     },
     {
       "order": 3,
-      "timestamp_unix_seconds": 1777629773,
-      "action": "release",
-      "worker_id": "ai-1",
+      "timestamp_unix_seconds": 1777630216,
+      "action": "reap",
+      "worker_id": "ai-lease",
       "task_id": "coord-002-application",
-      "message": "最终提示词验证完成，释放任务保持队列可复用。"
+      "message": "真实租约过期验证"
     }
   ]
 }

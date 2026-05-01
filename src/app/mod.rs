@@ -13,7 +13,7 @@ pub use agent::{
     AgentToolConfigInitReport, AgentToolDefinition, AgentToolError, AgentToolInvocation,
     AgentToolInvocationInput, AgentToolInvocationReport, AgentToolReport, AgentWorkClaimReport,
     AgentWorkCoordinator, AgentWorkError, AgentWorkEvent, AgentWorkQueue, AgentWorkQueueReport,
-    AgentWorkTask, AgentWorkTaskStatus,
+    AgentWorkReapReport, AgentWorkTask, AgentWorkTaskStatus,
 };
 pub use ai_provider::{
     AiConfigError, AiConfigReport, AiExecutionError, AiExecutionReport, AiProviderRegistry,

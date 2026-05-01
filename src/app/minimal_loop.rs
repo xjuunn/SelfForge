@@ -5,7 +5,7 @@ use super::agent::{
     AgentStepExecutionRequest, AgentStepStatus, AgentToolConfigInitReport, AgentToolError,
     AgentToolInvocation, AgentToolInvocationInput, AgentToolInvocationReport, AgentToolReport,
     AgentWorkClaimReport, AgentWorkCoordinator, AgentWorkError, AgentWorkQueueReport,
-    apply_tools_to_plan, initialize_agent_tool_config, load_agent_tool_report,
+    AgentWorkReapReport, apply_tools_to_plan, initialize_agent_tool_config, load_agent_tool_report,
 };
 use super::ai_provider::{
     AiConfigError, AiConfigReport, AiExecutionError, AiExecutionReport, AiProviderRegistry,
@@ -281,6 +281,29 @@ impl SelfForgeApp {
         preferred_agent_id: Option<&str>,
     ) -> Result<AgentWorkClaimReport, AgentWorkError> {
         AgentWorkCoordinator::new(&self.root).claim_next(version, worker_id, preferred_agent_id)
+    }
+
+    pub fn claim_agent_work_with_lease(
+        &self,
+        version: &str,
+        worker_id: &str,
+        preferred_agent_id: Option<&str>,
+        lease_seconds: Option<u64>,
+    ) -> Result<AgentWorkClaimReport, AgentWorkError> {
+        AgentWorkCoordinator::new(&self.root).claim_next_with_lease(
+            version,
+            worker_id,
+            preferred_agent_id,
+            lease_seconds,
+        )
+    }
+
+    pub fn reap_expired_agent_work(
+        &self,
+        version: &str,
+        reason: &str,
+    ) -> Result<AgentWorkReapReport, AgentWorkError> {
+        AgentWorkCoordinator::new(&self.root).reap_expired(version, reason)
     }
 
     pub fn complete_agent_work(

@@ -6,6 +6,7 @@ use self_forge::{
 use std::env;
 use std::error::Error;
 use std::process;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 const DEFAULT_AI_TIMEOUT_MS: u64 = 60_000;
 
@@ -58,6 +59,7 @@ fn main() {
         "agent-work-claim" => agent_work_claim(&app, args.collect()),
         "agent-work-complete" => agent_work_complete(&app, args.collect()),
         "agent-work-release" => agent_work_release(&app, args.collect()),
+        "agent-work-reap" => agent_work_reap(&app, args.collect()),
         "agent-tool-run" => agent_tool_run(&app, args.collect()),
         "agent-step" => agent_step(&app, args.collect()),
         "agent-plan" => agent_plan(&app, args.collect()),
@@ -652,10 +654,11 @@ fn agent_work_status(app: &SelfForgeApp, arguments: Vec<String>) -> Result<Strin
 fn agent_work_claim(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Box<dyn Error>> {
     let command = parse_agent_work_claim_args(arguments)?;
     boxed(
-        app.claim_agent_work(
+        app.claim_agent_work_with_lease(
             &command.version,
             &command.worker_id,
             command.preferred_agent_id.as_deref(),
+            command.lease_seconds,
         )
         .map(|report| {
             let mut lines = vec![format!(
@@ -672,6 +675,7 @@ fn agent_work_claim(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String
                 report.task.preferred_agent_id,
                 join_or_none(&report.task.write_scope)
             ));
+            lines.push(format!("租约 {}", format_agent_work_lease(&report.task)));
             lines.push("提示词：".to_string());
             lines.push(report.prompt);
             lines.join("\n")
@@ -731,6 +735,32 @@ fn agent_work_release(
     )
 }
 
+fn agent_work_reap(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Box<dyn Error>> {
+    let command = parse_agent_work_reap_args(arguments)?;
+    boxed(
+        app.reap_expired_agent_work(&command.version, &command.text)
+            .map(|report| {
+                let mut lines = vec![format!(
+                    "SelfForge 协作任务过期清理 版本 {} 释放 {} 文件 {}",
+                    report.version,
+                    report.released_tasks.len(),
+                    report.queue_path.display()
+                )];
+                for task in &report.released_tasks {
+                    lines.push(format!("已释放任务 {} {}", task.id, task.title));
+                }
+                let queue_report = AgentWorkQueueReport {
+                    version: report.version,
+                    queue_path: report.queue_path,
+                    created: false,
+                    queue: report.queue,
+                };
+                append_agent_work_queue_lines(&mut lines, &queue_report);
+                lines.join("\n")
+            }),
+    )
+}
+
 fn append_agent_work_queue_lines(lines: &mut Vec<String>, report: &AgentWorkQueueReport) {
     lines.push(format!(
         "目标 {} 任务 {} 待领取 {} 已领取 {} 已完成 {} 已阻断 {}",
@@ -752,7 +782,12 @@ fn append_agent_work_queue_lines(lines: &mut Vec<String>, report: &AgentWorkQueu
             task.priority,
             claimed_by,
             join_or_none(&task.depends_on),
-            join_or_none(&task.write_scope)
+            join_or_none(&task.write_scope),
+        ));
+        lines.push(format!(
+            "任务 {} 租约 {}",
+            task.id,
+            format_agent_work_lease(task)
         ));
     }
 }
@@ -772,6 +807,27 @@ fn join_or_none(values: &[String]) -> String {
     } else {
         values.join("、")
     }
+}
+
+fn format_agent_work_lease(task: &self_forge::AgentWorkTask) -> String {
+    match task.lease_expires_at_unix_seconds {
+        Some(expires_at) => {
+            let now = current_unix_seconds();
+            if expires_at <= now {
+                format!("已过期 unix:{expires_at}")
+            } else {
+                format!("unix:{expires_at} 剩余 {} 秒", expires_at - now)
+            }
+        }
+        None => "无".to_string(),
+    }
+}
+
+fn current_unix_seconds() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
 }
 
 fn agent_tool_run(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Box<dyn Error>> {
@@ -1330,12 +1386,18 @@ struct AgentWorkClaimArgs {
     version: String,
     worker_id: String,
     preferred_agent_id: Option<String>,
+    lease_seconds: Option<u64>,
 }
 
 struct AgentWorkUpdateArgs {
     version: String,
     task_id: String,
     worker_id: String,
+    text: String,
+}
+
+struct AgentWorkReapArgs {
+    version: String,
     text: String,
 }
 
@@ -1846,6 +1908,7 @@ fn parse_agent_work_claim_args(
     let mut version = state.current_version.clone();
     let mut worker_id = "ai-1".to_string();
     let mut preferred_agent_id = None;
+    let mut lease_seconds = None;
     let mut index = 0;
 
     while index < arguments.len() {
@@ -1879,6 +1942,13 @@ fn parse_agent_work_claim_args(
                 preferred_agent_id = Some(value.clone());
                 index += 2;
             }
+            "--lease-seconds" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--lease-seconds 需要秒数".into());
+                };
+                lease_seconds = Some(value.parse::<u64>()?);
+                index += 2;
+            }
             other => return Err(format!("未知 agent-work-claim 参数: {other}").into()),
         }
     }
@@ -1887,7 +1957,45 @@ fn parse_agent_work_claim_args(
         version,
         worker_id,
         preferred_agent_id,
+        lease_seconds,
     })
+}
+
+fn parse_agent_work_reap_args(arguments: Vec<String>) -> Result<AgentWorkReapArgs, Box<dyn Error>> {
+    let state = ForgeState::load(env::current_dir()?)?;
+    let mut version = state.current_version.clone();
+    let mut text = "租约过期，任务自动释放。".to_string();
+    let mut index = 0;
+
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "--current" => {
+                version = state.current_version.clone();
+                index += 1;
+            }
+            "--candidate" => {
+                version = state.candidate_version.clone().ok_or("当前没有候选版本")?;
+                index += 1;
+            }
+            "--version" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--version 需要版本号".into());
+                };
+                version = value.clone();
+                index += 2;
+            }
+            "--reason" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--reason 需要说明文本".into());
+                };
+                text = value.clone();
+                index += 2;
+            }
+            other => return Err(format!("未知 agent-work-reap 参数: {other}").into()),
+        }
+    }
+
+    Ok(AgentWorkReapArgs { version, text })
 }
 
 fn parse_agent_work_update_args(
@@ -2556,7 +2664,7 @@ fn parse_agent_verify_args(arguments: Vec<String>) -> Result<AgentVerifyArgs, Bo
 }
 
 fn help_text() -> &'static str {
-    "SelfForge commands: init, validate, status, preflight, memory-context [--current|--candidate|--version VERSION] [--limit N], memory-insights [--current|--candidate|--version VERSION] [--limit N], memory-compact [--current|--candidate|--version VERSION] [--keep N], ai-config, ai-request [--dry-run] [--timeout-ms N] [prompt], agents, agent-tools [--current|--candidate|--version VERSION] [--init], agent-work-init [--current|--candidate|--version VERSION] [--threads N] [goal], agent-work-status [--current|--candidate|--version VERSION], agent-work-claim [--current|--candidate|--version VERSION] [--worker ID] [--agent AGENT_ID], agent-work-complete [--current|--candidate|--version VERSION] TASK_ID [--worker ID] [--summary TEXT], agent-work-release [--current|--candidate|--version VERSION] TASK_ID [--worker ID] [--reason TEXT], agent-tool-run TOOL_ID --agent AGENT_ID [--current|--candidate|--version VERSION] [--limit N] [--all] [--session SESSION_ID] [--session-version VERSION] [--step N] [--target-version VERSION] [--timeout-ms N] [--prompt TEXT] [-- PROGRAM ARGS...], agent-step [--session-version VERSION] [--target-version VERSION] [--tool TOOL_ID] [--limit N] [--timeout-ms N] [--prompt TEXT] SESSION_ID [-- PROGRAM ARGS...], agent-plan [--current|--candidate|--version VERSION] [--limit N] [goal], agent-start [--current|--candidate|--version VERSION] [goal], agent-sessions [--current|--candidate|--version VERSION] [--limit N] [--all], agent-session [--current|--candidate|--version VERSION] SESSION_ID, agent-run [--session-version VERSION] [--current|--candidate|--version VERSION] [--step N] [--timeout-ms N] SESSION_ID -- PROGRAM [ARGS...], agent-verify [--current|--candidate|--version VERSION] [--timeout-ms N] [goal] -- PROGRAM [ARGS...], agent-advance [goal], agent-evolve [goal], advance [goal], promote, rollback [reason], cycle, run [--current|--candidate|--version VERSION] [--timeout-ms N] -- PROGRAM [ARGS...], runs [--current|--candidate|--version VERSION] [--limit N] [--failed] [--timed-out], errors [--current|--candidate|--version VERSION] [--limit N] [--open] [--resolved], record-error [--current|--candidate|--version VERSION] [--run-id RUN_ID] [--stage TEXT] [--solution TEXT], resolve-error [--current|--candidate|--version VERSION] --run-id RUN_ID [--verification TEXT], evolve [--patch|--minor|--major] [goal]"
+    "SelfForge commands: init, validate, status, preflight, memory-context [--current|--candidate|--version VERSION] [--limit N], memory-insights [--current|--candidate|--version VERSION] [--limit N], memory-compact [--current|--candidate|--version VERSION] [--keep N], ai-config, ai-request [--dry-run] [--timeout-ms N] [prompt], agents, agent-tools [--current|--candidate|--version VERSION] [--init], agent-work-init [--current|--candidate|--version VERSION] [--threads N] [goal], agent-work-status [--current|--candidate|--version VERSION], agent-work-claim [--current|--candidate|--version VERSION] [--worker ID] [--agent AGENT_ID] [--lease-seconds N], agent-work-complete [--current|--candidate|--version VERSION] TASK_ID [--worker ID] [--summary TEXT], agent-work-release [--current|--candidate|--version VERSION] TASK_ID [--worker ID] [--reason TEXT], agent-work-reap [--current|--candidate|--version VERSION] [--reason TEXT], agent-tool-run TOOL_ID --agent AGENT_ID [--current|--candidate|--version VERSION] [--limit N] [--all] [--session SESSION_ID] [--session-version VERSION] [--step N] [--target-version VERSION] [--timeout-ms N] [--prompt TEXT] [-- PROGRAM ARGS...], agent-step [--session-version VERSION] [--target-version VERSION] [--tool TOOL_ID] [--limit N] [--timeout-ms N] [--prompt TEXT] SESSION_ID [-- PROGRAM ARGS...], agent-plan [--current|--candidate|--version VERSION] [--limit N] [goal], agent-start [--current|--candidate|--version VERSION] [goal], agent-sessions [--current|--candidate|--version VERSION] [--limit N] [--all], agent-session [--current|--candidate|--version VERSION] SESSION_ID, agent-run [--session-version VERSION] [--current|--candidate|--version VERSION] [--step N] [--timeout-ms N] SESSION_ID -- PROGRAM [ARGS...], agent-verify [--current|--candidate|--version VERSION] [--timeout-ms N] [goal] -- PROGRAM [ARGS...], agent-advance [goal], agent-evolve [goal], advance [goal], promote, rollback [reason], cycle, run [--current|--candidate|--version VERSION] [--timeout-ms N] -- PROGRAM [ARGS...], runs [--current|--candidate|--version VERSION] [--limit N] [--failed] [--timed-out], errors [--current|--candidate|--version VERSION] [--limit N] [--open] [--resolved], record-error [--current|--candidate|--version VERSION] [--run-id RUN_ID] [--stage TEXT] [--solution TEXT], resolve-error [--current|--candidate|--version VERSION] --run-id RUN_ID [--verification TEXT], evolve [--patch|--minor|--major] [goal]"
 }
 
 fn exit_with_error(error: Box<dyn Error>) -> ! {

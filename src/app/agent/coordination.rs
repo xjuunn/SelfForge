@@ -14,6 +14,7 @@ const WORK_QUEUE_FILE: &str = "work-queue.json";
 const WORK_QUEUE_LOCK: &str = "work-queue.lock";
 const LOCK_RETRY_COUNT: usize = 80;
 const LOCK_RETRY_DELAY_MS: u64 = 25;
+const DEFAULT_WORK_LEASE_SECONDS: u64 = 3_600;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AgentWorkTaskStatus {
@@ -28,6 +29,8 @@ pub struct AgentWorkQueue {
     pub version: String,
     pub goal: String,
     pub thread_count: usize,
+    #[serde(default = "default_work_lease_seconds")]
+    pub lease_duration_seconds: u64,
     pub created_at_unix_seconds: u64,
     pub updated_at_unix_seconds: u64,
     pub conflict_policy: String,
@@ -55,6 +58,8 @@ pub struct AgentWorkTask {
     pub claimed_by: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub claimed_at_unix_seconds: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lease_expires_at_unix_seconds: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub completed_at_unix_seconds: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -92,6 +97,14 @@ pub struct AgentWorkClaimReport {
     pub prompt: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentWorkReapReport {
+    pub version: String,
+    pub queue_path: PathBuf,
+    pub released_tasks: Vec<AgentWorkTask>,
+    pub queue: AgentWorkQueue,
+}
+
 #[derive(Debug, Clone)]
 pub struct AgentWorkCoordinator {
     root: PathBuf,
@@ -109,6 +122,7 @@ pub enum AgentWorkError {
         path: PathBuf,
     },
     InvalidThreadCount,
+    InvalidLeaseSeconds,
     InvalidWorkerId {
         worker_id: String,
     },
@@ -206,7 +220,20 @@ impl AgentWorkCoordinator {
         worker_id: &str,
         preferred_agent_id: Option<&str>,
     ) -> Result<AgentWorkClaimReport, AgentWorkError> {
+        self.claim_next_with_lease(version, worker_id, preferred_agent_id, None)
+    }
+
+    pub fn claim_next_with_lease(
+        &self,
+        version: &str,
+        worker_id: &str,
+        preferred_agent_id: Option<&str>,
+        lease_seconds: Option<u64>,
+    ) -> Result<AgentWorkClaimReport, AgentWorkError> {
         validate_worker_id(worker_id)?;
+        if lease_seconds == Some(0) {
+            return Err(AgentWorkError::InvalidLeaseSeconds);
+        }
         let version = version.to_string();
         let worker_id = worker_id.to_string();
         let preferred_agent_id = preferred_agent_id.map(str::to_string);
@@ -227,13 +254,21 @@ impl AgentWorkCoordinator {
             };
 
             let now = current_unix_seconds();
+            let lease_seconds = lease_seconds.unwrap_or(queue.lease_duration_seconds);
+            let lease_expires_at = now.saturating_add(lease_seconds);
             queue.updated_at_unix_seconds = now;
-            let prompt = build_thread_prompt(&queue, &queue.tasks[task_index], &worker_id);
+            let prompt = build_thread_prompt(
+                &queue,
+                &queue.tasks[task_index],
+                &worker_id,
+                lease_expires_at,
+            );
             {
                 let task = &mut queue.tasks[task_index];
                 task.status = AgentWorkTaskStatus::Claimed;
                 task.claimed_by = Some(worker_id.clone());
                 task.claimed_at_unix_seconds = Some(now);
+                task.lease_expires_at_unix_seconds = Some(lease_expires_at);
                 task.prompt = prompt.clone();
             }
             let task_id = queue.tasks[task_index].id.clone();
@@ -257,6 +292,70 @@ impl AgentWorkCoordinator {
         })
     }
 
+    pub fn reap_expired(
+        &self,
+        version: &str,
+        reason: &str,
+    ) -> Result<AgentWorkReapReport, AgentWorkError> {
+        let version = version.to_string();
+        let reason = default_summary(reason, "租约过期，任务自动释放。");
+        self.with_lock(&version, |layout| {
+            if !layout.queue_path.exists() {
+                return Err(AgentWorkError::MissingQueue {
+                    version: version.clone(),
+                    path: layout.queue_path.clone(),
+                });
+            }
+
+            let mut queue = read_queue(&layout.queue_path)?;
+            let now = current_unix_seconds();
+            let expired_indexes = queue
+                .tasks
+                .iter()
+                .enumerate()
+                .filter(|(_, task)| task.status == AgentWorkTaskStatus::Claimed)
+                .filter(|(_, task)| {
+                    task.lease_expires_at_unix_seconds
+                        .map(|expires_at| expires_at <= now)
+                        .unwrap_or(false)
+                })
+                .map(|(index, _)| index)
+                .collect::<Vec<_>>();
+
+            let mut released_tasks = Vec::new();
+            let mut events = Vec::new();
+            let goal = queue.goal.clone();
+            for index in expired_indexes {
+                let task = &mut queue.tasks[index];
+                let task_id = task.id.clone();
+                let worker_id = task.claimed_by.clone();
+                task.status = AgentWorkTaskStatus::Pending;
+                task.claimed_by = None;
+                task.claimed_at_unix_seconds = None;
+                task.lease_expires_at_unix_seconds = None;
+                task.result = Some(reason.clone());
+                task.prompt = build_base_prompt(&goal, task);
+                released_tasks.push(task.clone());
+                events.push((worker_id, task_id));
+            }
+
+            if !released_tasks.is_empty() {
+                queue.updated_at_unix_seconds = now;
+                for (worker_id, task_id) in events {
+                    push_event(&mut queue, "reap", worker_id, Some(task_id), reason.clone());
+                }
+                write_queue(&layout.queue_path, &queue)?;
+            }
+
+            Ok(AgentWorkReapReport {
+                version: version.clone(),
+                queue_path: layout.queue_path.clone(),
+                released_tasks,
+                queue,
+            })
+        })
+    }
+
     pub fn complete(
         &self,
         version: &str,
@@ -274,6 +373,7 @@ impl AgentWorkCoordinator {
                 let task = &mut queue.tasks[index];
                 task.status = AgentWorkTaskStatus::Completed;
                 task.completed_at_unix_seconds = Some(now);
+                task.lease_expires_at_unix_seconds = None;
                 task.result = Some(message.clone());
             }
             push_event(
@@ -304,6 +404,7 @@ impl AgentWorkCoordinator {
                 task.status = AgentWorkTaskStatus::Pending;
                 task.claimed_by = None;
                 task.claimed_at_unix_seconds = None;
+                task.lease_expires_at_unix_seconds = None;
                 task.result = Some(message.clone());
                 task.prompt = build_base_prompt(&goal, task);
             }
@@ -447,6 +548,7 @@ fn create_queue(version: &str, goal: &str, thread_count: usize) -> AgentWorkQueu
         version: version.to_string(),
         goal: goal.to_string(),
         thread_count,
+        lease_duration_seconds: DEFAULT_WORK_LEASE_SECONDS,
         created_at_unix_seconds: now,
         updated_at_unix_seconds: now,
         conflict_policy:
@@ -580,6 +682,7 @@ fn work_task(
         status: AgentWorkTaskStatus::Pending,
         claimed_by: None,
         claimed_at_unix_seconds: None,
+        lease_expires_at_unix_seconds: None,
         completed_at_unix_seconds: None,
         result: None,
         prompt: String::new(),
@@ -702,7 +805,12 @@ fn build_base_prompt(goal: &str, task: &AgentWorkTask) -> String {
     )
 }
 
-fn build_thread_prompt(queue: &AgentWorkQueue, task: &AgentWorkTask, worker_id: &str) -> String {
+fn build_thread_prompt(
+    queue: &AgentWorkQueue,
+    task: &AgentWorkTask,
+    worker_id: &str,
+    lease_expires_at: u64,
+) -> String {
     let dependency_text = if task.depends_on.is_empty() {
         "无".to_string()
     } else {
@@ -715,7 +823,7 @@ fn build_thread_prompt(queue: &AgentWorkQueue, task: &AgentWorkTask, worker_id: 
         .collect::<Vec<_>>()
         .join("，");
     format!(
-        "你是 SelfForge 多 AI 协作线程 `{worker_id}`。\n\n全局目标：{}\n当前任务：{} - {}\n职责 Agent：{}\n任务说明：{}\n\n必须遵守：\n1. 只完成当前已领取任务，禁止重复实现其他任务。\n2. 只修改写入范围：{}。\n3. 依赖任务：{}。\n4. 验收标准：{}。\n5. 如发现写入范围冲突、依赖缺失或无法完成，执行 `agent-work-release {} --worker {worker_id} --reason 原因`。\n6. 完成后执行必要测试，并执行 `agent-work-complete {} --worker {worker_id} --summary 摘要`。\n\n当前仍可领取任务：{}。\n冲突策略：{}",
+        "你是 SelfForge 多 AI 协作线程 `{worker_id}`。\n\n全局目标：{}\n当前任务：{} - {}\n职责 Agent：{}\n任务说明：{}\n\n必须遵守：\n1. 只完成当前已领取任务，禁止重复实现其他任务。\n2. 只修改写入范围：{}。\n3. 依赖任务：{}。\n4. 验收标准：{}。\n5. 租约到期时间 unix:{}，无法继续时必须主动释放任务。\n6. 如发现写入范围冲突、依赖缺失或无法完成，执行 `agent-work-release {} --worker {worker_id} --reason 原因`。\n7. 完成后执行必要测试，并执行 `agent-work-complete {} --worker {worker_id} --summary 摘要`。\n\n当前仍可领取任务：{}。\n冲突策略：{}",
         queue.goal,
         task.id,
         task.title,
@@ -724,6 +832,7 @@ fn build_thread_prompt(queue: &AgentWorkQueue, task: &AgentWorkTask, worker_id: 
         task.write_scope.join("，"),
         dependency_text,
         join_chinese_sentences(&task.acceptance),
+        lease_expires_at,
         task.id,
         task.id,
         if available.is_empty() {
@@ -811,6 +920,10 @@ fn current_unix_seconds() -> u64 {
         .as_secs()
 }
 
+fn default_work_lease_seconds() -> u64 {
+    DEFAULT_WORK_LEASE_SECONDS
+}
+
 impl fmt::Display for AgentWorkTaskStatus {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -839,6 +952,7 @@ impl fmt::Display for AgentWorkError {
                 )
             }
             AgentWorkError::InvalidThreadCount => write!(formatter, "线程数量必须大于 0"),
+            AgentWorkError::InvalidLeaseSeconds => write!(formatter, "任务租约秒数必须大于 0"),
             AgentWorkError::InvalidWorkerId { worker_id } => {
                 write!(formatter, "工作线程标识不合法：{worker_id}")
             }
@@ -889,6 +1003,7 @@ impl Error for AgentWorkError {
             AgentWorkError::WorkspaceMissing { .. }
             | AgentWorkError::MissingQueue { .. }
             | AgentWorkError::InvalidThreadCount
+            | AgentWorkError::InvalidLeaseSeconds
             | AgentWorkError::InvalidWorkerId { .. }
             | AgentWorkError::InvalidTaskId { .. }
             | AgentWorkError::TaskNotFound { .. }

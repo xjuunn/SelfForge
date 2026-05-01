@@ -7,7 +7,7 @@ mod types;
 
 pub use coordination::{
     AgentWorkClaimReport, AgentWorkCoordinator, AgentWorkError, AgentWorkEvent, AgentWorkQueue,
-    AgentWorkQueueReport, AgentWorkTask, AgentWorkTaskStatus,
+    AgentWorkQueueReport, AgentWorkReapReport, AgentWorkTask, AgentWorkTaskStatus,
 };
 pub use registry::AgentRegistry;
 pub use session::{
