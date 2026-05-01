@@ -7,6 +7,7 @@ use super::ai_provider::{
     AiRequestError, AiRequestSpec,
 };
 use super::error_archive::{ArchivedErrorEntry, ErrorArchive, ErrorArchiveError, ErrorListQuery};
+use super::memory::{MemoryContextError, MemoryContextReport, read_recent_memory_context};
 use crate::{
     CycleReport, CycleResult, EvolutionError, ExecutionError, ExecutionReport, ForgeError,
     ForgeState, StateError, Supervisor, next_version_after,
@@ -89,6 +90,7 @@ pub enum MinimalLoopError {
     Forge(ForgeError),
     Evolution(EvolutionError),
     ErrorArchive(ErrorArchiveError),
+    Memory(MemoryContextError),
     OpenErrors { version: String, run_id: String },
 }
 
@@ -185,6 +187,14 @@ impl SelfForgeApp {
 
     pub fn agent_plan(&self, goal: &str) -> Result<AgentPlan, AgentError> {
         AgentRegistry::standard().plan_for_goal(goal)
+    }
+
+    pub fn memory_context(
+        &self,
+        version: &str,
+        limit: usize,
+    ) -> Result<MemoryContextReport, MemoryContextError> {
+        read_recent_memory_context(&self.root, version, limit)
     }
 
     pub fn start_agent_session(
@@ -330,10 +340,23 @@ impl SelfForgeApp {
         let store = AgentSessionStore::new(&self.root);
         let mut session = store.start(&state.current_version, goal)?;
         session.mark_running();
+        let memory = match self.memory_context(&state.current_version, 5) {
+            Ok(report) => report,
+            Err(error) => {
+                let source = MinimalLoopError::Memory(error);
+                session.update_step(1, AgentStepStatus::Failed, source.to_string())?;
+                session.mark_failed(source.to_string());
+                store.save(&session)?;
+                return Err(AgentRunError::Setup(source));
+            }
+        };
         session.update_step(
             1,
             AgentStepStatus::Completed,
-            "已创建 Agent 验证会话并生成计划。",
+            format!(
+                "已创建 Agent 验证会话并生成计划，已读取最近 {} 条历史记忆。",
+                memory.entries.len()
+            ),
         )?;
         session.update_step(
             2,
@@ -386,10 +409,26 @@ impl SelfForgeApp {
         let store = AgentSessionStore::new(&self.root);
         let mut session = store.start(&state.current_version, goal)?;
         session.mark_running();
+        let memory = match self.memory_context(&state.current_version, 5) {
+            Ok(report) => report,
+            Err(error) => {
+                let source = MinimalLoopError::Memory(error);
+                session.update_step(1, AgentStepStatus::Failed, source.to_string())?;
+                session.mark_failed(source.to_string());
+                store.save(&session)?;
+                return Err(AgentEvolutionError::MinimalLoop {
+                    session: Box::new(session),
+                    source,
+                });
+            }
+        };
         session.update_step(
             1,
             AgentStepStatus::Completed,
-            "已创建 Agent 会话并生成协作计划。",
+            format!(
+                "已创建 Agent 会话并生成协作计划，已读取最近 {} 条历史记忆。",
+                memory.entries.len()
+            ),
         )?;
         store.save(&session)?;
 
@@ -485,10 +524,26 @@ impl SelfForgeApp {
         let store = AgentSessionStore::new(&self.root);
         let mut session = store.start(&state.current_version, goal)?;
         session.mark_running();
+        let memory = match self.memory_context(&state.current_version, 5) {
+            Ok(report) => report,
+            Err(error) => {
+                let source = MinimalLoopError::Memory(error);
+                session.update_step(1, AgentStepStatus::Failed, source.to_string())?;
+                session.mark_failed(source.to_string());
+                store.save(&session)?;
+                return Err(AgentEvolutionError::MinimalLoop {
+                    session: Box::new(session),
+                    source,
+                });
+            }
+        };
         session.update_step(
             1,
             AgentStepStatus::Completed,
-            "已创建 Agent 会话并生成单轮完整进化计划。",
+            format!(
+                "已创建 Agent 会话并生成单轮完整进化计划，已读取最近 {} 条历史记忆。",
+                memory.entries.len()
+            ),
         )?;
         store.save(&session)?;
 
@@ -673,6 +728,7 @@ impl fmt::Display for MinimalLoopError {
             MinimalLoopError::Forge(error) => write!(formatter, "{error}"),
             MinimalLoopError::Evolution(error) => write!(formatter, "{error}"),
             MinimalLoopError::ErrorArchive(error) => write!(formatter, "{error}"),
+            MinimalLoopError::Memory(error) => write!(formatter, "{error}"),
             MinimalLoopError::OpenErrors { version, run_id } => write!(
                 formatter,
                 "版本 {version} 存在未解决错误 {run_id}，请先解决后再继续进化"
@@ -688,6 +744,7 @@ impl Error for MinimalLoopError {
             MinimalLoopError::Forge(error) => Some(error),
             MinimalLoopError::Evolution(error) => Some(error),
             MinimalLoopError::ErrorArchive(error) => Some(error),
+            MinimalLoopError::Memory(error) => Some(error),
             MinimalLoopError::OpenErrors { .. } => None,
         }
     }

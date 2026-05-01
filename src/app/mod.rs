@@ -1,6 +1,7 @@
 mod agent;
 mod ai_provider;
 mod error_archive;
+mod memory;
 mod minimal_loop;
 
 pub use agent::{
@@ -17,6 +18,7 @@ pub use error_archive::{
     ArchivedErrorEntry, ErrorArchive, ErrorArchiveError, ErrorArchiveReport, ErrorListQuery,
     ErrorResolutionReport,
 };
+pub use memory::{MemoryContextEntry, MemoryContextError, MemoryContextReport};
 pub use minimal_loop::{
     AgentEvolutionError, AgentEvolutionReport, AgentRunError, AgentRunReport,
     AgentSingleEvolutionReport, AgentVerificationReport, MinimalLoopError, MinimalLoopOutcome,
