@@ -48,6 +48,7 @@ fn main() {
         "preflight" => preflight(&app),
         "memory-context" => memory_context(&app, args.collect()),
         "memory-insights" => memory_insights(&app, args.collect()),
+        "memory-compact" => memory_compact(&app, args.collect()),
         "ai-config" => ai_config(&app),
         "ai-request" => ai_request(&app, args.collect()),
         "agents" => agents(&app),
@@ -419,6 +420,25 @@ fn memory_insights(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String,
                 append_insight_lines(&mut lines, "优化建议", &report.optimization_suggestions);
                 append_insight_lines(&mut lines, "可复用经验", &report.reusable_experiences);
                 lines.join("\n")
+            }),
+    )
+}
+
+fn memory_compact(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Box<dyn Error>> {
+    let command = parse_memory_compact_args(arguments)?;
+    boxed(
+        app.compact_memory(&command.version, command.keep)
+            .map(|report| {
+                format!(
+                    "SelfForge 记忆压缩 {}: 原始 {} 条 保留 {} 条 本次归档 {} 条 冷归档总计 {} 条 热文件 {} 冷文件 {}",
+                    report.version,
+                    report.original_sections,
+                    report.kept_sections,
+                    report.archived_sections,
+                    report.total_archive_sections,
+                    report.memory_path.display(),
+                    report.archive_path.display()
+                )
             }),
     )
 }
@@ -927,14 +947,25 @@ fn agent_evolve(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Bo
             .prepared_candidate_version
             .as_deref()
             .unwrap_or("复用已有候选");
+        let compaction = report
+            .memory_compaction
+            .as_ref()
+            .map(|report| {
+                format!(
+                    "已压缩热记忆 保留 {} 归档 {}",
+                    report.kept_sections, report.archived_sections
+                )
+            })
+            .unwrap_or_else(|| "未压缩热记忆".to_string());
         format!(
-            "SelfForge Agent 单轮进化完成 会话 {} 准备 {} 候选版本 {} 结果 {:?} 当前稳定版本 {} 未解决错误 {}",
+            "SelfForge Agent 单轮进化完成 会话 {} 准备 {} 候选版本 {} 结果 {:?} 当前稳定版本 {} 未解决错误 {} {}",
             report.session.id,
             prepared,
             report.cycle.candidate_version,
             report.cycle.result,
             report.cycle.state.current_version,
-            report.preflight.open_errors.len()
+            report.preflight.open_errors.len(),
+            compaction
         )
     }))
 }
@@ -948,6 +979,11 @@ struct AiRequestArgs {
 struct MemoryContextArgs {
     version: String,
     limit: usize,
+}
+
+struct MemoryCompactArgs {
+    version: String,
+    keep: usize,
 }
 
 fn parse_ai_request_args(arguments: Vec<String>) -> Result<AiRequestArgs, Box<dyn Error>> {
@@ -1025,6 +1061,43 @@ fn parse_memory_context_args(arguments: Vec<String>) -> Result<MemoryContextArgs
     }
 
     Ok(MemoryContextArgs { version, limit })
+}
+
+fn parse_memory_compact_args(arguments: Vec<String>) -> Result<MemoryCompactArgs, Box<dyn Error>> {
+    let state = ForgeState::load(env::current_dir()?)?;
+    let mut version = state.current_version.clone();
+    let mut keep = 5;
+    let mut index = 0;
+
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "--current" => {
+                version = state.current_version.clone();
+                index += 1;
+            }
+            "--candidate" => {
+                version = state.candidate_version.clone().ok_or("当前没有候选版本")?;
+                index += 1;
+            }
+            "--version" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--version 需要版本号".into());
+                };
+                version = value.clone();
+                index += 2;
+            }
+            "--keep" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--keep 需要数量".into());
+                };
+                keep = value.parse::<usize>()?;
+                index += 2;
+            }
+            other => return Err(format!("未知 memory-compact 参数: {other}").into()),
+        }
+    }
+
+    Ok(MemoryCompactArgs { version, keep })
 }
 
 struct RunArgs {
@@ -2089,7 +2162,7 @@ fn parse_agent_verify_args(arguments: Vec<String>) -> Result<AgentVerifyArgs, Bo
 }
 
 fn help_text() -> &'static str {
-    "SelfForge commands: init, validate, status, preflight, memory-context [--current|--candidate|--version VERSION] [--limit N], memory-insights [--current|--candidate|--version VERSION] [--limit N], ai-config, ai-request [--dry-run] [--timeout-ms N] [prompt], agents, agent-tools [--current|--candidate|--version VERSION] [--init], agent-tool-run TOOL_ID --agent AGENT_ID [--current|--candidate|--version VERSION] [--limit N] [--all] [--session SESSION_ID] [--session-version VERSION] [--step N] [--target-version VERSION] [--timeout-ms N] [--prompt TEXT] [-- PROGRAM ARGS...], agent-step [--session-version VERSION] [--target-version VERSION] [--tool TOOL_ID] [--limit N] [--timeout-ms N] [--prompt TEXT] SESSION_ID [-- PROGRAM ARGS...], agent-plan [--current|--candidate|--version VERSION] [--limit N] [goal], agent-start [--current|--candidate|--version VERSION] [goal], agent-sessions [--current|--candidate|--version VERSION] [--limit N] [--all], agent-session [--current|--candidate|--version VERSION] SESSION_ID, agent-run [--session-version VERSION] [--current|--candidate|--version VERSION] [--step N] [--timeout-ms N] SESSION_ID -- PROGRAM [ARGS...], agent-verify [--current|--candidate|--version VERSION] [--timeout-ms N] [goal] -- PROGRAM [ARGS...], agent-advance [goal], agent-evolve [goal], advance [goal], promote, rollback [reason], cycle, run [--current|--candidate|--version VERSION] [--timeout-ms N] -- PROGRAM [ARGS...], runs [--current|--candidate|--version VERSION] [--limit N] [--failed] [--timed-out], errors [--current|--candidate|--version VERSION] [--limit N] [--open] [--resolved], record-error [--current|--candidate|--version VERSION] [--run-id RUN_ID] [--stage TEXT] [--solution TEXT], resolve-error [--current|--candidate|--version VERSION] --run-id RUN_ID [--verification TEXT], evolve [--patch|--minor|--major] [goal]"
+    "SelfForge commands: init, validate, status, preflight, memory-context [--current|--candidate|--version VERSION] [--limit N], memory-insights [--current|--candidate|--version VERSION] [--limit N], memory-compact [--current|--candidate|--version VERSION] [--keep N], ai-config, ai-request [--dry-run] [--timeout-ms N] [prompt], agents, agent-tools [--current|--candidate|--version VERSION] [--init], agent-tool-run TOOL_ID --agent AGENT_ID [--current|--candidate|--version VERSION] [--limit N] [--all] [--session SESSION_ID] [--session-version VERSION] [--step N] [--target-version VERSION] [--timeout-ms N] [--prompt TEXT] [-- PROGRAM ARGS...], agent-step [--session-version VERSION] [--target-version VERSION] [--tool TOOL_ID] [--limit N] [--timeout-ms N] [--prompt TEXT] SESSION_ID [-- PROGRAM ARGS...], agent-plan [--current|--candidate|--version VERSION] [--limit N] [goal], agent-start [--current|--candidate|--version VERSION] [goal], agent-sessions [--current|--candidate|--version VERSION] [--limit N] [--all], agent-session [--current|--candidate|--version VERSION] SESSION_ID, agent-run [--session-version VERSION] [--current|--candidate|--version VERSION] [--step N] [--timeout-ms N] SESSION_ID -- PROGRAM [ARGS...], agent-verify [--current|--candidate|--version VERSION] [--timeout-ms N] [goal] -- PROGRAM [ARGS...], agent-advance [goal], agent-evolve [goal], advance [goal], promote, rollback [reason], cycle, run [--current|--candidate|--version VERSION] [--timeout-ms N] -- PROGRAM [ARGS...], runs [--current|--candidate|--version VERSION] [--limit N] [--failed] [--timed-out], errors [--current|--candidate|--version VERSION] [--limit N] [--open] [--resolved], record-error [--current|--candidate|--version VERSION] [--run-id RUN_ID] [--stage TEXT] [--solution TEXT], resolve-error [--current|--candidate|--version VERSION] --run-id RUN_ID [--verification TEXT], evolve [--patch|--minor|--major] [goal]"
 }
 
 fn exit_with_error(error: Box<dyn Error>) -> ! {

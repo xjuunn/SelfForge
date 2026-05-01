@@ -12,8 +12,9 @@ use super::ai_provider::{
 };
 use super::error_archive::{ArchivedErrorEntry, ErrorArchive, ErrorArchiveError, ErrorListQuery};
 use super::memory::{
-    MemoryContextError, MemoryContextReport, MemoryInsight, MemoryInsightReport,
-    extract_memory_insights, read_recent_memory_context,
+    MemoryCompactionError, MemoryCompactionReport, MemoryContextError, MemoryContextReport,
+    MemoryInsight, MemoryInsightReport, compact_memory_archive, extract_memory_insights,
+    read_recent_memory_context,
 };
 use crate::{
     CycleReport, CycleResult, EvolutionError, ExecutionError, ExecutionReport, ForgeError,
@@ -24,6 +25,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 const PREFLIGHT_OPEN_ERROR_LIMIT: usize = 10;
+const DEFAULT_MEMORY_COMPACTION_KEEP: usize = 5;
 
 #[derive(Debug, Clone)]
 pub struct SelfForgeApp {
@@ -81,6 +83,7 @@ pub struct AgentSingleEvolutionReport {
     pub preflight: PreflightReport,
     pub prepared_candidate_version: Option<String>,
     pub cycle: CycleReport,
+    pub memory_compaction: Option<MemoryCompactionReport>,
 }
 
 #[derive(Debug, Clone)]
@@ -122,6 +125,10 @@ pub enum AgentEvolutionError {
     MinimalLoop {
         session: Box<AgentSession>,
         source: MinimalLoopError,
+    },
+    MemoryCompaction {
+        session: Box<AgentSession>,
+        source: MemoryCompactionError,
     },
     Blocked {
         session: Box<AgentSession>,
@@ -561,6 +568,14 @@ impl SelfForgeApp {
         limit: usize,
     ) -> Result<MemoryInsightReport, MemoryContextError> {
         extract_memory_insights(&self.root, version, limit)
+    }
+
+    pub fn compact_memory(
+        &self,
+        version: &str,
+        keep_recent: usize,
+    ) -> Result<MemoryCompactionReport, MemoryCompactionError> {
+        compact_memory_archive(&self.root, version, keep_recent)
     }
 
     pub fn start_agent_session(
@@ -1026,11 +1041,35 @@ impl SelfForgeApp {
             ),
         };
         session.update_step(4, AgentStepStatus::Completed, cycle_result)?;
-        session.update_step(
-            5,
-            AgentStepStatus::Completed,
-            "已完成单轮候选验证、提升或回滚结果审查。",
-        )?;
+        let memory_compaction = if cycle.result == CycleResult::Promoted {
+            match self.compact_memory(&cycle.state.current_version, DEFAULT_MEMORY_COMPACTION_KEEP)
+            {
+                Ok(report) => Some(report),
+                Err(error) => {
+                    session.update_step(
+                        5,
+                        AgentStepStatus::Failed,
+                        format!("记忆自动压缩失败：{error}"),
+                    )?;
+                    session.mark_failed(format!("记忆自动压缩失败：{error}"));
+                    store.save(&session)?;
+                    return Err(AgentEvolutionError::MemoryCompaction {
+                        session: Box::new(session),
+                        source: error,
+                    });
+                }
+            }
+        } else {
+            None
+        };
+        let review_message = match &memory_compaction {
+            Some(report) => format!(
+                "已完成单轮候选验证、提升结果审查，并自动压缩热记忆：保留 {} 条，本次归档 {} 条。",
+                report.kept_sections, report.archived_sections
+            ),
+            None => "已完成单轮候选验证、回滚结果审查，未执行记忆压缩。".to_string(),
+        };
+        session.update_step(5, AgentStepStatus::Completed, review_message)?;
         session.update_step(
             6,
             AgentStepStatus::Completed,
@@ -1048,6 +1087,7 @@ impl SelfForgeApp {
             preflight,
             prepared_candidate_version,
             cycle,
+            memory_compaction,
         })
     }
 
@@ -1354,6 +1394,11 @@ impl fmt::Display for AgentEvolutionError {
                 "Agent 会话 {} 执行进化失败：{}",
                 session.id, source
             ),
+            AgentEvolutionError::MemoryCompaction { session, source } => write!(
+                formatter,
+                "Agent 会话 {} 记忆自动压缩失败：{}",
+                session.id, source
+            ),
             AgentEvolutionError::Blocked {
                 session,
                 open_errors,
@@ -1373,6 +1418,7 @@ impl Error for AgentEvolutionError {
             AgentEvolutionError::Session(error) => Some(error),
             AgentEvolutionError::Setup(error) => Some(error),
             AgentEvolutionError::MinimalLoop { source, .. } => Some(source),
+            AgentEvolutionError::MemoryCompaction { source, .. } => Some(source),
             AgentEvolutionError::Blocked { .. } => None,
         }
     }

@@ -23,7 +23,8 @@ pub use error_archive::{
     ErrorResolutionReport,
 };
 pub use memory::{
-    MemoryContextEntry, MemoryContextError, MemoryContextReport, MemoryInsight, MemoryInsightReport,
+    MemoryCompactionError, MemoryCompactionReport, MemoryContextEntry, MemoryContextError,
+    MemoryContextReport, MemoryInsight, MemoryInsightReport,
 };
 pub use minimal_loop::{
     AgentEvolutionError, AgentEvolutionReport, AgentPlanReport, AgentPlanReportError,

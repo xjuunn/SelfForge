@@ -178,6 +178,8 @@ workspace 根目录必须保持极简，只允许 `README.md`、`.gitignore` 和
 
 提取历史经验必须优先使用 `memory-insights [--current|--candidate|--version VERSION] [--limit N]`。该命令只能基于 `memory-context` 的最近记忆读取结果提取成功经验、失败风险、优化建议和可复用经验，禁止直接修改记忆文件，禁止为了经验提取创建额外索引。Agent 进化和验证会话必须在第一阶段记录已提取的可复用经验和优化建议数量。
 
+记忆文件必须定期压缩，避免单个 Markdown 文件无限增长并浪费 AI 上下文。压缩必须优先使用 `memory-compact [--current|--candidate|--version VERSION] [--keep N]`，默认保留近期 5 个完整记忆小节。`agent-evolve` 在候选提升成功后必须自动执行热记忆压缩。热记忆文件 `forge/memory/vMAJOR.md` 只保留近期完整记忆和压缩索引；久远完整记忆必须迁移到同一 major 的冷归档文件 `forge/memory/archive/vMAJOR.md`。默认 `memory-context`、`memory-insights`、`agent-plan` 和 Agent 会话只读取热记忆文件，禁止自动读取冷归档；只有审计、追溯、问题复盘或人工明确指定时才允许读取冷归档。冷归档同样采用 major 聚合策略，禁止为每个小版本创建独立归档文件或目录。
+
 `advance` 执行前必须检查当前稳定版本是否存在未解决错误。若 `errors --current --open` 能查询到记录，必须停止进化并先解决错误，禁止生成或提升候选版本。
 
 AI 提供商配置必须优先使用环境变量和项目根目录 `.env`，禁止把 API Key 写入源码、Markdown、日志、状态文件或运行记录。真实进程环境变量优先级高于 `.env`，`.env` 只作为本地配置补充，且必须被 `.gitignore` 忽略。支持 `OPENAI_API_KEY`、`DEEPSEEK_API_KEY`、`GEMINI_API_KEY` 和 `GOOGLE_API_KEY`；可用 `SELFFORGE_AI_PROVIDER` 指定 `openai`、`deepseek` 或 `gemini`。模型和基础地址可分别通过 `OPENAI_MODEL`、`DEEPSEEK_MODEL`、`GEMINI_MODEL`、`OPENAI_BASE_URL`、`DEEPSEEK_BASE_URL`、`GEMINI_BASE_URL` 覆盖。检查配置必须使用 `ai-config`，输出只能显示密钥是否存在和来源变量名，不得输出密钥值。
