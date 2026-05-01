@@ -17,10 +17,11 @@ pub use agent::{
     AiPatchAuditFinding, AiPatchAuditFindingKind, AiPatchAuditRecord, AiPatchAuditSeverity,
     AiPatchAuditStatus, AiPatchAuditStore, AiPatchAuditStoreError, AiPatchAuditSummary,
     AiPatchDraftRecord, AiPatchDraftStatus, AiPatchDraftStore, AiPatchDraftStoreError,
-    AiPatchDraftSummary, AiSelfUpgradeAuditError, AiSelfUpgradeAuditRecord,
-    AiSelfUpgradeAuditStatus, AiSelfUpgradeAuditStore, AiSelfUpgradeAuditSummary,
-    AiSelfUpgradeSummaryIndexEntry, AiSelfUpgradeSummaryRecord, AiSelfUpgradeSummaryStatus,
-    AiSelfUpgradeSummaryStore, AiSelfUpgradeSummaryStoreError,
+    AiPatchDraftSummary, AiPatchPreviewChange, AiPatchPreviewRecord, AiPatchPreviewStatus,
+    AiPatchPreviewStore, AiPatchPreviewStoreError, AiPatchPreviewSummary, AiSelfUpgradeAuditError,
+    AiSelfUpgradeAuditRecord, AiSelfUpgradeAuditStatus, AiSelfUpgradeAuditStore,
+    AiSelfUpgradeAuditSummary, AiSelfUpgradeSummaryIndexEntry, AiSelfUpgradeSummaryRecord,
+    AiSelfUpgradeSummaryStatus, AiSelfUpgradeSummaryStore, AiSelfUpgradeSummaryStoreError,
 };
 pub use ai_provider::{
     AiConfigError, AiConfigReport, AiExecutionError, AiExecutionReport, AiProviderRegistry,
@@ -40,8 +41,8 @@ pub use minimal_loop::{
     AgentRunError, AgentRunReport, AgentSingleEvolutionReport, AgentStepExecutionError,
     AgentStepRunError, AgentStepRunReport, AgentStepRunStop, AgentToolInvocationError,
     AgentVerificationReport, AiPatchAuditError, AiPatchAuditReport, AiPatchDraftError,
-    AiPatchDraftPreview, AiPatchDraftReport, AiSelfUpgradeError, AiSelfUpgradePreview,
-    AiSelfUpgradeReport, AiSelfUpgradeSummaryError, AiSelfUpgradeSummaryReport, MinimalLoopError,
-    MinimalLoopOutcome, MinimalLoopReport, PreflightReport, SelfForgeApp,
-    normalize_ai_self_upgrade_goal,
+    AiPatchDraftPreview, AiPatchDraftReport, AiPatchPreviewError, AiPatchPreviewReport,
+    AiSelfUpgradeError, AiSelfUpgradePreview, AiSelfUpgradeReport, AiSelfUpgradeSummaryError,
+    AiSelfUpgradeSummaryReport, MinimalLoopError, MinimalLoopOutcome, MinimalLoopReport,
+    PreflightReport, SelfForgeApp, normalize_ai_self_upgrade_goal,
 };

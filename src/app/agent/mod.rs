@@ -1,6 +1,7 @@
 mod coordination;
 mod patch_audit;
 mod patch_draft;
+mod patch_preview;
 mod registry;
 mod self_upgrade_audit;
 mod self_upgrade_summary;
@@ -20,6 +21,10 @@ pub use patch_audit::{
 pub use patch_draft::{
     AiPatchDraftRecord, AiPatchDraftStatus, AiPatchDraftStore, AiPatchDraftStoreError,
     AiPatchDraftSummary,
+};
+pub use patch_preview::{
+    AiPatchPreviewChange, AiPatchPreviewRecord, AiPatchPreviewStatus, AiPatchPreviewStore,
+    AiPatchPreviewStoreError, AiPatchPreviewSummary,
 };
 pub use registry::AgentRegistry;
 pub use self_upgrade_audit::{

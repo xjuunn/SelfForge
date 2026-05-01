@@ -9,11 +9,12 @@ use super::agent::{
     AiPatchAuditFinding, AiPatchAuditFindingKind, AiPatchAuditRecord, AiPatchAuditSeverity,
     AiPatchAuditStatus, AiPatchAuditStore, AiPatchAuditStoreError, AiPatchAuditSummary,
     AiPatchDraftRecord, AiPatchDraftStatus, AiPatchDraftStore, AiPatchDraftStoreError,
-    AiPatchDraftSummary, AiSelfUpgradeAuditError, AiSelfUpgradeAuditRecord,
-    AiSelfUpgradeAuditStatus, AiSelfUpgradeAuditStore, AiSelfUpgradeAuditSummary,
-    AiSelfUpgradeSummaryIndexEntry, AiSelfUpgradeSummaryRecord, AiSelfUpgradeSummaryStatus,
-    AiSelfUpgradeSummaryStore, AiSelfUpgradeSummaryStoreError, apply_tools_to_plan,
-    initialize_agent_tool_config, load_agent_tool_report,
+    AiPatchDraftSummary, AiPatchPreviewChange, AiPatchPreviewRecord, AiPatchPreviewStatus,
+    AiPatchPreviewStore, AiPatchPreviewStoreError, AiPatchPreviewSummary, AiSelfUpgradeAuditError,
+    AiSelfUpgradeAuditRecord, AiSelfUpgradeAuditStatus, AiSelfUpgradeAuditStore,
+    AiSelfUpgradeAuditSummary, AiSelfUpgradeSummaryIndexEntry, AiSelfUpgradeSummaryRecord,
+    AiSelfUpgradeSummaryStatus, AiSelfUpgradeSummaryStore, AiSelfUpgradeSummaryStoreError,
+    apply_tools_to_plan, initialize_agent_tool_config, load_agent_tool_report,
 };
 use super::ai_provider::{
     AiConfigError, AiConfigReport, AiExecutionError, AiExecutionReport, AiProviderRegistry,
@@ -153,6 +154,13 @@ pub struct AiPatchAuditReport {
 }
 
 #[derive(Debug, Clone)]
+pub struct AiPatchPreviewReport {
+    pub audit: AiPatchAuditRecord,
+    pub draft: AiPatchDraftRecord,
+    pub record: AiPatchPreviewRecord,
+}
+
+#[derive(Debug, Clone)]
 pub struct AgentRunReport {
     pub session: AgentSession,
     pub execution: ExecutionReport,
@@ -286,6 +294,14 @@ pub enum AiPatchAuditError {
     Store(AiPatchAuditStoreError),
     WorkQueue(AgentWorkError),
     Version(VersionError),
+    Io { path: PathBuf, source: io::Error },
+}
+
+#[derive(Debug)]
+pub enum AiPatchPreviewError {
+    Audit(AiPatchAuditStoreError),
+    Draft(AiPatchDraftStoreError),
+    Store(AiPatchPreviewStoreError),
     Io { path: PathBuf, source: io::Error },
 }
 
@@ -659,6 +675,117 @@ impl SelfForgeApp {
         id: &str,
     ) -> Result<AiPatchAuditRecord, AiPatchAuditStoreError> {
         AiPatchAuditStore::new(&self.root).load(version, id)
+    }
+
+    pub fn ai_patch_preview(
+        &self,
+        version: &str,
+        audit_id: &str,
+    ) -> Result<AiPatchPreviewReport, AiPatchPreviewError> {
+        let audit = AiPatchAuditStore::new(&self.root)
+            .load(version, audit_id)
+            .map_err(AiPatchPreviewError::Audit)?;
+        let draft = AiPatchDraftStore::new(&self.root)
+            .load(version, &audit.draft_id)
+            .map_err(AiPatchPreviewError::Draft)?;
+
+        let mut status = AiPatchPreviewStatus::Previewed;
+        let mut error = None;
+        let mut code_block_count = 0;
+        let mut changes = Vec::new();
+        let mut draft_markdown = None;
+
+        if audit.status != AiPatchAuditStatus::Passed {
+            status = AiPatchPreviewStatus::Blocked;
+            error = Some("补丁审计未通过，禁止生成可应用预演。".to_string());
+        } else if draft.status != AiPatchDraftStatus::Succeeded {
+            status = AiPatchPreviewStatus::Blocked;
+            error = Some("补丁草案不是成功状态，禁止生成可应用预演。".to_string());
+        } else if audit.normalized_write_scope.is_empty() {
+            status = AiPatchPreviewStatus::Blocked;
+            error = Some("补丁审计缺少规范化写入范围。".to_string());
+        } else if let Some(draft_file) = draft.draft_file.as_ref() {
+            let path = self.root.join(draft_file);
+            let markdown = fs::read_to_string(&path).map_err(|source| AiPatchPreviewError::Io {
+                path: path.clone(),
+                source,
+            })?;
+            let code_blocks = extract_patch_preview_code_blocks(&markdown);
+            code_block_count = code_blocks.len();
+            if code_blocks.is_empty() {
+                status = AiPatchPreviewStatus::Blocked;
+                error = Some("补丁草案的代码草案章节缺少可预演代码块。".to_string());
+            } else if code_blocks.len() < audit.normalized_write_scope.len() {
+                status = AiPatchPreviewStatus::Blocked;
+                error = Some("补丁草案代码块数量少于审计通过的写入范围数量。".to_string());
+            } else {
+                for (index, scope) in audit.normalized_write_scope.iter().enumerate() {
+                    let block = &code_blocks[index];
+                    changes.push(AiPatchPreviewChange {
+                        path: scope.clone(),
+                        code_block_index: index + 1,
+                        language: block.language.clone(),
+                        content_bytes: block.content.len(),
+                        content_preview: truncate_chars(&block.content, 240),
+                    });
+                }
+            }
+            draft_markdown = Some(markdown);
+        } else {
+            status = AiPatchPreviewStatus::Blocked;
+            error = Some("补丁草案记录缺少 Markdown 草案文件。".to_string());
+        }
+
+        let preview_markdown = build_ai_patch_preview_markdown(
+            &audit,
+            &draft,
+            status,
+            code_block_count,
+            &changes,
+            error.as_deref(),
+            draft_markdown.as_deref(),
+        );
+        let record = AiPatchPreviewRecord {
+            id: String::new(),
+            version: audit.version.clone(),
+            target_version: audit.target_version.clone(),
+            audit_id: audit.id.clone(),
+            draft_id: draft.id.clone(),
+            created_at_unix_seconds: 0,
+            status,
+            normalized_write_scope: audit.normalized_write_scope.clone(),
+            code_block_count,
+            change_count: changes.len(),
+            changes,
+            preview_file: None,
+            error,
+            file: PathBuf::new(),
+        };
+        let record = AiPatchPreviewStore::new(&self.root)
+            .create(record, Some(&preview_markdown))
+            .map_err(AiPatchPreviewError::Store)?;
+
+        Ok(AiPatchPreviewReport {
+            audit,
+            draft,
+            record,
+        })
+    }
+
+    pub fn ai_patch_preview_records(
+        &self,
+        version: &str,
+        limit: usize,
+    ) -> Result<Vec<AiPatchPreviewSummary>, AiPatchPreviewStoreError> {
+        AiPatchPreviewStore::new(&self.root).list(version, limit)
+    }
+
+    pub fn ai_patch_preview_record(
+        &self,
+        version: &str,
+        id: &str,
+    ) -> Result<AiPatchPreviewRecord, AiPatchPreviewStoreError> {
+        AiPatchPreviewStore::new(&self.root).load(version, id)
     }
 
     pub fn ai_self_upgrade_preview(
@@ -2597,6 +2724,143 @@ fn validate_ai_patch_draft_text(text: &str) -> Result<String, AiPatchDraftError>
 }
 
 #[derive(Debug)]
+struct PatchPreviewCodeBlock {
+    language: Option<String>,
+    content: String,
+}
+
+fn extract_patch_preview_code_blocks(markdown: &str) -> Vec<PatchPreviewCodeBlock> {
+    let mut in_code_section = false;
+    let mut in_fence = false;
+    let mut language = None;
+    let mut content = Vec::new();
+    let mut blocks = Vec::new();
+
+    for line in markdown.lines() {
+        let trimmed = line.trim();
+        if !in_fence {
+            if let Some(title) = markdown_heading_title(trimmed) {
+                if in_code_section && !title.contains("代码草案") {
+                    break;
+                }
+                in_code_section = title.contains("代码草案");
+                continue;
+            }
+            if !in_code_section {
+                continue;
+            }
+        }
+
+        if in_code_section && trimmed.starts_with("```") {
+            if in_fence {
+                let joined = content.join("\n").trim().to_string();
+                if !joined.is_empty() {
+                    blocks.push(PatchPreviewCodeBlock {
+                        language: language.clone(),
+                        content: joined,
+                    });
+                }
+                content.clear();
+                language = None;
+                in_fence = false;
+            } else {
+                let tag = trimmed.trim_start_matches("```").trim();
+                language = if tag.is_empty() {
+                    None
+                } else {
+                    Some(tag.to_string())
+                };
+                in_fence = true;
+            }
+            continue;
+        }
+
+        if in_fence {
+            content.push(line.to_string());
+        }
+    }
+
+    blocks
+}
+
+fn build_ai_patch_preview_markdown(
+    audit: &AiPatchAuditRecord,
+    draft: &AiPatchDraftRecord,
+    status: AiPatchPreviewStatus,
+    code_block_count: usize,
+    changes: &[AiPatchPreviewChange],
+    error: Option<&str>,
+    draft_markdown: Option<&str>,
+) -> String {
+    let mut markdown = String::new();
+    markdown.push_str("# AI 补丁应用预演\n\n");
+    markdown.push_str("# 基本信息\n\n");
+    markdown.push_str(&format!(
+        "- 源版本：{}\n- 目标版本：{}\n- 审计记录：{}\n- 草案记录：{}\n- 预演状态：{}\n- 错误信息：{}\n\n",
+        audit.version,
+        audit.target_version,
+        audit.id,
+        draft.id,
+        status,
+        error.unwrap_or("无")
+    ));
+
+    markdown.push_str("# 审计结果\n\n");
+    markdown.push_str(&format!(
+        "- 审计状态：{}\n- 规范化写入范围数量：{}\n- 活跃冲突数量：{}\n- 发现数量：{}\n",
+        audit.status,
+        audit.normalized_write_scope.len(),
+        audit.active_conflict_count,
+        audit.finding_count
+    ));
+    for scope in &audit.normalized_write_scope {
+        markdown.push_str(&format!("- 写入范围：{scope}\n"));
+    }
+    markdown.push('\n');
+
+    markdown.push_str("# 预演变更\n\n");
+    markdown.push_str(&format!(
+        "- 代码块数量：{}\n- 变更数量：{}\n",
+        code_block_count,
+        changes.len()
+    ));
+    if changes.is_empty() {
+        markdown.push_str("- 本次未生成可应用变更。\n\n");
+    } else if let Some(draft_markdown) = draft_markdown {
+        let code_blocks = extract_patch_preview_code_blocks(draft_markdown);
+        for change in changes {
+            markdown.push_str(&format!(
+                "\n## 预演文件 {}\n\n- 来源代码块：{}\n- 语言：{}\n- 内容字节：{}\n\n",
+                change.path,
+                change.code_block_index,
+                change.language.as_deref().unwrap_or("未标注"),
+                change.content_bytes
+            ));
+            if let Some(block) = code_blocks.get(change.code_block_index.saturating_sub(1)) {
+                markdown.push_str("```");
+                if let Some(language) = block.language.as_deref() {
+                    markdown.push_str(language);
+                }
+                markdown.push('\n');
+                markdown.push_str(&block.content);
+                markdown.push_str("\n```\n");
+            } else {
+                markdown.push_str("- 未找到对应代码块。\n");
+            }
+        }
+        markdown.push('\n');
+    }
+
+    markdown.push_str("# 测试建议\n\n");
+    markdown.push_str("- 预演成功后必须先在候选工作区或沙箱中应用，再执行 `cargo fmt --check`、`cargo test`、`cargo run -- validate` 和 `cargo run -- preflight`。\n");
+    markdown.push_str("- 本命令只生成可审计预演，不代表源码已经被修改。\n\n");
+
+    markdown.push_str("# 回滚说明\n\n");
+    markdown.push_str("- 如果后续候选应用或测试失败，保留本预演记录作为审计证据，并通过 `rollback` 或候选失败流程恢复稳定版本。\n");
+    markdown
+}
+
+#[derive(Debug)]
 struct PatchWriteScopeAudit {
     normalized_write_scope: Vec<String>,
     findings: Vec<AiPatchAuditFinding>,
@@ -3304,6 +3568,41 @@ impl Error for AiPatchAuditError {
             AiPatchAuditError::WorkQueue(error) => Some(error),
             AiPatchAuditError::Version(error) => Some(error),
             AiPatchAuditError::Io { source, .. } => Some(source),
+        }
+    }
+}
+
+impl fmt::Display for AiPatchPreviewError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AiPatchPreviewError::Audit(error) => {
+                write!(formatter, "AI 补丁应用预演读取审计失败：{error}")
+            }
+            AiPatchPreviewError::Draft(error) => {
+                write!(formatter, "AI 补丁应用预演读取草案失败：{error}")
+            }
+            AiPatchPreviewError::Store(error) => {
+                write!(formatter, "AI 补丁应用预演记录失败：{error}")
+            }
+            AiPatchPreviewError::Io { path, source } => {
+                write!(
+                    formatter,
+                    "AI 补丁应用预演读取文件失败 {}：{}",
+                    path.display(),
+                    source
+                )
+            }
+        }
+    }
+}
+
+impl Error for AiPatchPreviewError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            AiPatchPreviewError::Audit(error) => Some(error),
+            AiPatchPreviewError::Draft(error) => Some(error),
+            AiPatchPreviewError::Store(error) => Some(error),
+            AiPatchPreviewError::Io { source, .. } => Some(source),
         }
     }
 }

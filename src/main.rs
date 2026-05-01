@@ -77,6 +77,9 @@ fn main() {
         "agent-patch-audit" => agent_patch_audit(&app, args.collect()),
         "agent-patch-audits" => agent_patch_audits(&app, args.collect()),
         "agent-patch-audit-record" => agent_patch_audit_record(&app, args.collect()),
+        "agent-patch-preview" => agent_patch_preview(&app, args.collect()),
+        "agent-patch-previews" => agent_patch_previews(&app, args.collect()),
+        "agent-patch-preview-record" => agent_patch_preview_record(&app, args.collect()),
         "agent-self-upgrade" => agent_self_upgrade(&app, args.collect()),
         "agent-self-upgrades" => agent_self_upgrades(&app, args.collect()),
         "agent-self-upgrade-record" => agent_self_upgrade_record(&app, args.collect()),
@@ -1546,6 +1549,121 @@ fn agent_patch_audit_record(
     )
 }
 
+fn agent_patch_preview(
+    app: &SelfForgeApp,
+    arguments: Vec<String>,
+) -> Result<String, Box<dyn Error>> {
+    let command = parse_agent_patch_preview_args(arguments)?;
+    boxed(
+        app.ai_patch_preview(&command.version, &command.audit_id)
+            .map(|report| {
+                format!(
+                    "SelfForge AI 补丁应用预演完成 版本 {} 审计 {} 草案 {} 目标版本 {} 状态 {} 变更 {} 代码块 {} 预演 {} JSON {} 错误 {}",
+                    report.record.version,
+                    report.record.audit_id,
+                    report.record.draft_id,
+                    report.record.target_version,
+                    report.record.status,
+                    report.record.change_count,
+                    report.record.code_block_count,
+                    report
+                        .record
+                        .preview_file
+                        .as_ref()
+                        .map(|path| path.display().to_string())
+                        .unwrap_or_else(|| "无".to_string()),
+                    report.record.file.display(),
+                    report.record.error.as_deref().unwrap_or("无")
+                )
+            }),
+    )
+}
+
+fn agent_patch_previews(
+    app: &SelfForgeApp,
+    arguments: Vec<String>,
+) -> Result<String, Box<dyn Error>> {
+    let command = parse_agent_patch_previews_args(arguments)?;
+    boxed(
+        app.ai_patch_preview_records(&command.version, command.limit)
+            .map(|records| {
+                if records.is_empty() {
+                    return format!(
+                        "SelfForge AI 补丁应用预演记录 {}: no records",
+                        command.version
+                    );
+                }
+
+                let mut lines = vec![format!(
+                    "SelfForge AI 补丁应用预演记录 {}: {} record(s)",
+                    command.version,
+                    records.len()
+                )];
+                for record in records {
+                    lines.push(format!(
+                        "{} 状态 {} 审计 {} 草案 {} 目标版本 {} 变更 {} 预演 {} 错误 {} 文件 {}",
+                        record.id,
+                        record.status,
+                        record.audit_id,
+                        record.draft_id,
+                        record.target_version,
+                        record.change_count,
+                        record
+                            .preview_file
+                            .as_ref()
+                            .map(|path| path.display().to_string())
+                            .unwrap_or_else(|| "无".to_string()),
+                        record.error.as_deref().unwrap_or("无"),
+                        record.file.display()
+                    ));
+                }
+                lines.join("\n")
+            }),
+    )
+}
+
+fn agent_patch_preview_record(
+    app: &SelfForgeApp,
+    arguments: Vec<String>,
+) -> Result<String, Box<dyn Error>> {
+    let command = parse_agent_patch_preview_record_args(arguments)?;
+    boxed(
+        app.ai_patch_preview_record(&command.version, &command.id)
+            .map(|record| {
+                let mut lines = vec![format!(
+                    "SelfForge AI 补丁应用预演 {} 版本 {} 审计 {} 草案 {} 目标版本 {} 状态 {} 写入范围 {} 变更 {} 代码块 {} 预演 {} JSON {} 错误 {}",
+                    record.id,
+                    record.version,
+                    record.audit_id,
+                    record.draft_id,
+                    record.target_version,
+                    record.status,
+                    record.normalized_write_scope.join("、"),
+                    record.change_count,
+                    record.code_block_count,
+                    record
+                        .preview_file
+                        .as_ref()
+                        .map(|path| path.display().to_string())
+                        .unwrap_or_else(|| "无".to_string()),
+                    record.file.display(),
+                    record.error.as_deref().unwrap_or("无")
+                )];
+                for change in &record.changes {
+                    lines.push(format!(
+                        "预演变更 路径 {} 代码块 {} 语言 {} 字节 {} 摘要 {}",
+                        change.path,
+                        change.code_block_index,
+                        change.language.as_deref().unwrap_or("未标注"),
+                        change.content_bytes,
+                        change.content_preview
+                    ));
+                }
+                lines.join("\n")
+            }),
+    )
+}
+
 fn agent_self_upgrades(
     app: &SelfForgeApp,
     arguments: Vec<String>,
@@ -1736,6 +1854,21 @@ struct AgentPatchAuditsArgs {
 }
 
 struct AgentPatchAuditRecordArgs {
+    version: String,
+    id: String,
+}
+
+struct AgentPatchPreviewArgs {
+    version: String,
+    audit_id: String,
+}
+
+struct AgentPatchPreviewsArgs {
+    version: String,
+    limit: usize,
+}
+
+struct AgentPatchPreviewRecordArgs {
     version: String,
     id: String,
 }
@@ -2118,6 +2251,133 @@ fn parse_agent_patch_audit_record_args(
     Ok(AgentPatchAuditRecordArgs {
         version,
         id: id.ok_or("agent-patch-audit-record 需要记录编号")?,
+    })
+}
+
+fn parse_agent_patch_preview_args(
+    arguments: Vec<String>,
+) -> Result<AgentPatchPreviewArgs, Box<dyn Error>> {
+    let state = ForgeState::load(env::current_dir()?)?;
+    let mut version = state.current_version.clone();
+    let mut audit_id = None;
+    let mut index = 0;
+
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "--current" => {
+                version = state.current_version.clone();
+                index += 1;
+            }
+            "--candidate" => {
+                version = state.candidate_version.clone().ok_or("当前没有候选版本")?;
+                index += 1;
+            }
+            "--version" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--version 需要版本号".into());
+                };
+                version = value.clone();
+                index += 2;
+            }
+            other if other.starts_with("--") => {
+                return Err(format!("未知 agent-patch-preview 参数: {other}").into());
+            }
+            other => {
+                if audit_id.is_some() {
+                    return Err("agent-patch-preview 只允许一个审计记录编号".into());
+                }
+                audit_id = Some(other.to_string());
+                index += 1;
+            }
+        }
+    }
+
+    Ok(AgentPatchPreviewArgs {
+        version,
+        audit_id: audit_id.ok_or("agent-patch-preview 需要审计记录编号")?,
+    })
+}
+
+fn parse_agent_patch_previews_args(
+    arguments: Vec<String>,
+) -> Result<AgentPatchPreviewsArgs, Box<dyn Error>> {
+    let state = ForgeState::load(env::current_dir()?)?;
+    let mut version = state.current_version.clone();
+    let mut limit = 10;
+    let mut index = 0;
+
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "--current" => {
+                version = state.current_version.clone();
+                index += 1;
+            }
+            "--candidate" => {
+                version = state.candidate_version.clone().ok_or("当前没有候选版本")?;
+                index += 1;
+            }
+            "--version" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--version 需要版本号".into());
+                };
+                version = value.clone();
+                index += 2;
+            }
+            "--limit" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--limit 需要数量".into());
+                };
+                limit = value.parse::<usize>()?;
+                index += 2;
+            }
+            other => return Err(format!("未知 agent-patch-previews 参数: {other}").into()),
+        }
+    }
+
+    Ok(AgentPatchPreviewsArgs { version, limit })
+}
+
+fn parse_agent_patch_preview_record_args(
+    arguments: Vec<String>,
+) -> Result<AgentPatchPreviewRecordArgs, Box<dyn Error>> {
+    let state = ForgeState::load(env::current_dir()?)?;
+    let mut version = state.current_version.clone();
+    let mut id = None;
+    let mut index = 0;
+
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "--current" => {
+                version = state.current_version.clone();
+                index += 1;
+            }
+            "--candidate" => {
+                version = state.candidate_version.clone().ok_or("当前没有候选版本")?;
+                index += 1;
+            }
+            "--version" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--version 需要版本号".into());
+                };
+                version = value.clone();
+                index += 2;
+            }
+            other if other.starts_with("--") => {
+                return Err(format!("未知 agent-patch-preview-record 参数: {other}").into());
+            }
+            other => {
+                if id.is_some() {
+                    return Err("agent-patch-preview-record 只允许一个记录编号".into());
+                }
+                id = Some(other.to_string());
+                index += 1;
+            }
+        }
+    }
+
+    Ok(AgentPatchPreviewRecordArgs {
+        version,
+        id: id.ok_or("agent-patch-preview-record 需要记录编号")?,
     })
 }
 
@@ -3878,6 +4138,9 @@ agent-patch-draft-record [--current|--candidate|--version VERSION] RECORD_ID
 agent-patch-audit [--current|--candidate|--version VERSION] DRAFT_RECORD_ID
 agent-patch-audits [--current|--candidate|--version VERSION] [--limit N]
 agent-patch-audit-record [--current|--candidate|--version VERSION] AUDIT_RECORD_ID
+agent-patch-preview [--current|--candidate|--version VERSION] AUDIT_RECORD_ID
+agent-patch-previews [--current|--candidate|--version VERSION] [--limit N]
+agent-patch-preview-record [--current|--candidate|--version VERSION] PREVIEW_RECORD_ID
 agent-self-upgrade [--dry-run] [--timeout-ms N] [hint]
 agent-self-upgrades [--current|--candidate|--version VERSION] [--limit N]
 agent-self-upgrade-record [--current|--candidate|--version VERSION] RECORD_ID
