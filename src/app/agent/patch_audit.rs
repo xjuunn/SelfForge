@@ -56,6 +56,8 @@ pub struct AiPatchAuditRecord {
     pub version: String,
     pub target_version: String,
     pub draft_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_task_audit_id: Option<String>,
     pub created_at_unix_seconds: u64,
     pub status: AiPatchAuditStatus,
     #[serde(default)]
@@ -77,6 +79,8 @@ pub struct AiPatchAuditSummary {
     pub version: String,
     pub target_version: String,
     pub draft_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_task_audit_id: Option<String>,
     pub created_at_unix_seconds: u64,
     pub status: AiPatchAuditStatus,
     pub active_conflict_count: usize,
@@ -330,6 +334,7 @@ impl AiPatchAuditRecord {
             version: self.version.clone(),
             target_version: self.target_version.clone(),
             draft_id: self.draft_id.clone(),
+            source_task_audit_id: self.source_task_audit_id.clone(),
             created_at_unix_seconds: self.created_at_unix_seconds,
             status: self.status,
             active_conflict_count: self.active_conflict_count,

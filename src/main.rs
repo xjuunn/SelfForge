@@ -1513,9 +1513,10 @@ fn agent_patch_audit(app: &SelfForgeApp, arguments: Vec<String>) -> Result<Strin
                     .map(|queue| format!("{} 个任务", queue.queue.tasks.len()))
                     .unwrap_or_else(|| "无协作队列".to_string());
                 let mut lines = vec![format!(
-                    "SelfForge AI 补丁审计完成 版本 {} 草案 {} 目标版本 {} 状态 {} 写入范围 {} 冲突 {} 发现 {} 协作队列 {} 审计记录 {} 文件 {}",
+                    "SelfForge AI 补丁审计完成 版本 {} 草案 {} 来源审计 {} 目标版本 {} 状态 {} 写入范围 {} 冲突 {} 发现 {} 协作队列 {} 审计记录 {} 文件 {}",
                     report.record.version,
                     report.record.draft_id,
+                    report.record.source_task_audit_id.as_deref().unwrap_or("无"),
                     report.record.target_version,
                     report.record.status,
                     report.record.normalized_write_scope.len(),
@@ -1560,10 +1561,11 @@ fn agent_patch_audits(
                 )];
                 for record in records {
                     lines.push(format!(
-                        "{} 状态 {} 草案 {} 目标版本 {} 冲突 {} 发现 {} 文件 {}",
+                        "{} 状态 {} 草案 {} 来源审计 {} 目标版本 {} 冲突 {} 发现 {} 文件 {}",
                         record.id,
                         record.status,
                         record.draft_id,
+                        record.source_task_audit_id.as_deref().unwrap_or("无"),
                         record.target_version,
                         record.active_conflict_count,
                         record.finding_count,
@@ -1584,10 +1586,11 @@ fn agent_patch_audit_record(
         app.ai_patch_audit_record(&command.version, &command.id)
             .map(|record| {
                 let mut lines = vec![format!(
-                    "SelfForge AI 补丁审计记录 {} 版本 {} 草案 {} 目标版本 {} 状态 {} 写入范围 {} 受保护根 {} 冲突 {} 发现 {} 文件 {}",
+                    "SelfForge AI 补丁审计记录 {} 版本 {} 草案 {} 来源审计 {} 目标版本 {} 状态 {} 写入范围 {} 受保护根 {} 冲突 {} 发现 {} 文件 {}",
                     record.id,
                     record.version,
                     record.draft_id,
+                    record.source_task_audit_id.as_deref().unwrap_or("无"),
                     record.target_version,
                     record.status,
                     record.normalized_write_scope.join("、"),

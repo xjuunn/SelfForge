@@ -870,6 +870,7 @@ impl SelfForgeApp {
             version: draft.version.clone(),
             target_version: draft.target_version.clone(),
             draft_id: draft.id.clone(),
+            source_task_audit_id: draft.source_task_audit_id.clone(),
             created_at_unix_seconds: 0,
             status,
             requested_write_scope,
