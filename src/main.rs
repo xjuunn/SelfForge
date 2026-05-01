@@ -1372,7 +1372,11 @@ fn agent_self_upgrade(
 fn agent_patch_draft(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Box<dyn Error>> {
     let command = parse_agent_patch_draft_args(arguments)?;
     if command.dry_run {
-        return boxed(app.ai_patch_draft_preview(&command.goal).map(|preview| {
+        let preview = match &command.from_task_audit {
+            Some(task_audit_id) => app.ai_patch_draft_preview_from_task_audit(task_audit_id),
+            None => app.ai_patch_draft_preview(&command.goal),
+        };
+        return boxed(preview.map(|preview| {
             format!(
                 "SelfForge AI 补丁草案预览 当前版本 {} 目标版本 {} 提供商 {} 模型 {} 协议 {} 记忆来源 {} 允许写入 {} 必要章节 {} 用户目标 {} 提示词字节 {}",
                 preview.current_version,
@@ -1389,8 +1393,14 @@ fn agent_patch_draft(app: &SelfForgeApp, arguments: Vec<String>) -> Result<Strin
         }));
     }
 
+    let draft_result = match &command.from_task_audit {
+        Some(task_audit_id) => {
+            app.ai_patch_draft_from_task_audit(task_audit_id, command.timeout_ms)
+        }
+        None => app.ai_patch_draft(&command.goal, command.timeout_ms),
+    };
     boxed(
-        app.ai_patch_draft(&command.goal, command.timeout_ms)
+        draft_result
             .map(|report| {
                 format!(
                     "SelfForge AI 补丁草案完成 当前版本 {} 目标版本 {} 提供商 {} 模型 {} 目标 {} 记录 {} 记录文件 {} 草案文件 {} 响应字节 {}",
@@ -2919,6 +2929,7 @@ struct AgentSelfUpgradeArgs {
 struct AgentPatchDraftArgs {
     dry_run: bool,
     timeout_ms: u64,
+    from_task_audit: Option<String>,
     goal: String,
 }
 
@@ -3226,6 +3237,7 @@ fn parse_agent_patch_draft_args(
 ) -> Result<AgentPatchDraftArgs, Box<dyn Error>> {
     let mut dry_run = false;
     let mut timeout_ms = DEFAULT_AI_TIMEOUT_MS;
+    let mut from_task_audit = None;
     let mut goal_parts = Vec::new();
     let mut index = 0;
 
@@ -3242,6 +3254,13 @@ fn parse_agent_patch_draft_args(
                 timeout_ms = value.parse::<u64>()?;
                 index += 2;
             }
+            "--from-task-audit" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--from-task-audit 需要任务草案审计编号".into());
+                };
+                from_task_audit = Some(value.clone());
+                index += 2;
+            }
             "--" => {
                 goal_parts.extend(arguments[index + 1..].iter().cloned());
                 break;
@@ -3255,6 +3274,9 @@ fn parse_agent_patch_draft_args(
             }
         }
     }
+    if from_task_audit.is_some() && !goal_parts.is_empty() {
+        return Err("agent-patch-draft 使用 --from-task-audit 时禁止同时提供直接目标".into());
+    }
 
     let goal = if goal_parts.is_empty() {
         "生成下一轮 AI 补丁草案".to_string()
@@ -3265,6 +3287,7 @@ fn parse_agent_patch_draft_args(
     Ok(AgentPatchDraftArgs {
         dry_run,
         timeout_ms,
+        from_task_audit,
         goal,
     })
 }
@@ -6593,7 +6616,7 @@ agent-session [--current|--candidate|--version VERSION] SESSION_ID
 agent-run [--session-version VERSION] [--current|--candidate|--version VERSION] [--step N] [--timeout-ms N] SESSION_ID -- PROGRAM [ARGS...]
 agent-verify [--current|--candidate|--version VERSION] [--timeout-ms N] [goal] -- PROGRAM [ARGS...]
 agent-advance [goal], agent-evolve [goal]
-agent-patch-draft [--dry-run] [--timeout-ms N] [goal]
+agent-patch-draft [--dry-run] [--timeout-ms N] [--from-task-audit TASK_AUDIT_ID] [goal]
 agent-patch-drafts [--current|--candidate|--version VERSION] [--limit N]
 agent-patch-draft-record [--current|--candidate|--version VERSION] RECORD_ID
 agent-patch-audit [--current|--candidate|--version VERSION] DRAFT_RECORD_ID

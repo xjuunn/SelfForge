@@ -369,10 +369,19 @@ pub enum AiPatchDraftError {
     Memory(MemoryContextError),
     Ai(AiExecutionError),
     Store(AiPatchDraftStoreError),
+    TaskAudit(AiPatchSourceTaskAuditStoreError),
     Version(VersionError),
     Blocked {
         version: String,
         open_errors: Vec<ArchivedErrorEntry>,
+    },
+    TaskAuditNotApproved {
+        id: String,
+        status: AiPatchSourceTaskAuditStatus,
+        blocked_reason: Option<String>,
+    },
+    EmptyTaskAuditGoal {
+        id: String,
     },
     InvalidDraft {
         reason: String,
@@ -665,6 +674,44 @@ impl SelfForgeApp {
         timeout_ms: u64,
     ) -> Result<AiPatchDraftReport, AiPatchDraftError> {
         let preview = self.ai_patch_draft_preview(goal)?;
+        let ai = match self.ai_request(&preview.prompt, timeout_ms) {
+            Ok(report) => report,
+            Err(error) => {
+                self.record_ai_patch_draft_failure(&preview, None, &error.to_string())?;
+                return Err(AiPatchDraftError::Ai(error));
+            }
+        };
+
+        self.finish_ai_patch_draft(preview, ai)
+    }
+
+    pub fn ai_patch_draft_preview_from_task_audit(
+        &self,
+        task_audit_id: &str,
+    ) -> Result<AiPatchDraftPreview, AiPatchDraftError> {
+        self.ai_patch_draft_preview_from_task_audit_with_lookup(task_audit_id, |key| {
+            std::env::var(key).ok()
+        })
+    }
+
+    pub(crate) fn ai_patch_draft_preview_from_task_audit_with_lookup<F>(
+        &self,
+        task_audit_id: &str,
+        process_lookup: F,
+    ) -> Result<AiPatchDraftPreview, AiPatchDraftError>
+    where
+        F: Fn(&str) -> Option<String>,
+    {
+        let goal = self.approved_patch_draft_goal_from_task_audit(task_audit_id)?;
+        self.ai_patch_draft_preview_with_lookup(&goal, process_lookup)
+    }
+
+    pub fn ai_patch_draft_from_task_audit(
+        &self,
+        task_audit_id: &str,
+        timeout_ms: u64,
+    ) -> Result<AiPatchDraftReport, AiPatchDraftError> {
+        let preview = self.ai_patch_draft_preview_from_task_audit(task_audit_id)?;
         let ai = match self.ai_request(&preview.prompt, timeout_ms) {
             Ok(report) => report,
             Err(error) => {
@@ -4254,6 +4301,33 @@ impl SelfForgeApp {
         }
     }
 
+    fn approved_patch_draft_goal_from_task_audit(
+        &self,
+        task_audit_id: &str,
+    ) -> Result<String, AiPatchDraftError> {
+        let preflight = self.preflight().map_err(AiPatchDraftError::Preflight)?;
+        if !preflight.open_errors.is_empty() {
+            return Err(AiPatchDraftError::Blocked {
+                version: preflight.current_version.clone(),
+                open_errors: preflight.open_errors.clone(),
+            });
+        }
+
+        let task_audit = AiPatchSourceTaskAuditStore::new(&self.root)
+            .load(&preflight.current_version, task_audit_id)
+            .map_err(AiPatchDraftError::TaskAudit)?;
+        if task_audit.status != AiPatchSourceTaskAuditStatus::Approved {
+            return Err(AiPatchDraftError::TaskAuditNotApproved {
+                id: task_audit.id,
+                status: task_audit.status,
+                blocked_reason: task_audit.blocked_reason,
+            });
+        }
+
+        normalize_optional_text(&task_audit.approved_goal)
+            .ok_or_else(|| AiPatchDraftError::EmptyTaskAuditGoal { id: task_audit.id })
+    }
+
     fn session_plan_context(&self, insights: &MemoryInsightReport) -> AgentSessionPlanContext {
         let archive_file = insights
             .archive_path
@@ -6722,6 +6796,9 @@ impl fmt::Display for AiPatchDraftError {
             AiPatchDraftError::Store(error) => {
                 write!(formatter, "AI 补丁草案记录失败：{error}")
             }
+            AiPatchDraftError::TaskAudit(error) => {
+                write!(formatter, "AI 补丁草案读取任务草案审计失败：{error}")
+            }
             AiPatchDraftError::Version(error) => write!(formatter, "{error}"),
             AiPatchDraftError::Blocked {
                 version,
@@ -6731,6 +6808,21 @@ impl fmt::Display for AiPatchDraftError {
                 "版本 {version} 存在 {} 条未解决错误，AI 补丁草案已停止",
                 open_errors.len()
             ),
+            AiPatchDraftError::TaskAuditNotApproved {
+                id,
+                status,
+                blocked_reason,
+            } => write!(
+                formatter,
+                "任务草案审计 {id} 状态为 {status}，禁止生成 AI 补丁草案，原因：{}",
+                blocked_reason.as_deref().unwrap_or("未记录")
+            ),
+            AiPatchDraftError::EmptyTaskAuditGoal { id } => {
+                write!(
+                    formatter,
+                    "任务草案审计 {id} 的批准目标为空，禁止生成 AI 补丁草案"
+                )
+            }
             AiPatchDraftError::InvalidDraft {
                 reason,
                 response_preview,
@@ -6749,8 +6841,12 @@ impl Error for AiPatchDraftError {
             AiPatchDraftError::Memory(error) => Some(error),
             AiPatchDraftError::Ai(error) => Some(error),
             AiPatchDraftError::Store(error) => Some(error),
+            AiPatchDraftError::TaskAudit(error) => Some(error),
             AiPatchDraftError::Version(error) => Some(error),
-            AiPatchDraftError::Blocked { .. } | AiPatchDraftError::InvalidDraft { .. } => None,
+            AiPatchDraftError::Blocked { .. }
+            | AiPatchDraftError::TaskAuditNotApproved { .. }
+            | AiPatchDraftError::EmptyTaskAuditGoal { .. }
+            | AiPatchDraftError::InvalidDraft { .. } => None,
         }
     }
 }

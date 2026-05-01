@@ -23,7 +23,7 @@ pub use version::{
     version_major_file_name, version_major_key,
 };
 
-pub const CURRENT_VERSION: &str = "v0.1.62";
+pub const CURRENT_VERSION: &str = "v0.1.63";
 
 #[cfg(test)]
 mod tests {
@@ -159,11 +159,11 @@ mod tests {
             .prepare_next_version("prepare the next controlled candidate")
             .expect("evolution should prepare a candidate version");
 
-        assert_eq!(report.current_version, "v0.1.62");
-        assert_eq!(report.next_version, "v0.1.63");
+        assert_eq!(report.current_version, "v0.1.63");
+        assert_eq!(report.next_version, "v0.1.64");
         assert!(root.join("workspaces").join("v0").is_dir());
         assert_workspace_structure(&root);
-        assert!(!root.join("workspaces").join("v0.1.63").exists());
+        assert!(!root.join("workspaces").join("v0.1.64").exists());
         assert!(root.join("forge").join("memory").join("v0.md").is_file());
         assert!(root.join("forge").join("tasks").join("v0.md").is_file());
         assert!(root.join("forge").join("errors").join("v0.md").is_file());
@@ -172,26 +172,26 @@ mod tests {
             !root
                 .join("forge")
                 .join("versions")
-                .join("v0.1.63.md")
+                .join("v0.1.64.md")
                 .exists()
         );
         let version_record = fs::read_to_string(root.join("forge").join("versions").join("v0.md"))
             .expect("major version record should be readable");
-        assert!(version_record.contains("## v0.1.63"));
-        assert_eq!(report.state.current_version, "v0.1.62");
+        assert!(version_record.contains("## v0.1.64"));
+        assert_eq!(report.state.current_version, "v0.1.63");
         assert_eq!(report.state.status, "candidate_prepared");
         assert_eq!(
             report.state.version_scheme.as_deref(),
             Some("semantic:vMAJOR.MINOR.PATCH")
         );
-        assert_eq!(report.state.candidate_version.as_deref(), Some("v0.1.63"));
+        assert_eq!(report.state.candidate_version.as_deref(), Some("v0.1.64"));
         assert_eq!(
             report.state.candidate_workspace.as_deref(),
             Some("workspaces/v0")
         );
 
         supervisor
-            .verify_version("v0.1.63")
+            .verify_version("v0.1.64")
             .expect("candidate layout should validate");
 
         cleanup(&root);
@@ -206,7 +206,7 @@ mod tests {
             .initialize_current_version()
             .expect("bootstrap should succeed before evolution");
         let mut state = ForgeState::load(&root).expect("state should be readable");
-        state.workspace = "workspaces/v0.1.62".to_string();
+        state.workspace = "workspaces/v0.1.63".to_string();
         state.save(&root).expect("state should be writable");
 
         let report = supervisor
@@ -241,7 +241,7 @@ mod tests {
         let task = fs::read_to_string(root.join("forge").join("tasks").join("v0.md"))
             .expect("task should remain readable");
         assert!(task.contains("人工任务计划"));
-        assert!(task.contains("## v0.1.63"));
+        assert!(task.contains("## v0.1.64"));
 
         cleanup(&root);
     }
@@ -277,10 +277,10 @@ mod tests {
             .promote_candidate()
             .expect("candidate should promote after validation");
 
-        assert_eq!(report.previous_version, "v0.1.62");
-        assert_eq!(report.promoted_version, "v0.1.63");
-        assert_eq!(report.state.current_version, "v0.1.63");
-        assert_eq!(report.state.parent_version.as_deref(), Some("v0.1.62"));
+        assert_eq!(report.previous_version, "v0.1.63");
+        assert_eq!(report.promoted_version, "v0.1.64");
+        assert_eq!(report.state.current_version, "v0.1.64");
+        assert_eq!(report.state.parent_version.as_deref(), Some("v0.1.63"));
         assert_eq!(report.state.candidate_version, None);
         assert_eq!(report.state.status, "active");
 
@@ -303,12 +303,12 @@ mod tests {
             .run_candidate_cycle()
             .expect("valid candidate should complete the cycle");
 
-        assert_eq!(report.previous_version, "v0.1.62");
-        assert_eq!(report.candidate_version, "v0.1.63");
+        assert_eq!(report.previous_version, "v0.1.63");
+        assert_eq!(report.candidate_version, "v0.1.64");
         assert_eq!(report.result, CycleResult::Promoted);
         assert!(report.candidate_validation.is_some());
         assert_eq!(report.failure, None);
-        assert_eq!(report.state.current_version, "v0.1.63");
+        assert_eq!(report.state.current_version, "v0.1.64");
         assert_eq!(report.state.candidate_version, None);
         assert_eq!(report.state.status, "active");
 
@@ -331,10 +331,10 @@ mod tests {
             .rollback_candidate("测试回滚")
             .expect("rollback should clear candidate state");
 
-        assert_eq!(report.current_version, "v0.1.62");
-        assert_eq!(report.rolled_back_version, "v0.1.63");
+        assert_eq!(report.current_version, "v0.1.63");
+        assert_eq!(report.rolled_back_version, "v0.1.64");
         assert_eq!(report.state.status, "rolled_back");
-        assert_eq!(report.state.current_version, "v0.1.62");
+        assert_eq!(report.state.current_version, "v0.1.63");
         assert_eq!(report.state.candidate_version, None);
         assert!(root.join("workspaces").join("v0").is_dir());
 
@@ -361,12 +361,12 @@ mod tests {
             .run_candidate_cycle()
             .expect("invalid candidate should roll back without promoting");
 
-        assert_eq!(report.previous_version, "v0.1.62");
+        assert_eq!(report.previous_version, "v0.1.63");
         assert_eq!(report.candidate_version, "v9.0.0");
         assert_eq!(report.result, CycleResult::RolledBack);
         assert!(report.candidate_validation.is_none());
         assert!(report.failure.is_some());
-        assert_eq!(report.state.current_version, "v0.1.62");
+        assert_eq!(report.state.current_version, "v0.1.63");
         assert_eq!(report.state.candidate_version, None);
         assert_eq!(report.state.status, "rolled_back");
 
@@ -387,10 +387,10 @@ mod tests {
             .expect("advance should prepare a candidate when none exists");
 
         assert_eq!(report.outcome, MinimalLoopOutcome::Prepared);
-        assert_eq!(report.starting_version, "v0.1.62");
-        assert_eq!(report.stable_version, "v0.1.62");
-        assert_eq!(report.candidate_version.as_deref(), Some("v0.1.63"));
-        assert_eq!(report.next_expected_version.as_deref(), Some("v0.1.64"));
+        assert_eq!(report.starting_version, "v0.1.63");
+        assert_eq!(report.stable_version, "v0.1.63");
+        assert_eq!(report.candidate_version.as_deref(), Some("v0.1.64"));
+        assert_eq!(report.next_expected_version.as_deref(), Some("v0.1.65"));
 
         cleanup(&root);
     }
@@ -412,10 +412,10 @@ mod tests {
             .expect("advance should promote valid candidate and prepare the next one");
 
         assert_eq!(report.outcome, MinimalLoopOutcome::PromotedAndPrepared);
-        assert_eq!(report.starting_version, "v0.1.62");
-        assert_eq!(report.stable_version, "v0.1.63");
-        assert_eq!(report.candidate_version.as_deref(), Some("v0.1.64"));
-        assert_eq!(report.next_expected_version.as_deref(), Some("v0.1.65"));
+        assert_eq!(report.starting_version, "v0.1.63");
+        assert_eq!(report.stable_version, "v0.1.64");
+        assert_eq!(report.candidate_version.as_deref(), Some("v0.1.65"));
+        assert_eq!(report.next_expected_version.as_deref(), Some("v0.1.66"));
 
         cleanup(&root);
     }
@@ -441,8 +441,8 @@ mod tests {
             .expect("advance should roll back invalid candidate");
 
         assert_eq!(report.outcome, MinimalLoopOutcome::RolledBack);
-        assert_eq!(report.starting_version, "v0.1.62");
-        assert_eq!(report.stable_version, "v0.1.62");
+        assert_eq!(report.starting_version, "v0.1.63");
+        assert_eq!(report.stable_version, "v0.1.63");
         assert_eq!(report.candidate_version.as_deref(), Some("v9.0.0"));
         assert_eq!(report.next_expected_version, None);
         assert!(report.failure.is_some());
@@ -2879,7 +2879,7 @@ mod tests {
         assert_eq!(report.minimal_loop.stable_version, CURRENT_VERSION);
         assert_eq!(
             report.minimal_loop.candidate_version.as_deref(),
-            Some("v0.1.63")
+            Some("v0.1.64")
         );
         assert_eq!(report.session.status, AgentSessionStatus::Completed);
         assert!(
@@ -2892,7 +2892,7 @@ mod tests {
 
         let state = ForgeState::load(&root).expect("state should remain readable");
         assert_eq!(state.current_version, CURRENT_VERSION);
-        assert_eq!(state.candidate_version.as_deref(), Some("v0.1.63"));
+        assert_eq!(state.candidate_version.as_deref(), Some("v0.1.64"));
         let sessions = app
             .agent_sessions(CURRENT_VERSION, 10)
             .expect("completed agent session should be listed");
@@ -2923,16 +2923,16 @@ mod tests {
             MinimalLoopOutcome::PromotedAndPrepared
         );
         assert_eq!(report.minimal_loop.starting_version, CURRENT_VERSION);
-        assert_eq!(report.minimal_loop.stable_version, "v0.1.63");
+        assert_eq!(report.minimal_loop.stable_version, "v0.1.64");
         assert_eq!(
             report.minimal_loop.candidate_version.as_deref(),
-            Some("v0.1.64")
+            Some("v0.1.65")
         );
         assert_eq!(report.session.status, AgentSessionStatus::Completed);
 
         let state = ForgeState::load(&root).expect("state should remain readable");
-        assert_eq!(state.current_version, "v0.1.63");
-        assert_eq!(state.candidate_version.as_deref(), Some("v0.1.64"));
+        assert_eq!(state.current_version, "v0.1.64");
+        assert_eq!(state.candidate_version.as_deref(), Some("v0.1.65"));
 
         cleanup(&root);
     }
@@ -3014,12 +3014,12 @@ mod tests {
 
         assert_eq!(
             report.prepared_candidate_version.as_deref(),
-            Some("v0.1.63")
+            Some("v0.1.64")
         );
         assert_eq!(report.cycle.previous_version, CURRENT_VERSION);
-        assert_eq!(report.cycle.candidate_version, "v0.1.63");
+        assert_eq!(report.cycle.candidate_version, "v0.1.64");
         assert_eq!(report.cycle.result, CycleResult::Promoted);
-        assert_eq!(report.cycle.state.current_version, "v0.1.63");
+        assert_eq!(report.cycle.state.current_version, "v0.1.64");
         assert_eq!(report.cycle.state.candidate_version, None);
         assert!(report.memory_compaction.is_some());
         assert_eq!(report.session.status, AgentSessionStatus::Completed);
@@ -3050,7 +3050,7 @@ mod tests {
         );
 
         let state = ForgeState::load(&root).expect("state should remain readable");
-        assert_eq!(state.current_version, "v0.1.63");
+        assert_eq!(state.current_version, "v0.1.64");
         assert_eq!(state.candidate_version, None);
         let sessions = app
             .agent_sessions(CURRENT_VERSION, 10)
@@ -3074,10 +3074,10 @@ mod tests {
             .agent_evolve("提升后仍可审计 Agent 会话")
             .expect("agent evolve should promote a candidate");
 
-        assert_eq!(report.cycle.state.current_version, "v0.1.63");
+        assert_eq!(report.cycle.state.current_version, "v0.1.64");
 
         let promoted_version_only = app
-            .agent_sessions("v0.1.63", 10)
+            .agent_sessions("v0.1.64", 10)
             .expect("promoted version scoped session list should be readable");
         assert!(
             promoted_version_only.is_empty(),
@@ -3085,7 +3085,7 @@ mod tests {
         );
 
         let all = app
-            .agent_sessions_all("v0.1.63", 10)
+            .agent_sessions_all("v0.1.64", 10)
             .expect("all major session list should find previous patch session");
         assert_eq!(all.len(), 1);
         assert_eq!(all[0].id, report.session.id);
@@ -3113,9 +3113,9 @@ mod tests {
 
         assert_eq!(report.prepared_candidate_version, None);
         assert_eq!(report.cycle.previous_version, CURRENT_VERSION);
-        assert_eq!(report.cycle.candidate_version, "v0.1.63");
+        assert_eq!(report.cycle.candidate_version, "v0.1.64");
         assert_eq!(report.cycle.result, CycleResult::Promoted);
-        assert_eq!(report.cycle.state.current_version, "v0.1.63");
+        assert_eq!(report.cycle.state.current_version, "v0.1.64");
         assert_eq!(report.cycle.state.candidate_version, None);
         assert_eq!(report.session.status, AgentSessionStatus::Completed);
 
@@ -3779,6 +3779,144 @@ mod tests {
         cleanup(&root);
     }
 
+    fn create_task_audit_record_for_patch_draft(
+        root: &Path,
+        status: AiPatchSourceTaskAuditStatus,
+        approved_goal: &str,
+    ) -> AiPatchSourceTaskAuditRecord {
+        AiPatchSourceTaskAuditStore::new(root)
+            .create(
+                AiPatchSourceTaskAuditRecord {
+                    id: String::new(),
+                    version: CURRENT_VERSION.to_string(),
+                    task_draft_id: "patch-source-task-draft-test".to_string(),
+                    summary_id: "patch-source-cycle-summary-test".to_string(),
+                    cycle_id: "patch-source-cycle-test".to_string(),
+                    created_at_unix_seconds: 0,
+                    status,
+                    source_task_status: AiPatchSourceTaskDraftStatus::Drafted,
+                    proposed_task_title: "生成已审计补丁草案".to_string(),
+                    proposed_task_description: "用于测试已审计任务草案进入补丁草案流程。"
+                        .to_string(),
+                    suggested_target_version: next_version_after(CURRENT_VERSION)
+                        .expect("next version should parse"),
+                    approved_goal: approved_goal.to_string(),
+                    findings: vec![AiPatchSourceTaskAuditFinding {
+                        check: "测试审计".to_string(),
+                        passed: status == AiPatchSourceTaskAuditStatus::Approved,
+                        message: "测试审计记录。".to_string(),
+                    }],
+                    follow_up_commands: vec![
+                        "cargo run -- preflight".to_string(),
+                        format!("cargo run -- agent-patch-draft \"{approved_goal}\""),
+                    ],
+                    blocked_reason: if status == AiPatchSourceTaskAuditStatus::Approved {
+                        None
+                    } else {
+                        Some("测试阻断审计".to_string())
+                    },
+                    markdown_file: PathBuf::new(),
+                    file: PathBuf::new(),
+                },
+                "# 测试任务草案审计\n",
+            )
+            .expect("test task audit should be stored")
+    }
+
+    #[test]
+    fn ai_patch_draft_preview_from_task_audit_uses_approved_goal() {
+        let root = temp_root("ai-patch-draft-from-task-audit-preview");
+        let app = SelfForgeApp::new(&root);
+
+        app.supervisor()
+            .initialize_current_version()
+            .expect("bootstrap should succeed before task audit patch draft preview");
+        fs::write(
+            root.join(".env"),
+            "SELFFORGE_AI_PROVIDER=deepseek\nDEEPSEEK_API_KEY=test-patch-draft-key\n",
+        )
+        .expect("test should write dotenv file");
+        fs::write(
+            root.join("forge").join("memory").join("v0.md"),
+            format!(
+                "# v0 记忆记录\n\n## {CURRENT_VERSION}\n\n# 错误总结\n\n本轮没有未解决错误。\n\n# 评估\n\n系统已经具备任务草案审计闸门。\n\n# 优化建议\n\n让补丁草案读取已批准审计记录。\n\n# 可复用经验\n\n补丁草案必须使用已批准目标。\n"
+            ),
+        )
+        .expect("test should write memory archive");
+        let audit = create_task_audit_record_for_patch_draft(
+            &root,
+            AiPatchSourceTaskAuditStatus::Approved,
+            "根据已批准任务草案审计生成补丁草案",
+        );
+
+        let preview = app
+            .ai_patch_draft_preview_from_task_audit_with_lookup(&audit.id, |_| None)
+            .expect("approved task audit should build patch draft preview");
+
+        assert_eq!(preview.goal, "根据已批准任务草案审计生成补丁草案");
+        assert!(
+            preview
+                .prompt
+                .contains("根据已批准任务草案审计生成补丁草案")
+        );
+        assert_eq!(preview.request.provider_id, "deepseek");
+
+        cleanup(&root);
+    }
+
+    #[test]
+    fn ai_patch_draft_preview_from_task_audit_rejects_blocked_audit() {
+        let root = temp_root("ai-patch-draft-from-task-audit-blocked");
+        let app = SelfForgeApp::new(&root);
+
+        app.supervisor()
+            .initialize_current_version()
+            .expect("bootstrap should succeed before blocked task audit patch draft preview");
+        let audit = create_task_audit_record_for_patch_draft(
+            &root,
+            AiPatchSourceTaskAuditStatus::Blocked,
+            "被阻断的补丁草案目标",
+        );
+
+        let error = app
+            .ai_patch_draft_preview_from_task_audit_with_lookup(&audit.id, |_| None)
+            .expect_err("blocked task audit should not build patch draft preview");
+
+        assert!(matches!(
+            error,
+            AiPatchDraftError::TaskAuditNotApproved {
+                status: AiPatchSourceTaskAuditStatus::Blocked,
+                ..
+            }
+        ));
+
+        cleanup(&root);
+    }
+
+    #[test]
+    fn ai_patch_draft_preview_from_task_audit_reports_missing_audit() {
+        let root = temp_root("ai-patch-draft-from-task-audit-missing");
+        let app = SelfForgeApp::new(&root);
+
+        app.supervisor()
+            .initialize_current_version()
+            .expect("bootstrap should succeed before missing task audit patch draft preview");
+
+        let error = app
+            .ai_patch_draft_preview_from_task_audit_with_lookup(
+                "patch-source-task-audit-missing",
+                |_| None,
+            )
+            .expect_err("missing task audit should be reported");
+
+        assert!(matches!(
+            error,
+            AiPatchDraftError::TaskAudit(AiPatchSourceTaskAuditStoreError::NotFound { .. })
+        ));
+
+        cleanup(&root);
+    }
+
     #[test]
     fn ai_patch_audit_passes_clean_scope_and_writes_record() {
         let root = temp_root("ai-patch-audit-pass");
@@ -4117,7 +4255,7 @@ mod tests {
         assert!(!report.record.validation_checked_paths.is_empty());
 
         let state = ForgeState::load(&root).expect("state should be readable after apply");
-        assert_eq!(state.candidate_version.as_deref(), Some("v0.1.63"));
+        assert_eq!(state.candidate_version.as_deref(), Some("v0.1.64"));
         assert_eq!(state.status, "candidate_prepared");
         let records = app
             .ai_patch_application_records(CURRENT_VERSION, 10)
@@ -4264,9 +4402,9 @@ mod tests {
 
         assert_eq!(report.record.status, AiPatchApplicationStatus::Applied);
         assert!(report.prepared_candidate_version.is_none());
-        assert_eq!(report.record.candidate_version, "v0.1.63");
+        assert_eq!(report.record.candidate_version, "v0.1.64");
         let state = ForgeState::load(&root).expect("state should remain readable");
-        assert_eq!(state.candidate_version.as_deref(), Some("v0.1.63"));
+        assert_eq!(state.candidate_version.as_deref(), Some("v0.1.64"));
         assert_eq!(state.status, "candidate_prepared");
 
         cleanup(&root);
