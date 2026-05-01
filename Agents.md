@@ -252,6 +252,8 @@ AI 补丁源码覆盖执行成功后，版本提升衔接必须优先使用 `age
 
 AI 补丁源码覆盖提升衔接记录就绪后，候选准备必须优先使用 `agent-patch-source-candidate [--current|--candidate|--version VERSION] PROMOTION_ID`。候选准备记录只能写入 `workspaces/vMAJOR/artifacts/agents/patch-source-candidates/`，索引文件为同目录 `index.jsonl`，禁止为小版本创建独立目录或文件。该命令只能读取已就绪的提升衔接记录，必须检查当前稳定版本、下一候选版本、开放错误和候选状态；无候选时才允许调用受控版本状态机生成下一候选，目标候选已存在且匹配时只能复用并验证布局，存在不同候选或开放错误时必须写入已阻断记录。候选准备记录必须包含提升衔接编号、状态变化、候选工作区、候选验证摘要、阻断原因和后续验证命令。查询候选准备记录使用 `agent-patch-source-candidates [--limit N]`，读取单条候选准备记录使用 `agent-patch-source-candidate-record CANDIDATE_RECORD_ID`。候选准备成功后仍必须继续执行 `validate`、`preflight`、`cycle`、错误归档和记忆记录，禁止跳过验证直接提升。
 
+AI 补丁源码覆盖候选准备记录就绪后，候选验证与提升回滚衔接必须优先使用 `agent-patch-source-cycle [--current|--candidate|--version VERSION] CANDIDATE_RECORD_ID`。cycle 记录只能写入 `workspaces/vMAJOR/artifacts/agents/patch-source-cycles/`，索引文件为同目录 `index.jsonl`，禁止为小版本创建独立目录或文件。该命令只能读取状态为已准备或已复用的候选准备记录，必须确认状态文件当前稳定版本、候选版本和 `candidate_prepared` 状态与记录一致，并在执行前调用 `preflight`，确认没有开放错误且候选布局可验证。通过检查后才能调用受控 `cycle` 流程；候选验证成功时记录提升后的稳定版本，候选验证失败时记录回滚原因和回滚后的状态，任一前置条件不满足时必须写入已阻断记录。查询 cycle 记录使用 `agent-patch-source-cycles [--limit N]`，读取单条 cycle 记录使用 `agent-patch-source-cycle-record CYCLE_RECORD_ID`。该命令不得绕过 Supervisor、Runtime、错误归档、状态文件或版本规则，禁止跳过预检直接提升。
+
 ---
 
 # 八、Git 提交规范

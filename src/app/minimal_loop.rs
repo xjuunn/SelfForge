@@ -14,7 +14,9 @@ use super::agent::{
     AiPatchDraftSummary, AiPatchPreviewChange, AiPatchPreviewRecord, AiPatchPreviewStatus,
     AiPatchPreviewStore, AiPatchPreviewStoreError, AiPatchPreviewSummary,
     AiPatchSourceCandidateRecord, AiPatchSourceCandidateStatus, AiPatchSourceCandidateStore,
-    AiPatchSourceCandidateStoreError, AiPatchSourceCandidateSummary, AiPatchSourceExecutionFile,
+    AiPatchSourceCandidateStoreError, AiPatchSourceCandidateSummary, AiPatchSourceCycleRecord,
+    AiPatchSourceCycleResult, AiPatchSourceCycleStatus, AiPatchSourceCycleStore,
+    AiPatchSourceCycleStoreError, AiPatchSourceCycleSummary, AiPatchSourceExecutionFile,
     AiPatchSourceExecutionRecord, AiPatchSourceExecutionStatus, AiPatchSourceExecutionStore,
     AiPatchSourceExecutionStoreError, AiPatchSourceExecutionSummary, AiPatchSourcePlanFile,
     AiPatchSourcePlanRecord, AiPatchSourcePlanStatus, AiPatchSourcePlanStore,
@@ -211,6 +213,12 @@ pub struct AiPatchSourcePromotionReport {
 pub struct AiPatchSourceCandidateReport {
     pub promotion: AiPatchSourcePromotionRecord,
     pub record: AiPatchSourceCandidateRecord,
+}
+
+#[derive(Debug, Clone)]
+pub struct AiPatchSourceCycleReport {
+    pub candidate: AiPatchSourceCandidateRecord,
+    pub record: AiPatchSourceCycleRecord,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -417,6 +425,13 @@ pub enum AiPatchSourceCandidateError {
     State(StateError),
     ErrorArchive(ErrorArchiveError),
     Version(VersionError),
+}
+
+#[derive(Debug)]
+pub enum AiPatchSourceCycleError {
+    Candidate(AiPatchSourceCandidateStoreError),
+    Store(AiPatchSourceCycleStoreError),
+    State(StateError),
 }
 
 #[derive(Debug)]
@@ -1964,6 +1979,210 @@ impl SelfForgeApp {
         id: &str,
     ) -> Result<AiPatchSourceCandidateRecord, AiPatchSourceCandidateStoreError> {
         AiPatchSourceCandidateStore::new(&self.root).load(version, id)
+    }
+
+    pub fn ai_patch_source_cycle(
+        &self,
+        version: &str,
+        candidate_record_id: &str,
+    ) -> Result<AiPatchSourceCycleReport, AiPatchSourceCycleError> {
+        let candidate = AiPatchSourceCandidateStore::new(&self.root)
+            .load(version, candidate_record_id)
+            .map_err(AiPatchSourceCycleError::Candidate)?;
+        let state_before = ForgeState::load(&self.root).map_err(AiPatchSourceCycleError::State)?;
+
+        let mut status = AiPatchSourceCycleStatus::Blocked;
+        let mut cycle_result = None;
+        let mut failure = None;
+        let mut readiness_checks = Vec::new();
+        let mut error = None;
+        let mut preflight_current_checked_path_count = 0;
+        let mut preflight_candidate_checked_path_count = 0;
+        let mut preflight_can_advance = false;
+        let mut open_error_count = 0;
+        let mut cycle_candidate_checked_path_count = 0;
+        let mut state_after = state_before.clone();
+
+        match candidate.status {
+            AiPatchSourceCandidateStatus::Prepared | AiPatchSourceCandidateStatus::Reused => {
+                readiness_checks.push("候选准备记录状态允许进入 cycle。".to_string());
+            }
+            AiPatchSourceCandidateStatus::Blocked => {
+                error = Some("候选准备记录未准备完成，禁止执行 cycle。".to_string());
+            }
+        }
+
+        if error.is_none() {
+            if state_before.current_version != version {
+                error = Some(format!(
+                    "当前稳定版本为 {}，与请求版本 {} 不一致，禁止执行候选 cycle。",
+                    state_before.current_version, version
+                ));
+            } else {
+                readiness_checks.push("当前稳定版本与候选准备记录版本一致。".to_string());
+            }
+        }
+
+        if error.is_none() {
+            if state_before.status != "candidate_prepared" {
+                error = Some(format!(
+                    "状态文件当前状态为 {}，不是 candidate_prepared，禁止执行候选 cycle。",
+                    state_before.status
+                ));
+            } else {
+                readiness_checks.push("状态文件处于候选准备完成状态。".to_string());
+            }
+        }
+
+        if error.is_none() {
+            if state_before.candidate_version.as_deref()
+                != Some(candidate.candidate_version.as_str())
+            {
+                error = Some(format!(
+                    "状态文件候选版本为 {}，与候选准备记录 {} 不一致。",
+                    state_before.candidate_version.as_deref().unwrap_or("无"),
+                    candidate.candidate_version
+                ));
+            } else {
+                readiness_checks.push("状态文件候选版本与候选准备记录一致。".to_string());
+            }
+        }
+
+        if error.is_none() {
+            match self.preflight() {
+                Ok(preflight) => {
+                    preflight_current_checked_path_count = preflight.checked_paths.len();
+                    preflight_candidate_checked_path_count =
+                        preflight.candidate_checked_paths.len();
+                    preflight_can_advance = preflight.can_advance;
+                    open_error_count = preflight.open_errors.len();
+                    if preflight.can_advance {
+                        readiness_checks
+                            .push("cycle 前置检查通过，当前版本没有开放错误。".to_string());
+                    } else if let Some(open_error) = preflight.open_errors.first() {
+                        error = Some(format!(
+                            "前置检查发现未解决错误 {}，禁止执行候选 cycle。",
+                            open_error.run_id
+                        ));
+                    } else {
+                        error = Some("前置检查未允许继续进化，禁止执行候选 cycle。".to_string());
+                    }
+                }
+                Err(source) => {
+                    error = Some(format!("cycle 前置检查失败：{source}"));
+                }
+            }
+        }
+
+        if error.is_none() {
+            match self.supervisor.run_candidate_cycle() {
+                Ok(cycle) => {
+                    cycle_candidate_checked_path_count = cycle
+                        .candidate_validation
+                        .as_ref()
+                        .map(|validation| validation.checked_paths.len())
+                        .unwrap_or(0);
+                    state_after = cycle.state.clone();
+                    match cycle.result {
+                        CycleResult::Promoted => {
+                            status = AiPatchSourceCycleStatus::Promoted;
+                            cycle_result = Some(AiPatchSourceCycleResult::Promoted);
+                            readiness_checks
+                                .push("候选版本验证通过并已提升为稳定版本。".to_string());
+                        }
+                        CycleResult::RolledBack => {
+                            status = AiPatchSourceCycleStatus::RolledBack;
+                            cycle_result = Some(AiPatchSourceCycleResult::RolledBack);
+                            failure = cycle.failure.clone();
+                            error = cycle.failure.clone();
+                            readiness_checks
+                                .push("候选版本验证失败，状态机已执行回滚。".to_string());
+                        }
+                    }
+                }
+                Err(source) => {
+                    error = Some(format!("候选 cycle 执行失败：{source}"));
+                    state_after =
+                        ForgeState::load(&self.root).unwrap_or_else(|_| state_before.clone());
+                }
+            }
+        }
+
+        if error.is_some() && status == AiPatchSourceCycleStatus::Blocked {
+            state_after = ForgeState::load(&self.root).unwrap_or_else(|_| state_before.clone());
+        }
+
+        let follow_up_commands = match status {
+            AiPatchSourceCycleStatus::Promoted => vec![
+                "cargo run -- preflight".to_string(),
+                "cargo run -- memory-compact --current --keep 5".to_string(),
+            ],
+            AiPatchSourceCycleStatus::RolledBack => vec![
+                "cargo run -- preflight".to_string(),
+                "cargo run -- errors --current --open --limit 5".to_string(),
+                format!(
+                    "cargo run -- agent-patch-source-candidate --version {} {}",
+                    candidate.version, candidate.promotion_id
+                ),
+            ],
+            AiPatchSourceCycleStatus::Blocked => vec![
+                "cargo run -- preflight".to_string(),
+                format!(
+                    "cargo run -- agent-patch-source-cycle --version {version} {candidate_record_id}"
+                ),
+            ],
+        };
+
+        let record = AiPatchSourceCycleRecord {
+            id: String::new(),
+            version: version.to_string(),
+            candidate_record_id: candidate.id.clone(),
+            promotion_id: candidate.promotion_id.clone(),
+            source_execution_id: candidate.source_execution_id.clone(),
+            candidate_version: candidate.candidate_version.clone(),
+            created_at_unix_seconds: 0,
+            status,
+            cycle_result,
+            stable_version_before: state_before.current_version.clone(),
+            state_status_before: state_before.status.clone(),
+            candidate_version_before: state_before.candidate_version.clone(),
+            stable_version_after: state_after.current_version.clone(),
+            state_status_after: state_after.status.clone(),
+            candidate_version_after: state_after.candidate_version.clone(),
+            preflight_current_checked_path_count,
+            preflight_candidate_checked_path_count,
+            preflight_can_advance,
+            open_error_count,
+            cycle_candidate_checked_path_count,
+            failure,
+            readiness_checks,
+            follow_up_commands,
+            report_file: None,
+            error,
+            file: PathBuf::new(),
+        };
+        let markdown = build_ai_patch_source_cycle_markdown(&record);
+        let record = AiPatchSourceCycleStore::new(&self.root)
+            .create(record, Some(&markdown))
+            .map_err(AiPatchSourceCycleError::Store)?;
+
+        Ok(AiPatchSourceCycleReport { candidate, record })
+    }
+
+    pub fn ai_patch_source_cycle_records(
+        &self,
+        version: &str,
+        limit: usize,
+    ) -> Result<Vec<AiPatchSourceCycleSummary>, AiPatchSourceCycleStoreError> {
+        AiPatchSourceCycleStore::new(&self.root).list(version, limit)
+    }
+
+    pub fn ai_patch_source_cycle_record(
+        &self,
+        version: &str,
+        id: &str,
+    ) -> Result<AiPatchSourceCycleRecord, AiPatchSourceCycleStoreError> {
+        AiPatchSourceCycleStore::new(&self.root).load(version, id)
     }
 
     fn prepare_patch_source_execution_file(
@@ -5018,6 +5237,88 @@ fn build_ai_patch_source_candidate_markdown(record: &AiPatchSourceCandidateRecor
     markdown
 }
 
+fn build_ai_patch_source_cycle_markdown(record: &AiPatchSourceCycleRecord) -> String {
+    let mut markdown = String::new();
+    markdown.push_str("# AI 补丁源码覆盖候选 cycle 记录\n\n");
+    markdown.push_str("# 基本信息\n\n");
+    markdown.push_str(&format!(
+        "- 源版本：{}\n- 候选准备记录：{}\n- 提升衔接记录：{}\n- 源码覆盖执行：{}\n- 候选版本：{}\n- cycle 状态：{}\n- cycle 结果：{}\n- 错误信息：{}\n\n",
+        record.version,
+        record.candidate_record_id,
+        record.promotion_id,
+        record.source_execution_id,
+        record.candidate_version,
+        record.status,
+        record
+            .cycle_result
+            .as_ref()
+            .map(ToString::to_string)
+            .unwrap_or_else(|| "无".to_string()),
+        record.error.as_deref().unwrap_or("无")
+    ));
+
+    markdown.push_str("# 状态变化\n\n");
+    markdown.push_str(&format!(
+        "- cycle 前稳定版本：{}\n- cycle 前状态：{}\n- cycle 前候选版本：{}\n- cycle 后稳定版本：{}\n- cycle 后状态：{}\n- cycle 后候选版本：{}\n\n",
+        record.stable_version_before,
+        record.state_status_before,
+        record.candidate_version_before.as_deref().unwrap_or("无"),
+        record.stable_version_after,
+        record.state_status_after,
+        record.candidate_version_after.as_deref().unwrap_or("无")
+    ));
+
+    markdown.push_str("# 预检摘要\n\n");
+    markdown.push_str(&format!(
+        "- 当前版本检查路径数：{}\n- 候选版本检查路径数：{}\n- 是否允许继续：{}\n- 开放错误数：{}\n\n",
+        record.preflight_current_checked_path_count,
+        record.preflight_candidate_checked_path_count,
+        if record.preflight_can_advance { "是" } else { "否" },
+        record.open_error_count
+    ));
+
+    markdown.push_str("# cycle 结果\n\n");
+    markdown.push_str(&format!(
+        "- 候选验证路径数：{}\n- 回滚或失败原因：{}\n\n",
+        record.cycle_candidate_checked_path_count,
+        record.failure.as_deref().unwrap_or("无")
+    ));
+
+    markdown.push_str("# 就绪检查\n\n");
+    if record.readiness_checks.is_empty() {
+        markdown.push_str("- 无通过项。\n");
+    } else {
+        for check in &record.readiness_checks {
+            markdown.push_str(&format!("- {check}\n"));
+        }
+    }
+    markdown.push('\n');
+
+    markdown.push_str("# 后续命令\n\n");
+    for command in &record.follow_up_commands {
+        markdown.push_str(&format!("- `{command}`\n"));
+    }
+    markdown.push('\n');
+
+    markdown.push_str("# 下一步\n\n");
+    match record.status {
+        AiPatchSourceCycleStatus::Promoted => {
+            markdown.push_str(
+                "- 候选版本已提升为稳定版本，继续执行预检、记忆压缩和下一轮最小任务选择。\n",
+            );
+        }
+        AiPatchSourceCycleStatus::RolledBack => {
+            markdown.push_str("- 候选版本已回滚，必须分析失败原因并重新生成候选准备链路。\n");
+        }
+        AiPatchSourceCycleStatus::Blocked => {
+            markdown.push_str(
+                "- 候选 cycle 被阻断，必须先修复阻断原因，再重新执行同一条候选准备记录。\n",
+            );
+        }
+    }
+    markdown
+}
+
 #[derive(Debug)]
 struct PatchWriteScopeAudit {
     normalized_write_scope: Vec<String>,
@@ -5992,6 +6293,35 @@ impl Error for AiPatchSourceCandidateError {
             AiPatchSourceCandidateError::State(error) => Some(error),
             AiPatchSourceCandidateError::ErrorArchive(error) => Some(error),
             AiPatchSourceCandidateError::Version(error) => Some(error),
+        }
+    }
+}
+
+impl fmt::Display for AiPatchSourceCycleError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AiPatchSourceCycleError::Candidate(error) => {
+                write!(
+                    formatter,
+                    "AI 补丁源码覆盖候选 cycle 读取候选准备记录失败：{error}"
+                )
+            }
+            AiPatchSourceCycleError::Store(error) => {
+                write!(formatter, "AI 补丁源码覆盖候选 cycle 记录失败：{error}")
+            }
+            AiPatchSourceCycleError::State(error) => {
+                write!(formatter, "AI 补丁源码覆盖候选 cycle 读取状态失败：{error}")
+            }
+        }
+    }
+}
+
+impl Error for AiPatchSourceCycleError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            AiPatchSourceCycleError::Candidate(error) => Some(error),
+            AiPatchSourceCycleError::Store(error) => Some(error),
+            AiPatchSourceCycleError::State(error) => Some(error),
         }
     }
 }
