@@ -18,6 +18,6 @@ pub use error_archive::{
     ErrorResolutionReport,
 };
 pub use minimal_loop::{
-    AgentEvolutionError, AgentEvolutionReport, MinimalLoopError, MinimalLoopOutcome,
-    MinimalLoopReport, PreflightReport, SelfForgeApp,
+    AgentEvolutionError, AgentEvolutionReport, AgentSingleEvolutionReport, MinimalLoopError,
+    MinimalLoopOutcome, MinimalLoopReport, PreflightReport, SelfForgeApp,
 };

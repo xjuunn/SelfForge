@@ -8,7 +8,8 @@ use super::ai_provider::{
 };
 use super::error_archive::{ArchivedErrorEntry, ErrorArchive, ErrorArchiveError, ErrorListQuery};
 use crate::{
-    CycleResult, EvolutionError, ForgeError, ForgeState, StateError, Supervisor, next_version_after,
+    CycleReport, CycleResult, EvolutionError, ForgeError, ForgeState, StateError, Supervisor,
+    next_version_after,
 };
 use std::error::Error;
 use std::fmt;
@@ -57,6 +58,14 @@ pub struct AgentEvolutionReport {
     pub session: AgentSession,
     pub preflight: PreflightReport,
     pub minimal_loop: MinimalLoopReport,
+}
+
+#[derive(Debug, Clone)]
+pub struct AgentSingleEvolutionReport {
+    pub session: AgentSession,
+    pub preflight: PreflightReport,
+    pub prepared_candidate_version: Option<String>,
+    pub cycle: CycleReport,
 }
 
 #[derive(Debug)]
@@ -266,6 +275,142 @@ impl SelfForgeApp {
             session,
             preflight,
             minimal_loop,
+        })
+    }
+
+    pub fn agent_evolve(
+        &self,
+        goal: &str,
+    ) -> Result<AgentSingleEvolutionReport, AgentEvolutionError> {
+        let state = ForgeState::load(&self.root)
+            .map_err(MinimalLoopError::from)
+            .map_err(AgentEvolutionError::Setup)?;
+        let store = AgentSessionStore::new(&self.root);
+        let mut session = store.start(&state.current_version, goal)?;
+        session.mark_running();
+        session.update_step(
+            1,
+            AgentStepStatus::Completed,
+            "已创建 Agent 会话并生成单轮完整进化计划。",
+        )?;
+        store.save(&session)?;
+
+        let preflight = match self.preflight() {
+            Ok(report) => report,
+            Err(error) => {
+                session.update_step(2, AgentStepStatus::Failed, error.to_string())?;
+                session.mark_failed(error.to_string());
+                store.save(&session)?;
+                return Err(AgentEvolutionError::MinimalLoop {
+                    session: Box::new(session),
+                    source: error,
+                });
+            }
+        };
+        session.update_step(
+            2,
+            AgentStepStatus::Completed,
+            "前置检查通过，当前稳定版本可以进入单轮进化。",
+        )?;
+        store.save(&session)?;
+
+        if !preflight.can_advance {
+            session.update_step(
+                3,
+                AgentStepStatus::Failed,
+                "前置检查发现未解决错误，停止单轮 Agent 进化。",
+            )?;
+            session.mark_failed("前置检查发现未解决错误。");
+            store.save(&session)?;
+            return Err(AgentEvolutionError::Blocked {
+                session: Box::new(session),
+                open_errors: preflight.open_errors,
+            });
+        }
+
+        let prepared_candidate_version = if preflight.candidate_version.is_some() {
+            let candidate = preflight
+                .candidate_version
+                .as_deref()
+                .unwrap_or("未知候选版本");
+            session.update_step(
+                3,
+                AgentStepStatus::Completed,
+                format!("检测到已有候选版本 {candidate}，本轮直接进入候选验证。"),
+            )?;
+            None
+        } else {
+            match self.supervisor.prepare_next_version(goal) {
+                Ok(report) => {
+                    session.update_step(
+                        3,
+                        AgentStepStatus::Completed,
+                        format!("已准备候选版本 {}。", report.next_version),
+                    )?;
+                    Some(report.next_version)
+                }
+                Err(error) => {
+                    let source = MinimalLoopError::Evolution(error);
+                    session.update_step(3, AgentStepStatus::Failed, source.to_string())?;
+                    session.mark_failed(source.to_string());
+                    store.save(&session)?;
+                    return Err(AgentEvolutionError::MinimalLoop {
+                        session: Box::new(session),
+                        source,
+                    });
+                }
+            }
+        };
+        store.save(&session)?;
+
+        let cycle = match self.supervisor.run_candidate_cycle() {
+            Ok(report) => report,
+            Err(error) => {
+                let source = MinimalLoopError::Evolution(error);
+                session.update_step(4, AgentStepStatus::Failed, source.to_string())?;
+                session.mark_failed(source.to_string());
+                store.save(&session)?;
+                return Err(AgentEvolutionError::MinimalLoop {
+                    session: Box::new(session),
+                    source,
+                });
+            }
+        };
+
+        let cycle_result = match cycle.result {
+            CycleResult::Promoted => format!(
+                "候选版本 {} 已通过验证并提升，当前稳定版本为 {}。",
+                cycle.candidate_version, cycle.state.current_version
+            ),
+            CycleResult::RolledBack => format!(
+                "候选版本 {} 验证失败并回滚，原因：{}",
+                cycle.candidate_version,
+                cycle.failure.as_deref().unwrap_or("未记录原因")
+            ),
+        };
+        session.update_step(4, AgentStepStatus::Completed, cycle_result)?;
+        session.update_step(
+            5,
+            AgentStepStatus::Completed,
+            "已完成单轮候选验证、提升或回滚结果审查。",
+        )?;
+        session.update_step(
+            6,
+            AgentStepStatus::Completed,
+            "Agent 单轮完整进化会话结果已持久化。",
+        )?;
+        let outcome = format!(
+            "候选版本 {}，结果 {:?}，当前稳定版本 {}",
+            cycle.candidate_version, cycle.result, cycle.state.current_version
+        );
+        session.mark_completed(outcome);
+        store.save(&session)?;
+
+        Ok(AgentSingleEvolutionReport {
+            session,
+            preflight,
+            prepared_candidate_version,
+            cycle,
         })
     }
 

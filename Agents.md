@@ -192,6 +192,8 @@ Agent 会话必须通过 `agent-start [goal]` 创建，并写入 `workspaces/vMA
 
 Agent 自动进化入口必须优先使用 `agent-advance [goal]`。该命令必须创建 Agent 会话、执行 `preflight`、调用现有 `advance` 最小闭环，并把步骤状态、结果和失败原因写回同一个会话文件。若前置检查发现未解决错误，必须将会话标记为失败并停止进化，禁止生成或提升候选版本。`agent-advance` 只能编排现有受控流程，不得绕过 Supervisor、Runtime、错误归档、版本规则或状态文件。
 
+单轮完整 Agent 进化必须优先使用 `agent-evolve [goal]`。该命令必须创建 Agent 会话、执行 `preflight`、在无候选时准备下一 patch 候选、在已有候选时直接验证候选，并通过 `cycle` 完成提升或回滚。若存在未解决错误，必须在准备候选前停止并将会话标记为失败。`agent-evolve` 只能执行一轮完整进化，禁止循环自调用，禁止跳过测试和验证。
+
 ---
 
 # 八、Git 提交规范

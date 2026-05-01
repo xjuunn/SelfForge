@@ -53,6 +53,7 @@ fn main() {
         "agent-sessions" => agent_sessions(&app, args.collect()),
         "agent-session" => agent_session(&app, args.collect()),
         "agent-advance" => agent_advance(&app, args.collect()),
+        "agent-evolve" => agent_evolve(&app, args.collect()),
         "evolve" => evolve(&supervisor, args.collect()),
         "advance" => advance(&app, args.collect()),
         "promote" => boxed(supervisor.promote_candidate().map(|report| {
@@ -552,6 +553,31 @@ fn agent_advance(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, B
     }))
 }
 
+fn agent_evolve(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Box<dyn Error>> {
+    let goal = arguments.join(" ");
+    let goal = if goal.trim().is_empty() {
+        "执行 SelfForge 单轮完整自动进化"
+    } else {
+        goal.trim()
+    };
+
+    boxed(app.agent_evolve(goal).map(|report| {
+        let prepared = report
+            .prepared_candidate_version
+            .as_deref()
+            .unwrap_or("复用已有候选");
+        format!(
+            "SelfForge Agent 单轮进化完成 会话 {} 准备 {} 候选版本 {} 结果 {:?} 当前稳定版本 {} 未解决错误 {}",
+            report.session.id,
+            prepared,
+            report.cycle.candidate_version,
+            report.cycle.result,
+            report.cycle.state.current_version,
+            report.preflight.open_errors.len()
+        )
+    }))
+}
+
 struct AiRequestArgs {
     dry_run: bool,
     timeout_ms: u64,
@@ -1037,7 +1063,7 @@ fn parse_agent_session_args(arguments: Vec<String>) -> Result<AgentSessionArgs, 
 }
 
 fn help_text() -> &'static str {
-    "SelfForge commands: init, validate, status, preflight, ai-config, ai-request [--dry-run] [--timeout-ms N] [prompt], agents, agent-plan [goal], agent-start [--current|--candidate|--version VERSION] [goal], agent-sessions [--current|--candidate|--version VERSION] [--limit N], agent-session [--current|--candidate|--version VERSION] SESSION_ID, agent-advance [goal], advance [goal], promote, rollback [reason], cycle, run [--current|--candidate|--version VERSION] [--timeout-ms N] -- PROGRAM [ARGS...], runs [--current|--candidate|--version VERSION] [--limit N] [--failed] [--timed-out], errors [--current|--candidate|--version VERSION] [--limit N] [--open] [--resolved], record-error [--current|--candidate|--version VERSION] [--run-id RUN_ID] [--stage TEXT] [--solution TEXT], resolve-error [--current|--candidate|--version VERSION] --run-id RUN_ID [--verification TEXT], evolve [--patch|--minor|--major] [goal]"
+    "SelfForge commands: init, validate, status, preflight, ai-config, ai-request [--dry-run] [--timeout-ms N] [prompt], agents, agent-plan [goal], agent-start [--current|--candidate|--version VERSION] [goal], agent-sessions [--current|--candidate|--version VERSION] [--limit N], agent-session [--current|--candidate|--version VERSION] SESSION_ID, agent-advance [goal], agent-evolve [goal], advance [goal], promote, rollback [reason], cycle, run [--current|--candidate|--version VERSION] [--timeout-ms N] -- PROGRAM [ARGS...], runs [--current|--candidate|--version VERSION] [--limit N] [--failed] [--timed-out], errors [--current|--candidate|--version VERSION] [--limit N] [--open] [--resolved], record-error [--current|--candidate|--version VERSION] [--run-id RUN_ID] [--stage TEXT] [--solution TEXT], resolve-error [--current|--candidate|--version VERSION] --run-id RUN_ID [--verification TEXT], evolve [--patch|--minor|--major] [goal]"
 }
 
 fn exit_with_error(error: Box<dyn Error>) -> ! {
