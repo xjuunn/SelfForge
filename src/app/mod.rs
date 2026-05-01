@@ -5,8 +5,8 @@ mod minimal_loop;
 
 pub use agent::{
     AgentCapability, AgentDefinition, AgentError, AgentPlan, AgentPlanStep, AgentRegistry,
-    AgentSession, AgentSessionError, AgentSessionEvent, AgentSessionEventKind, AgentSessionStatus,
-    AgentSessionStep, AgentSessionStore, AgentSessionSummary, AgentStepStatus,
+    AgentRunReference, AgentSession, AgentSessionError, AgentSessionEvent, AgentSessionEventKind,
+    AgentSessionStatus, AgentSessionStep, AgentSessionStore, AgentSessionSummary, AgentStepStatus,
 };
 pub use ai_provider::{
     AiConfigError, AiConfigReport, AiExecutionError, AiExecutionReport, AiProviderRegistry,
@@ -18,6 +18,7 @@ pub use error_archive::{
     ErrorResolutionReport,
 };
 pub use minimal_loop::{
-    AgentEvolutionError, AgentEvolutionReport, AgentSingleEvolutionReport, MinimalLoopError,
-    MinimalLoopOutcome, MinimalLoopReport, PreflightReport, SelfForgeApp,
+    AgentEvolutionError, AgentEvolutionReport, AgentRunError, AgentRunReport,
+    AgentSingleEvolutionReport, MinimalLoopError, MinimalLoopOutcome, MinimalLoopReport,
+    PreflightReport, SelfForgeApp,
 };

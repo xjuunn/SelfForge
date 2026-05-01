@@ -1,6 +1,6 @@
 use super::agent::{
-    AgentDefinition, AgentError, AgentPlan, AgentRegistry, AgentSession, AgentSessionError,
-    AgentSessionStore, AgentSessionSummary, AgentStepStatus,
+    AgentDefinition, AgentError, AgentPlan, AgentRegistry, AgentRunReference, AgentSession,
+    AgentSessionError, AgentSessionStatus, AgentSessionStore, AgentSessionSummary, AgentStepStatus,
 };
 use super::ai_provider::{
     AiConfigError, AiConfigReport, AiExecutionError, AiExecutionReport, AiProviderRegistry,
@@ -8,8 +8,8 @@ use super::ai_provider::{
 };
 use super::error_archive::{ArchivedErrorEntry, ErrorArchive, ErrorArchiveError, ErrorListQuery};
 use crate::{
-    CycleReport, CycleResult, EvolutionError, ForgeError, ForgeState, StateError, Supervisor,
-    next_version_after,
+    CycleReport, CycleResult, EvolutionError, ExecutionError, ExecutionReport, ForgeError,
+    ForgeState, StateError, Supervisor, next_version_after,
 };
 use std::error::Error;
 use std::fmt;
@@ -68,6 +68,14 @@ pub struct AgentSingleEvolutionReport {
     pub cycle: CycleReport,
 }
 
+#[derive(Debug, Clone)]
+pub struct AgentRunReport {
+    pub session: AgentSession,
+    pub execution: ExecutionReport,
+    pub run_id: String,
+    pub step_order: usize,
+}
+
 #[derive(Debug)]
 pub enum MinimalLoopError {
     State(StateError),
@@ -88,6 +96,19 @@ pub enum AgentEvolutionError {
     Blocked {
         session: Box<AgentSession>,
         open_errors: Vec<ArchivedErrorEntry>,
+    },
+}
+
+#[derive(Debug)]
+pub enum AgentRunError {
+    Session(AgentSessionError),
+    Execution {
+        session: Box<AgentSession>,
+        source: ExecutionError,
+    },
+    MissingRunId {
+        session: Box<AgentSession>,
+        run_dir: PathBuf,
     },
 }
 
@@ -188,6 +209,103 @@ impl SelfForgeApp {
         id: &str,
     ) -> Result<AgentSession, AgentSessionError> {
         AgentSessionStore::new(&self.root).load(version, id)
+    }
+
+    pub fn agent_run(
+        &self,
+        session_version: &str,
+        session_id: &str,
+        target_version: &str,
+        step_order: usize,
+        program: &str,
+        args: &[String],
+        timeout_ms: u64,
+    ) -> Result<AgentRunReport, AgentRunError> {
+        let store = AgentSessionStore::new(&self.root);
+        let mut session = store.load(session_version, session_id)?;
+        if session.status == AgentSessionStatus::Planned {
+            session.mark_running();
+        }
+
+        let execution =
+            match self
+                .supervisor
+                .execute_in_workspace(target_version, program, args, timeout_ms)
+            {
+                Ok(report) => report,
+                Err(error) => {
+                    let message = error.to_string();
+                    session.update_step(
+                        step_order,
+                        AgentStepStatus::Failed,
+                        format!("Runtime 受控执行失败：{message}"),
+                    )?;
+                    session.mark_failed(message);
+                    store.save(&session)?;
+                    return Err(AgentRunError::Execution {
+                        session: Box::new(session),
+                        source: error,
+                    });
+                }
+            };
+
+        let Some(run_id) = execution
+            .run_dir
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(ToOwned::to_owned)
+        else {
+            session.update_step(
+                step_order,
+                AgentStepStatus::Failed,
+                "Runtime 受控执行未返回运行编号。",
+            )?;
+            session.mark_failed("Runtime 受控执行未返回运行编号。");
+            store.save(&session)?;
+            return Err(AgentRunError::MissingRunId {
+                session: Box::new(session),
+                run_dir: execution.run_dir,
+            });
+        };
+
+        let report_path = execution.run_dir.join("report.json");
+        let report_file = report_path
+            .strip_prefix(&self.root)
+            .unwrap_or(&report_path)
+            .to_string_lossy()
+            .into_owned();
+        let reference = AgentRunReference {
+            run_id: run_id.clone(),
+            version: execution.version.clone(),
+            report_file,
+            exit_code: execution.exit_code,
+            timed_out: execution.timed_out,
+        };
+        let failed = execution.timed_out || execution.exit_code != Some(0);
+        let step_status = if failed {
+            AgentStepStatus::Failed
+        } else {
+            AgentStepStatus::Completed
+        };
+        let result = format!(
+            "运行 {run_id} 完成，退出码 {:?}，超时 {}，标准输出 {} 字节，标准错误 {} 字节。",
+            execution.exit_code,
+            execution.timed_out,
+            execution.stdout.len(),
+            execution.stderr.len()
+        );
+        session.update_step_with_run(step_order, step_status, result, reference)?;
+        if failed {
+            session.mark_failed(format!("运行记录 {run_id} 未通过验证。"));
+        }
+        store.save(&session)?;
+
+        Ok(AgentRunReport {
+            session,
+            execution,
+            run_id,
+            step_order,
+        })
     }
 
     pub fn agent_advance(&self, goal: &str) -> Result<AgentEvolutionReport, AgentEvolutionError> {
@@ -543,6 +661,41 @@ impl Error for AgentEvolutionError {
 impl From<AgentSessionError> for AgentEvolutionError {
     fn from(error: AgentSessionError) -> Self {
         AgentEvolutionError::Session(error)
+    }
+}
+
+impl fmt::Display for AgentRunError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AgentRunError::Session(error) => write!(formatter, "{error}"),
+            AgentRunError::Execution { session, source } => write!(
+                formatter,
+                "Agent 会话 {} 执行 Runtime 运行失败：{}",
+                session.id, source
+            ),
+            AgentRunError::MissingRunId { session, run_dir } => write!(
+                formatter,
+                "Agent 会话 {} 的运行目录 {} 缺少运行编号",
+                session.id,
+                run_dir.display()
+            ),
+        }
+    }
+}
+
+impl Error for AgentRunError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            AgentRunError::Session(error) => Some(error),
+            AgentRunError::Execution { source, .. } => Some(source),
+            AgentRunError::MissingRunId { .. } => None,
+        }
+    }
+}
+
+impl From<AgentSessionError> for AgentRunError {
+    fn from(error: AgentSessionError) -> Self {
+        AgentRunError::Session(error)
     }
 }
 

@@ -35,6 +35,7 @@ pub enum AgentSessionEventKind {
     SessionCreated,
     SessionStatusChanged,
     StepUpdated,
+    RuntimeRun,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -75,7 +76,18 @@ pub struct AgentSessionEvent {
     pub kind: AgentSessionEventKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub step_order: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run: Option<AgentRunReference>,
     pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentRunReference {
+    pub run_id: String,
+    pub version: String,
+    pub report_file: String,
+    pub exit_code: Option<i32>,
+    pub timed_out: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -206,6 +218,7 @@ impl AgentSessionStore {
         };
         session.record_event(
             AgentSessionEventKind::SessionCreated,
+            None,
             None,
             "会话已创建并生成 Agent 协作计划。",
         );
@@ -401,6 +414,7 @@ impl AgentSession {
         self.record_event(
             AgentSessionEventKind::SessionStatusChanged,
             None,
+            None,
             "会话进入运行中状态。",
         );
     }
@@ -413,6 +427,7 @@ impl AgentSession {
         self.record_event(
             AgentSessionEventKind::SessionStatusChanged,
             None,
+            None,
             format!("会话已完成：{outcome}"),
         );
     }
@@ -423,6 +438,7 @@ impl AgentSession {
         self.error = Some(error.clone());
         self.record_event(
             AgentSessionEventKind::SessionStatusChanged,
+            None,
             None,
             format!("会话已失败：{error}"),
         );
@@ -450,7 +466,38 @@ impl AgentSession {
         self.record_event(
             AgentSessionEventKind::StepUpdated,
             Some(order),
+            None,
             format!("步骤 {order} 状态更新为 {status_text}：{result}"),
+        );
+        Ok(())
+    }
+
+    pub fn update_step_with_run(
+        &mut self,
+        order: usize,
+        status: AgentStepStatus,
+        result: impl Into<String>,
+        run: AgentRunReference,
+    ) -> Result<(), AgentSessionError> {
+        let result = result.into();
+        let status_text = status.to_string();
+        {
+            let Some(step) = self.steps.iter_mut().find(|step| step.order == order) else {
+                return Err(AgentSessionError::StepNotFound {
+                    id: self.id.clone(),
+                    order,
+                });
+            };
+
+            step.status = status;
+            step.result = Some(result.clone());
+        }
+        let run_id = run.run_id.clone();
+        self.record_event(
+            AgentSessionEventKind::RuntimeRun,
+            Some(order),
+            Some(run),
+            format!("步骤 {order} 关联运行记录 {run_id}，状态更新为 {status_text}：{result}"),
         );
         Ok(())
     }
@@ -475,6 +522,7 @@ impl AgentSession {
         &mut self,
         kind: AgentSessionEventKind,
         step_order: Option<usize>,
+        run: Option<AgentRunReference>,
         message: impl Into<String>,
     ) {
         let timestamp_unix_seconds = current_unix_seconds();
@@ -484,6 +532,7 @@ impl AgentSession {
             timestamp_unix_seconds,
             kind,
             step_order,
+            run,
             message: message.into(),
         });
     }
@@ -517,6 +566,7 @@ impl fmt::Display for AgentSessionEventKind {
             AgentSessionEventKind::SessionCreated => formatter.write_str("会话创建"),
             AgentSessionEventKind::SessionStatusChanged => formatter.write_str("会话状态"),
             AgentSessionEventKind::StepUpdated => formatter.write_str("步骤更新"),
+            AgentSessionEventKind::RuntimeRun => formatter.write_str("运行记录"),
         }
     }
 }

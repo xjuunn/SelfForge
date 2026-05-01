@@ -194,6 +194,8 @@ Agent 会话必须通过 `agent-start [goal]` 创建，并写入 `workspaces/vMA
 
 Agent 会话必须保存结构化事件时间线。会话创建、状态变化、步骤更新、成功完成和失败停止都必须写入同一个会话 JSON 的 `events` 字段；会话摘要可记录事件数量，CLI 详情必须能展示事件。禁止为事件时间线创建平行目录、额外索引或只保存在进程内存中。
 
+Agent 步骤需要执行真实程序时，必须优先使用 `agent-run [--session-version VERSION] [--current|--candidate|--version VERSION] [--step N] [--timeout-ms N] SESSION_ID -- PROGRAM [ARGS...]`。该命令必须复用 Runtime 受控执行并将运行编号、报告路径、退出码和超时状态写入同一个会话事件；禁止绕过 Runtime 直接执行程序，禁止把运行证据只写入日志或只输出到终端。
+
 Agent 自动进化入口必须优先使用 `agent-advance [goal]`。该命令必须创建 Agent 会话、执行 `preflight`、调用现有 `advance` 最小闭环，并把步骤状态、结果和失败原因写回同一个会话文件。若前置检查发现未解决错误，必须将会话标记为失败并停止进化，禁止生成或提升候选版本。`agent-advance` 只能编排现有受控流程，不得绕过 Supervisor、Runtime、错误归档、版本规则或状态文件。
 
 单轮完整 Agent 进化必须优先使用 `agent-evolve [goal]`。该命令必须创建 Agent 会话、执行 `preflight`、在无候选时准备下一 patch 候选、在已有候选时直接验证候选，并通过 `cycle` 完成提升或回滚。若存在未解决错误，必须在准备候选前停止并将会话标记为失败。`agent-evolve` 只能执行一轮完整进化，禁止循环自调用，禁止跳过测试和验证。
