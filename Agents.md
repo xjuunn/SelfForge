@@ -228,6 +228,8 @@ Agent 自动进化入口必须优先使用 `agent-advance [goal]`。该命令必
 
 AI 自我升级入口必须优先使用 `agent-self-upgrade [--dry-run] [--timeout-ms N] [hint]`。该命令必须先执行 `preflight`，再读取近期 `memory-insights`，然后通过统一 AI Provider 生成一个中文、单句、patch 级、可验证的升级目标，最后复用 `agent-evolve` 执行受控进化。`--dry-run` 只能输出脱敏请求摘要和提示词规模，禁止发起真实升级；真实执行必须设置超时，并且不得输出 API Key、完整请求体或敏感提示词。若存在未解决错误、AI 响应为空、响应无法归一化为目标或进化流程失败，必须停止并返回明确错误，禁止静默继续。当前阶段 AI 自我升级只负责选择升级目标和触发受控闭环，禁止绕过任务、记忆、错误、版本、Runtime、Supervisor 和状态文件直接修改代码。
 
+AI 自我升级真实执行必须写入结构化审计记录。记录只能写入 `workspaces/vMAJOR/artifacts/agents/self-upgrades/`，索引文件为同目录 `index.jsonl`，禁止为小版本创建独立审计目录或文件。审计记录必须包含版本、状态、用户提示、提供商、模型、协议、提示词字节数、记忆来源、经验数量、AI 响应摘要、归一化目标、Agent 会话、候选版本、提升或回滚结果、当前稳定版本和错误信息。审计记录不得保存 API Key、完整请求体或完整提示词。查询记录必须使用 `agent-self-upgrades [--limit N]`，读取单条记录必须使用 `agent-self-upgrade-record RECORD_ID`。
+
 ---
 
 # 八、Git 提交规范

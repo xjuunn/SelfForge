@@ -5,8 +5,10 @@ use super::agent::{
     AgentStepExecutionReport, AgentStepExecutionRequest, AgentStepStatus,
     AgentToolConfigInitReport, AgentToolError, AgentToolInvocation, AgentToolInvocationInput,
     AgentToolInvocationReport, AgentToolReport, AgentWorkClaimReport, AgentWorkCoordinator,
-    AgentWorkError, AgentWorkQueueReport, AgentWorkReapReport, apply_tools_to_plan,
-    initialize_agent_tool_config, load_agent_tool_report,
+    AgentWorkError, AgentWorkQueueReport, AgentWorkReapReport, AiSelfUpgradeAuditError,
+    AiSelfUpgradeAuditRecord, AiSelfUpgradeAuditStatus, AiSelfUpgradeAuditStore,
+    AiSelfUpgradeAuditSummary, apply_tools_to_plan, initialize_agent_tool_config,
+    load_agent_tool_report,
 };
 use super::ai_provider::{
     AiConfigError, AiConfigReport, AiExecutionError, AiExecutionReport, AiProviderRegistry,
@@ -104,6 +106,7 @@ pub struct AiSelfUpgradeReport {
     pub ai: AiExecutionReport,
     pub proposed_goal: String,
     pub evolution: AgentSingleEvolutionReport,
+    pub audit: AiSelfUpgradeAuditRecord,
 }
 
 #[derive(Debug, Clone)]
@@ -168,6 +171,7 @@ pub enum AiSelfUpgradeError {
     Preflight(MinimalLoopError),
     Memory(MemoryContextError),
     Ai(AiExecutionError),
+    Audit(AiSelfUpgradeAuditError),
     Blocked {
         version: String,
         open_errors: Vec<ArchivedErrorEntry>,
@@ -340,20 +344,67 @@ impl SelfForgeApp {
         timeout_ms: u64,
     ) -> Result<AiSelfUpgradeReport, AiSelfUpgradeError> {
         let preview = self.ai_self_upgrade_preview(hint)?;
-        let ai = self
-            .ai_request(&preview.prompt, timeout_ms)
-            .map_err(AiSelfUpgradeError::Ai)?;
-        let proposed_goal = normalize_ai_self_upgrade_goal(&ai.response.text)?;
-        let evolution = self
-            .agent_evolve(&proposed_goal)
-            .map_err(AiSelfUpgradeError::Evolution)?;
+        let ai = match self.ai_request(&preview.prompt, timeout_ms) {
+            Ok(report) => report,
+            Err(error) => {
+                self.record_ai_self_upgrade_failure(&preview, None, None, &error.to_string())?;
+                return Err(AiSelfUpgradeError::Ai(error));
+            }
+        };
+
+        self.finish_ai_self_upgrade(preview, ai)
+    }
+
+    pub(crate) fn finish_ai_self_upgrade(
+        &self,
+        preview: AiSelfUpgradePreview,
+        ai: AiExecutionReport,
+    ) -> Result<AiSelfUpgradeReport, AiSelfUpgradeError> {
+        let proposed_goal = match normalize_ai_self_upgrade_goal(&ai.response.text) {
+            Ok(goal) => goal,
+            Err(error) => {
+                self.record_ai_self_upgrade_failure(&preview, Some(&ai), None, &error.to_string())?;
+                return Err(error);
+            }
+        };
+        let evolution = match self.agent_evolve(&proposed_goal) {
+            Ok(report) => report,
+            Err(error) => {
+                self.record_ai_self_upgrade_failure(
+                    &preview,
+                    Some(&ai),
+                    Some(&proposed_goal),
+                    &error.to_string(),
+                )?;
+                return Err(AiSelfUpgradeError::Evolution(error));
+            }
+        };
+        let audit =
+            self.record_ai_self_upgrade_success(&preview, &ai, &proposed_goal, &evolution)?;
 
         Ok(AiSelfUpgradeReport {
             preview,
             ai,
             proposed_goal,
             evolution,
+            audit,
         })
+    }
+
+    pub fn ai_self_upgrade_records(
+        &self,
+        version: &str,
+        limit: usize,
+    ) -> Result<Vec<AiSelfUpgradeAuditSummary>, AiSelfUpgradeAuditError> {
+        AiSelfUpgradeAuditStore::new(&self.root).list(version, limit)
+    }
+
+    pub fn ai_self_upgrade_record(
+        &self,
+        version: &str,
+        id: &str,
+    ) -> Result<AiSelfUpgradeAuditRecord, AiSelfUpgradeAuditError> {
+        AiSelfUpgradeAuditStore::new(&self.root).load(version, id)
     }
 
     pub fn agents(&self) -> Vec<AgentDefinition> {
@@ -1598,6 +1649,86 @@ impl SelfForgeApp {
         Ok(report)
     }
 
+    fn record_ai_self_upgrade_success(
+        &self,
+        preview: &AiSelfUpgradePreview,
+        ai: &AiExecutionReport,
+        proposed_goal: &str,
+        evolution: &AgentSingleEvolutionReport,
+    ) -> Result<AiSelfUpgradeAuditRecord, AiSelfUpgradeError> {
+        let mut record =
+            self.ai_self_upgrade_audit_base(preview, AiSelfUpgradeAuditStatus::Succeeded);
+        record.provider_id = ai.response.provider_id.clone();
+        record.model = ai.response.model.clone();
+        record.protocol = ai.response.protocol.clone();
+        record.ai_response_preview = Some(truncate_chars(&ai.response.text, 240));
+        record.proposed_goal = Some(proposed_goal.to_string());
+        record.session_id = Some(evolution.session.id.clone());
+        record.prepared_candidate_version = evolution.prepared_candidate_version.clone();
+        record.candidate_version = Some(evolution.cycle.candidate_version.clone());
+        record.cycle_result = Some(format!("{:?}", evolution.cycle.result));
+        record.stable_version_after = Some(evolution.cycle.state.current_version.clone());
+
+        AiSelfUpgradeAuditStore::new(&self.root)
+            .create(record)
+            .map_err(AiSelfUpgradeError::Audit)
+    }
+
+    fn record_ai_self_upgrade_failure(
+        &self,
+        preview: &AiSelfUpgradePreview,
+        ai: Option<&AiExecutionReport>,
+        proposed_goal: Option<&str>,
+        error: &str,
+    ) -> Result<AiSelfUpgradeAuditRecord, AiSelfUpgradeError> {
+        let mut record = self.ai_self_upgrade_audit_base(preview, AiSelfUpgradeAuditStatus::Failed);
+        if let Some(ai) = ai {
+            record.provider_id = ai.response.provider_id.clone();
+            record.model = ai.response.model.clone();
+            record.protocol = ai.response.protocol.clone();
+            record.ai_response_preview = Some(truncate_chars(&ai.response.text, 240));
+        }
+        record.proposed_goal = proposed_goal.map(ToString::to_string);
+        record.error = Some(truncate_chars(error, 400));
+
+        AiSelfUpgradeAuditStore::new(&self.root)
+            .create(record)
+            .map_err(AiSelfUpgradeError::Audit)
+    }
+
+    fn ai_self_upgrade_audit_base(
+        &self,
+        preview: &AiSelfUpgradePreview,
+        status: AiSelfUpgradeAuditStatus,
+    ) -> AiSelfUpgradeAuditRecord {
+        AiSelfUpgradeAuditRecord {
+            id: String::new(),
+            version: preview.current_version.clone(),
+            created_at_unix_seconds: 0,
+            status,
+            hint: preview.hint.clone(),
+            provider_id: preview.request.provider_id.clone(),
+            model: preview.request.model.clone(),
+            protocol: preview.request.protocol.clone(),
+            prompt_bytes: preview.prompt.len(),
+            memory_source_versions: preview.insights.source_versions.clone(),
+            success_experience_count: preview.insights.success_experiences.len(),
+            failure_experience_count: preview.insights.failure_experiences.len(),
+            optimization_suggestion_count: preview.insights.optimization_suggestions.len(),
+            reusable_experience_count: preview.insights.reusable_experiences.len(),
+            open_error_count: preview.preflight.open_errors.len(),
+            ai_response_preview: None,
+            proposed_goal: None,
+            session_id: None,
+            prepared_candidate_version: None,
+            candidate_version: None,
+            cycle_result: None,
+            stable_version_after: None,
+            error: None,
+            file: PathBuf::new(),
+        }
+    }
+
     fn session_plan_context(&self, insights: &MemoryInsightReport) -> AgentSessionPlanContext {
         let archive_file = insights
             .archive_path
@@ -1903,6 +2034,9 @@ impl fmt::Display for AiSelfUpgradeError {
                 write!(formatter, "AI 自我升级读取记忆失败：{error}")
             }
             AiSelfUpgradeError::Ai(error) => write!(formatter, "AI 自我升级请求失败：{error}"),
+            AiSelfUpgradeError::Audit(error) => {
+                write!(formatter, "AI 自我升级审计记录失败：{error}")
+            }
             AiSelfUpgradeError::Blocked {
                 version,
                 open_errors,
@@ -1928,6 +2062,7 @@ impl Error for AiSelfUpgradeError {
             AiSelfUpgradeError::Preflight(error) => Some(error),
             AiSelfUpgradeError::Memory(error) => Some(error),
             AiSelfUpgradeError::Ai(error) => Some(error),
+            AiSelfUpgradeError::Audit(error) => Some(error),
             AiSelfUpgradeError::Evolution(error) => Some(error),
             AiSelfUpgradeError::Blocked { .. } | AiSelfUpgradeError::EmptyGoal { .. } => None,
         }

@@ -14,6 +14,8 @@ pub use agent::{
     AgentToolInvocation, AgentToolInvocationInput, AgentToolInvocationReport, AgentToolReport,
     AgentWorkClaimReport, AgentWorkCoordinator, AgentWorkError, AgentWorkEvent, AgentWorkQueue,
     AgentWorkQueueReport, AgentWorkReapReport, AgentWorkTask, AgentWorkTaskStatus,
+    AiSelfUpgradeAuditError, AiSelfUpgradeAuditRecord, AiSelfUpgradeAuditStatus,
+    AiSelfUpgradeAuditStore, AiSelfUpgradeAuditSummary,
 };
 pub use ai_provider::{
     AiConfigError, AiConfigReport, AiExecutionError, AiExecutionReport, AiProviderRegistry,

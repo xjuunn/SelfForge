@@ -71,6 +71,8 @@ fn main() {
         "agent-advance" => agent_advance(&app, args.collect()),
         "agent-evolve" => agent_evolve(&app, args.collect()),
         "agent-self-upgrade" => agent_self_upgrade(&app, args.collect()),
+        "agent-self-upgrades" => agent_self_upgrades(&app, args.collect()),
+        "agent-self-upgrade-record" => agent_self_upgrade_record(&app, args.collect()),
         "evolve" => evolve(&supervisor, args.collect()),
         "advance" => advance(&app, args.collect()),
         "promote" => boxed(supervisor.promote_candidate().map(|report| {
@@ -1256,7 +1258,7 @@ fn agent_self_upgrade(
             .as_deref()
             .unwrap_or("复用已有候选");
         format!(
-            "SelfForge AI 自我升级完成 当前版本 {} 提供商 {} 模型 {} 目标 {} 会话 {} 准备 {} 候选版本 {} 结果 {:?} 当前稳定版本 {} 未解决错误 {}",
+            "SelfForge AI 自我升级完成 当前版本 {} 提供商 {} 模型 {} 目标 {} 会话 {} 准备 {} 候选版本 {} 结果 {:?} 当前稳定版本 {} 未解决错误 {} 审计记录 {} 文件 {}",
             report.preview.current_version,
             report.ai.response.provider_id,
             report.ai.response.model,
@@ -1266,9 +1268,75 @@ fn agent_self_upgrade(
             report.evolution.cycle.candidate_version,
             report.evolution.cycle.result,
             report.evolution.cycle.state.current_version,
-            report.evolution.preflight.open_errors.len()
+            report.evolution.preflight.open_errors.len(),
+            report.audit.id,
+            report.audit.file.display()
         )
     }))
+}
+
+fn agent_self_upgrades(
+    app: &SelfForgeApp,
+    arguments: Vec<String>,
+) -> Result<String, Box<dyn Error>> {
+    let command = parse_agent_self_upgrades_args(arguments)?;
+    boxed(
+        app.ai_self_upgrade_records(&command.version, command.limit)
+            .map(|records| {
+                if records.is_empty() {
+                    return format!("SelfForge AI 自我升级记录 {}: no records", command.version);
+                }
+
+                let mut lines = vec![format!(
+                    "SelfForge AI 自我升级记录 {}: {} record(s)",
+                    command.version,
+                    records.len()
+                )];
+                for record in records {
+                    lines.push(format!(
+                        "{} 状态 {} 目标 {} 会话 {} 候选 {} 当前稳定 {} 错误 {} 文件 {}",
+                        record.id,
+                        record.status,
+                        record.proposed_goal.as_deref().unwrap_or("无"),
+                        record.session_id.as_deref().unwrap_or("无"),
+                        record.candidate_version.as_deref().unwrap_or("无"),
+                        record.stable_version_after.as_deref().unwrap_or("无"),
+                        record.error.as_deref().unwrap_or("无"),
+                        record.file.display()
+                    ));
+                }
+                lines.join("\n")
+            }),
+    )
+}
+
+fn agent_self_upgrade_record(
+    app: &SelfForgeApp,
+    arguments: Vec<String>,
+) -> Result<String, Box<dyn Error>> {
+    let command = parse_agent_self_upgrade_record_args(arguments)?;
+    boxed(
+        app.ai_self_upgrade_record(&command.version, &command.id)
+            .map(|record| {
+                format!(
+                    "SelfForge AI 自我升级记录 {} 版本 {} 状态 {} 提供商 {} 模型 {} 协议 {} 目标 {} 会话 {} 候选 {} 当前稳定 {} 记忆来源 {} 错误 {} 文件 {}\nAI 响应摘要 {}",
+                    record.id,
+                    record.version,
+                    record.status,
+                    record.provider_id,
+                    record.model,
+                    record.protocol,
+                    record.proposed_goal.as_deref().unwrap_or("无"),
+                    record.session_id.as_deref().unwrap_or("无"),
+                    record.candidate_version.as_deref().unwrap_or("无"),
+                    record.stable_version_after.as_deref().unwrap_or("无"),
+                    record.memory_source_versions.join("、"),
+                    record.error.as_deref().unwrap_or("无"),
+                    record.file.display(),
+                    record.ai_response_preview.as_deref().unwrap_or("无")
+                )
+            }),
+    )
 }
 
 struct AiRequestArgs {
@@ -1281,6 +1349,16 @@ struct AgentSelfUpgradeArgs {
     dry_run: bool,
     timeout_ms: u64,
     hint: String,
+}
+
+struct AgentSelfUpgradesArgs {
+    version: String,
+    limit: usize,
+}
+
+struct AgentSelfUpgradeRecordArgs {
+    version: String,
+    id: String,
 }
 
 struct MemoryContextArgs {
@@ -1373,6 +1451,84 @@ fn parse_agent_self_upgrade_args(
         timeout_ms,
         hint: hint_parts.join(" "),
     })
+}
+
+fn parse_agent_self_upgrades_args(
+    arguments: Vec<String>,
+) -> Result<AgentSelfUpgradesArgs, Box<dyn Error>> {
+    let state = ForgeState::load(env::current_dir()?)?;
+    let mut version = state.current_version.clone();
+    let mut limit = 10;
+    let mut index = 0;
+
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "--current" => {
+                version = state.current_version.clone();
+                index += 1;
+            }
+            "--candidate" => {
+                version = state.candidate_version.clone().ok_or("当前没有候选版本")?;
+                index += 1;
+            }
+            "--version" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--version 需要版本号".into());
+                };
+                version = value.clone();
+                index += 2;
+            }
+            "--limit" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--limit 需要数量".into());
+                };
+                limit = value.parse::<usize>()?;
+                index += 2;
+            }
+            other => return Err(format!("未知 agent-self-upgrades 参数: {other}").into()),
+        }
+    }
+
+    Ok(AgentSelfUpgradesArgs { version, limit })
+}
+
+fn parse_agent_self_upgrade_record_args(
+    arguments: Vec<String>,
+) -> Result<AgentSelfUpgradeRecordArgs, Box<dyn Error>> {
+    let state = ForgeState::load(env::current_dir()?)?;
+    let mut version = state.current_version.clone();
+    let mut id = None;
+    let mut index = 0;
+
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "--current" => {
+                version = state.current_version.clone();
+                index += 1;
+            }
+            "--candidate" => {
+                version = state.candidate_version.clone().ok_or("当前没有候选版本")?;
+                index += 1;
+            }
+            "--version" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--version 需要版本号".into());
+                };
+                version = value.clone();
+                index += 2;
+            }
+            other if other.starts_with("--") => {
+                return Err(format!("未知 agent-self-upgrade-record 参数: {other}").into());
+            }
+            value => {
+                id = Some(value.to_string());
+                index += 1;
+            }
+        }
+    }
+
+    let id = id.ok_or("agent-self-upgrade-record 需要记录编号")?;
+    Ok(AgentSelfUpgradeRecordArgs { version, id })
 }
 
 fn parse_memory_context_args(arguments: Vec<String>) -> Result<MemoryContextArgs, Box<dyn Error>> {
@@ -2791,7 +2947,7 @@ fn parse_agent_verify_args(arguments: Vec<String>) -> Result<AgentVerifyArgs, Bo
 }
 
 fn help_text() -> &'static str {
-    "SelfForge commands: init, validate, status, preflight, memory-context [--current|--candidate|--version VERSION] [--limit N], memory-insights [--current|--candidate|--version VERSION] [--limit N], memory-compact [--current|--candidate|--version VERSION] [--keep N], ai-config, ai-request [--dry-run] [--timeout-ms N] [prompt], agents, agent-tools [--current|--candidate|--version VERSION] [--init], agent-work-init [--current|--candidate|--version VERSION] [--threads N] [goal], agent-work-status [--current|--candidate|--version VERSION], agent-work-claim [--current|--candidate|--version VERSION] [--worker ID] [--agent AGENT_ID] [--lease-seconds N], agent-work-complete [--current|--candidate|--version VERSION] TASK_ID [--worker ID] [--summary TEXT], agent-work-release [--current|--candidate|--version VERSION] TASK_ID [--worker ID] [--reason TEXT], agent-work-reap [--current|--candidate|--version VERSION] [--reason TEXT], agent-tool-run TOOL_ID --agent AGENT_ID [--current|--candidate|--version VERSION] [--limit N] [--all] [--session SESSION_ID] [--session-version VERSION] [--step N] [--target-version VERSION] [--timeout-ms N] [--prompt TEXT] [-- PROGRAM ARGS...], agent-step [--session-version VERSION] [--target-version VERSION] [--tool TOOL_ID] [--limit N] [--timeout-ms N] [--prompt TEXT] SESSION_ID [-- PROGRAM ARGS...], agent-plan [--current|--candidate|--version VERSION] [--limit N] [goal], agent-start [--current|--candidate|--version VERSION] [goal], agent-sessions [--current|--candidate|--version VERSION] [--limit N] [--all], agent-session [--current|--candidate|--version VERSION] SESSION_ID, agent-run [--session-version VERSION] [--current|--candidate|--version VERSION] [--step N] [--timeout-ms N] SESSION_ID -- PROGRAM [ARGS...], agent-verify [--current|--candidate|--version VERSION] [--timeout-ms N] [goal] -- PROGRAM [ARGS...], agent-advance [goal], agent-evolve [goal], agent-self-upgrade [--dry-run] [--timeout-ms N] [hint], advance [goal], promote, rollback [reason], cycle, run [--current|--candidate|--version VERSION] [--timeout-ms N] -- PROGRAM [ARGS...], runs [--current|--candidate|--version VERSION] [--limit N] [--failed] [--timed-out], errors [--current|--candidate|--version VERSION] [--limit N] [--open] [--resolved], record-error [--current|--candidate|--version VERSION] [--run-id RUN_ID] [--stage TEXT] [--solution TEXT], resolve-error [--current|--candidate|--version VERSION] --run-id RUN_ID [--verification TEXT], evolve [--patch|--minor|--major] [goal]"
+    "SelfForge commands: init, validate, status, preflight, memory-context [--current|--candidate|--version VERSION] [--limit N], memory-insights [--current|--candidate|--version VERSION] [--limit N], memory-compact [--current|--candidate|--version VERSION] [--keep N], ai-config, ai-request [--dry-run] [--timeout-ms N] [prompt], agents, agent-tools [--current|--candidate|--version VERSION] [--init], agent-work-init [--current|--candidate|--version VERSION] [--threads N] [goal], agent-work-status [--current|--candidate|--version VERSION], agent-work-claim [--current|--candidate|--version VERSION] [--worker ID] [--agent AGENT_ID] [--lease-seconds N], agent-work-complete [--current|--candidate|--version VERSION] TASK_ID [--worker ID] [--summary TEXT], agent-work-release [--current|--candidate|--version VERSION] TASK_ID [--worker ID] [--reason TEXT], agent-work-reap [--current|--candidate|--version VERSION] [--reason TEXT], agent-tool-run TOOL_ID --agent AGENT_ID [--current|--candidate|--version VERSION] [--limit N] [--all] [--session SESSION_ID] [--session-version VERSION] [--step N] [--target-version VERSION] [--timeout-ms N] [--prompt TEXT] [-- PROGRAM ARGS...], agent-step [--session-version VERSION] [--target-version VERSION] [--tool TOOL_ID] [--limit N] [--timeout-ms N] [--prompt TEXT] SESSION_ID [-- PROGRAM ARGS...], agent-plan [--current|--candidate|--version VERSION] [--limit N] [goal], agent-start [--current|--candidate|--version VERSION] [goal], agent-sessions [--current|--candidate|--version VERSION] [--limit N] [--all], agent-session [--current|--candidate|--version VERSION] SESSION_ID, agent-run [--session-version VERSION] [--current|--candidate|--version VERSION] [--step N] [--timeout-ms N] SESSION_ID -- PROGRAM [ARGS...], agent-verify [--current|--candidate|--version VERSION] [--timeout-ms N] [goal] -- PROGRAM [ARGS...], agent-advance [goal], agent-evolve [goal], agent-self-upgrade [--dry-run] [--timeout-ms N] [hint], agent-self-upgrades [--current|--candidate|--version VERSION] [--limit N], agent-self-upgrade-record [--current|--candidate|--version VERSION] RECORD_ID, advance [goal], promote, rollback [reason], cycle, run [--current|--candidate|--version VERSION] [--timeout-ms N] -- PROGRAM [ARGS...], runs [--current|--candidate|--version VERSION] [--limit N] [--failed] [--timed-out], errors [--current|--candidate|--version VERSION] [--limit N] [--open] [--resolved], record-error [--current|--candidate|--version VERSION] [--run-id RUN_ID] [--stage TEXT] [--solution TEXT], resolve-error [--current|--candidate|--version VERSION] --run-id RUN_ID [--verification TEXT], evolve [--patch|--minor|--major] [goal]"
 }
 
 fn exit_with_error(error: Box<dyn Error>) -> ! {

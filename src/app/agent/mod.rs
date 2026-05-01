@@ -1,5 +1,6 @@
 mod coordination;
 mod registry;
+mod self_upgrade_audit;
 mod session;
 mod tool_invocation;
 mod tools;
@@ -10,6 +11,10 @@ pub use coordination::{
     AgentWorkQueueReport, AgentWorkReapReport, AgentWorkTask, AgentWorkTaskStatus,
 };
 pub use registry::AgentRegistry;
+pub use self_upgrade_audit::{
+    AiSelfUpgradeAuditError, AiSelfUpgradeAuditRecord, AiSelfUpgradeAuditStatus,
+    AiSelfUpgradeAuditStore, AiSelfUpgradeAuditSummary,
+};
 pub use session::{
     AgentRunReference, AgentSession, AgentSessionError, AgentSessionEvent, AgentSessionEventKind,
     AgentSessionMemoryInsight, AgentSessionPlanContext, AgentSessionStatus, AgentSessionStep,
