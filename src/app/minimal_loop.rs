@@ -14,20 +14,22 @@ use super::agent::{
     AiPatchDraftSummary, AiPatchPreviewChange, AiPatchPreviewRecord, AiPatchPreviewStatus,
     AiPatchPreviewStore, AiPatchPreviewStoreError, AiPatchPreviewSummary,
     AiPatchSourceCandidateRecord, AiPatchSourceCandidateStatus, AiPatchSourceCandidateStore,
-    AiPatchSourceCandidateStoreError, AiPatchSourceCandidateSummary, AiPatchSourceCycleRecord,
-    AiPatchSourceCycleResult, AiPatchSourceCycleStatus, AiPatchSourceCycleStore,
-    AiPatchSourceCycleStoreError, AiPatchSourceCycleSummary, AiPatchSourceExecutionFile,
-    AiPatchSourceExecutionRecord, AiPatchSourceExecutionStatus, AiPatchSourceExecutionStore,
-    AiPatchSourceExecutionStoreError, AiPatchSourceExecutionSummary, AiPatchSourcePlanFile,
-    AiPatchSourcePlanRecord, AiPatchSourcePlanStatus, AiPatchSourcePlanStore,
-    AiPatchSourcePlanStoreError, AiPatchSourcePlanSummary, AiPatchSourcePromotionRecord,
-    AiPatchSourcePromotionStatus, AiPatchSourcePromotionStore, AiPatchSourcePromotionStoreError,
-    AiPatchSourcePromotionSummary, AiPatchVerificationCommandRecord, AiPatchVerificationStatus,
-    AiSelfUpgradeAuditError, AiSelfUpgradeAuditRecord, AiSelfUpgradeAuditStatus,
-    AiSelfUpgradeAuditStore, AiSelfUpgradeAuditSummary, AiSelfUpgradeSummaryIndexEntry,
-    AiSelfUpgradeSummaryRecord, AiSelfUpgradeSummaryStatus, AiSelfUpgradeSummaryStore,
-    AiSelfUpgradeSummaryStoreError, apply_tools_to_plan, initialize_agent_tool_config,
-    load_agent_tool_report,
+    AiPatchSourceCandidateStoreError, AiPatchSourceCandidateSummary,
+    AiPatchSourceCycleFollowUpRecord, AiPatchSourceCycleFollowUpStatus,
+    AiPatchSourceCycleFollowUpStore, AiPatchSourceCycleFollowUpStoreError,
+    AiPatchSourceCycleFollowUpSummary, AiPatchSourceCycleRecord, AiPatchSourceCycleResult,
+    AiPatchSourceCycleStatus, AiPatchSourceCycleStore, AiPatchSourceCycleStoreError,
+    AiPatchSourceCycleSummary, AiPatchSourceExecutionFile, AiPatchSourceExecutionRecord,
+    AiPatchSourceExecutionStatus, AiPatchSourceExecutionStore, AiPatchSourceExecutionStoreError,
+    AiPatchSourceExecutionSummary, AiPatchSourcePlanFile, AiPatchSourcePlanRecord,
+    AiPatchSourcePlanStatus, AiPatchSourcePlanStore, AiPatchSourcePlanStoreError,
+    AiPatchSourcePlanSummary, AiPatchSourcePromotionRecord, AiPatchSourcePromotionStatus,
+    AiPatchSourcePromotionStore, AiPatchSourcePromotionStoreError, AiPatchSourcePromotionSummary,
+    AiPatchVerificationCommandRecord, AiPatchVerificationStatus, AiSelfUpgradeAuditError,
+    AiSelfUpgradeAuditRecord, AiSelfUpgradeAuditStatus, AiSelfUpgradeAuditStore,
+    AiSelfUpgradeAuditSummary, AiSelfUpgradeSummaryIndexEntry, AiSelfUpgradeSummaryRecord,
+    AiSelfUpgradeSummaryStatus, AiSelfUpgradeSummaryStore, AiSelfUpgradeSummaryStoreError,
+    apply_tools_to_plan, initialize_agent_tool_config, load_agent_tool_report,
 };
 use super::ai_provider::{
     AiConfigError, AiConfigReport, AiExecutionError, AiExecutionReport, AiProviderRegistry,
@@ -219,6 +221,12 @@ pub struct AiPatchSourceCandidateReport {
 pub struct AiPatchSourceCycleReport {
     pub candidate: AiPatchSourceCandidateRecord,
     pub record: AiPatchSourceCycleRecord,
+}
+
+#[derive(Debug, Clone)]
+pub struct AiPatchSourceCycleSummaryReport {
+    pub cycle: AiPatchSourceCycleRecord,
+    pub record: AiPatchSourceCycleFollowUpRecord,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -432,6 +440,12 @@ pub enum AiPatchSourceCycleError {
     Candidate(AiPatchSourceCandidateStoreError),
     Store(AiPatchSourceCycleStoreError),
     State(StateError),
+}
+
+#[derive(Debug)]
+pub enum AiPatchSourceCycleSummaryError {
+    Cycle(AiPatchSourceCycleStoreError),
+    Store(AiPatchSourceCycleFollowUpStoreError),
 }
 
 #[derive(Debug)]
@@ -2183,6 +2197,70 @@ impl SelfForgeApp {
         id: &str,
     ) -> Result<AiPatchSourceCycleRecord, AiPatchSourceCycleStoreError> {
         AiPatchSourceCycleStore::new(&self.root).load(version, id)
+    }
+
+    pub fn ai_patch_source_cycle_summary(
+        &self,
+        version: &str,
+        cycle_id: &str,
+    ) -> Result<AiPatchSourceCycleSummaryReport, AiPatchSourceCycleSummaryError> {
+        let cycle = AiPatchSourceCycleStore::new(&self.root)
+            .load(version, cycle_id)
+            .map_err(AiPatchSourceCycleSummaryError::Cycle)?;
+        let status = match cycle.status {
+            AiPatchSourceCycleStatus::Promoted => AiPatchSourceCycleFollowUpStatus::Promoted,
+            AiPatchSourceCycleStatus::RolledBack => AiPatchSourceCycleFollowUpStatus::RolledBack,
+            AiPatchSourceCycleStatus::Blocked => AiPatchSourceCycleFollowUpStatus::Blocked,
+        };
+        let memory_compaction_recommended = status == AiPatchSourceCycleFollowUpStatus::Promoted;
+        let next_goal = patch_source_cycle_follow_up_goal(&cycle, status);
+        let next_task = patch_source_cycle_follow_up_task(&cycle, status);
+        let follow_up_commands = patch_source_cycle_follow_up_commands(&cycle, status);
+        let record = AiPatchSourceCycleFollowUpRecord {
+            id: String::new(),
+            version: version.to_string(),
+            cycle_id: cycle.id.clone(),
+            candidate_record_id: cycle.candidate_record_id.clone(),
+            promotion_id: cycle.promotion_id.clone(),
+            candidate_version: cycle.candidate_version.clone(),
+            created_at_unix_seconds: 0,
+            status,
+            cycle_result: cycle.cycle_result.clone(),
+            stable_version_after: cycle.stable_version_after.clone(),
+            state_status_after: cycle.state_status_after.clone(),
+            candidate_version_after: cycle.candidate_version_after.clone(),
+            preflight_can_advance: cycle.preflight_can_advance,
+            open_error_count: cycle.open_error_count,
+            memory_compaction_recommended,
+            next_goal,
+            next_task,
+            failure: cycle.failure.clone().or_else(|| cycle.error.clone()),
+            follow_up_commands,
+            markdown_file: PathBuf::new(),
+            file: PathBuf::new(),
+        };
+        let markdown = build_ai_patch_source_cycle_summary_markdown(&record, &cycle);
+        let record = AiPatchSourceCycleFollowUpStore::new(&self.root)
+            .create(record, &markdown)
+            .map_err(AiPatchSourceCycleSummaryError::Store)?;
+
+        Ok(AiPatchSourceCycleSummaryReport { cycle, record })
+    }
+
+    pub fn ai_patch_source_cycle_summary_records(
+        &self,
+        version: &str,
+        limit: usize,
+    ) -> Result<Vec<AiPatchSourceCycleFollowUpSummary>, AiPatchSourceCycleFollowUpStoreError> {
+        AiPatchSourceCycleFollowUpStore::new(&self.root).list(version, limit)
+    }
+
+    pub fn ai_patch_source_cycle_summary_record(
+        &self,
+        version: &str,
+        id: &str,
+    ) -> Result<AiPatchSourceCycleFollowUpRecord, AiPatchSourceCycleFollowUpStoreError> {
+        AiPatchSourceCycleFollowUpStore::new(&self.root).load(version, id)
     }
 
     fn prepare_patch_source_execution_file(
@@ -5319,6 +5397,159 @@ fn build_ai_patch_source_cycle_markdown(record: &AiPatchSourceCycleRecord) -> St
     markdown
 }
 
+fn patch_source_cycle_follow_up_goal(
+    cycle: &AiPatchSourceCycleRecord,
+    status: AiPatchSourceCycleFollowUpStatus,
+) -> String {
+    match status {
+        AiPatchSourceCycleFollowUpStatus::Promoted => format!(
+            "基于源码覆盖 cycle {} 的提升结果，执行记忆压缩、开放错误检查，并生成下一轮最小 patch 任务。",
+            cycle.id
+        ),
+        AiPatchSourceCycleFollowUpStatus::RolledBack => format!(
+            "基于源码覆盖 cycle {} 的回滚原因修复候选链路，重新准备候选并验证。",
+            cycle.id
+        ),
+        AiPatchSourceCycleFollowUpStatus::Blocked => format!(
+            "修复源码覆盖 cycle {} 的阻断条件，再重新执行同一候选准备记录。",
+            cycle.id
+        ),
+    }
+}
+
+fn patch_source_cycle_follow_up_task(
+    cycle: &AiPatchSourceCycleRecord,
+    status: AiPatchSourceCycleFollowUpStatus,
+) -> String {
+    match status {
+        AiPatchSourceCycleFollowUpStatus::Promoted => format!(
+            "为稳定版本 {} 生成下一轮 patch 级任务，并把 cycle 总结写入记忆和任务队列。",
+            cycle.stable_version_after
+        ),
+        AiPatchSourceCycleFollowUpStatus::RolledBack => {
+            "定位候选验证失败原因，修复后重新执行源码覆盖候选准备和 cycle。".to_string()
+        }
+        AiPatchSourceCycleFollowUpStatus::Blocked => {
+            "修复阻断条件，重新执行 `agent-patch-source-cycle`。".to_string()
+        }
+    }
+}
+
+fn patch_source_cycle_follow_up_commands(
+    cycle: &AiPatchSourceCycleRecord,
+    status: AiPatchSourceCycleFollowUpStatus,
+) -> Vec<String> {
+    match status {
+        AiPatchSourceCycleFollowUpStatus::Promoted => vec![
+            "cargo run -- preflight".to_string(),
+            "cargo run -- memory-compact --current --keep 5".to_string(),
+            "cargo run -- memory-insights --current --limit 5".to_string(),
+            "cargo run -- agent-work-init --current --threads 3 \"源码覆盖 cycle 后续协作\""
+                .to_string(),
+        ],
+        AiPatchSourceCycleFollowUpStatus::RolledBack => vec![
+            "cargo run -- preflight".to_string(),
+            "cargo run -- errors --current --open --limit 5".to_string(),
+            format!(
+                "cargo run -- agent-patch-source-candidate --version {} {}",
+                cycle.version, cycle.promotion_id
+            ),
+            format!(
+                "cargo run -- agent-patch-source-cycle --version {} {}",
+                cycle.version, cycle.candidate_record_id
+            ),
+        ],
+        AiPatchSourceCycleFollowUpStatus::Blocked => vec![
+            "cargo run -- preflight".to_string(),
+            format!(
+                "cargo run -- agent-patch-source-cycle --version {} {}",
+                cycle.version, cycle.candidate_record_id
+            ),
+        ],
+    }
+}
+
+fn build_ai_patch_source_cycle_summary_markdown(
+    record: &AiPatchSourceCycleFollowUpRecord,
+    cycle: &AiPatchSourceCycleRecord,
+) -> String {
+    let mut markdown = String::new();
+    markdown.push_str("# AI 补丁源码覆盖 cycle 后续总结\n\n");
+    markdown.push_str("# 基本信息\n\n");
+    markdown.push_str(&format!(
+        "- 源版本：{}\n- cycle 记录：{}\n- 候选准备记录：{}\n- 提升衔接记录：{}\n- 候选版本：{}\n- 后续状态：{}\n- cycle 结果：{}\n\n",
+        record.version,
+        record.cycle_id,
+        record.candidate_record_id,
+        record.promotion_id,
+        record.candidate_version,
+        record.status,
+        record
+            .cycle_result
+            .as_ref()
+            .map(ToString::to_string)
+            .unwrap_or_else(|| "无".to_string())
+    ));
+
+    markdown.push_str("# cycle 摘要\n\n");
+    markdown.push_str(&format!(
+        "- cycle 前稳定版本：{}\n- cycle 前状态：{}\n- cycle 后稳定版本：{}\n- cycle 后状态：{}\n- cycle 后候选版本：{}\n- 候选验证路径数：{}\n- 失败或阻断原因：{}\n\n",
+        cycle.stable_version_before,
+        cycle.state_status_before,
+        record.stable_version_after,
+        record.state_status_after,
+        record.candidate_version_after.as_deref().unwrap_or("无"),
+        cycle.cycle_candidate_checked_path_count,
+        record.failure.as_deref().unwrap_or("无")
+    ));
+
+    markdown.push_str("# 状态与风险\n\n");
+    markdown.push_str(&format!(
+        "- 预检是否允许继续：{}\n- 开放错误数：{}\n- 是否建议压缩记忆：{}\n\n",
+        if record.preflight_can_advance {
+            "是"
+        } else {
+            "否"
+        },
+        record.open_error_count,
+        if record.memory_compaction_recommended {
+            "是"
+        } else {
+            "否"
+        }
+    ));
+
+    markdown.push_str("# 记忆与任务建议\n\n");
+    markdown.push_str(&format!(
+        "- 下一目标：{}\n- 下一任务：{}\n\n",
+        record.next_goal, record.next_task
+    ));
+
+    markdown.push_str("# 后续命令\n\n");
+    for command in &record.follow_up_commands {
+        markdown.push_str(&format!("- `{command}`\n"));
+    }
+    markdown.push('\n');
+
+    markdown.push_str("# 下一步\n\n");
+    match record.status {
+        AiPatchSourceCycleFollowUpStatus::Promoted => {
+            markdown.push_str(
+                "- 已完成提升，应先压缩记忆并读取经验，再进入下一轮 patch 级任务选择。\n",
+            );
+        }
+        AiPatchSourceCycleFollowUpStatus::RolledBack => {
+            markdown.push_str("- 已完成回滚，应优先修复失败原因，再重新准备候选和执行 cycle。\n");
+        }
+        AiPatchSourceCycleFollowUpStatus::Blocked => {
+            markdown.push_str(
+                "- cycle 被阻断，应先修复状态、预检或开放错误问题，再重新执行候选 cycle。\n",
+            );
+        }
+    }
+    markdown
+}
+
 #[derive(Debug)]
 struct PatchWriteScopeAudit {
     normalized_write_scope: Vec<String>,
@@ -6322,6 +6553,28 @@ impl Error for AiPatchSourceCycleError {
             AiPatchSourceCycleError::Candidate(error) => Some(error),
             AiPatchSourceCycleError::Store(error) => Some(error),
             AiPatchSourceCycleError::State(error) => Some(error),
+        }
+    }
+}
+
+impl fmt::Display for AiPatchSourceCycleSummaryError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AiPatchSourceCycleSummaryError::Cycle(error) => {
+                write!(formatter, "读取源码覆盖 cycle 记录失败：{error}")
+            }
+            AiPatchSourceCycleSummaryError::Store(error) => {
+                write!(formatter, "写入源码覆盖 cycle 后续总结失败：{error}")
+            }
+        }
+    }
+}
+
+impl Error for AiPatchSourceCycleSummaryError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            AiPatchSourceCycleSummaryError::Cycle(error) => Some(error),
+            AiPatchSourceCycleSummaryError::Store(error) => Some(error),
         }
     }
 }

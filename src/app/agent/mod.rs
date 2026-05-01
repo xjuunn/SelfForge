@@ -5,6 +5,7 @@ mod patch_draft;
 mod patch_preview;
 mod patch_source_candidate;
 mod patch_source_cycle;
+mod patch_source_cycle_summary;
 mod patch_source_execution;
 mod patch_source_plan;
 mod patch_source_promotion;
@@ -44,6 +45,11 @@ pub use patch_source_candidate::{
 pub use patch_source_cycle::{
     AiPatchSourceCycleRecord, AiPatchSourceCycleResult, AiPatchSourceCycleStatus,
     AiPatchSourceCycleStore, AiPatchSourceCycleStoreError, AiPatchSourceCycleSummary,
+};
+pub use patch_source_cycle_summary::{
+    AiPatchSourceCycleFollowUpRecord, AiPatchSourceCycleFollowUpStatus,
+    AiPatchSourceCycleFollowUpStore, AiPatchSourceCycleFollowUpStoreError,
+    AiPatchSourceCycleFollowUpSummary,
 };
 pub use patch_source_execution::{
     AiPatchSourceExecutionFile, AiPatchSourceExecutionRecord, AiPatchSourceExecutionStatus,
