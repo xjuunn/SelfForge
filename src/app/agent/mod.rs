@@ -1,5 +1,6 @@
 mod registry;
 mod session;
+mod tool_invocation;
 mod tools;
 mod types;
 
@@ -8,6 +9,9 @@ pub use session::{
     AgentRunReference, AgentSession, AgentSessionError, AgentSessionEvent, AgentSessionEventKind,
     AgentSessionMemoryInsight, AgentSessionPlanContext, AgentSessionStatus, AgentSessionStep,
     AgentSessionStore, AgentSessionSummary, AgentStepStatus,
+};
+pub use tool_invocation::{
+    AgentToolInvocation, AgentToolInvocationInput, AgentToolInvocationReport,
 };
 pub use tools::{
     AgentToolAssignment, AgentToolBinding, AgentToolConfig, AgentToolConfigInitReport,

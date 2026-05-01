@@ -2,8 +2,8 @@ use super::agent::{
     AgentDefinition, AgentError, AgentPlan, AgentRegistry, AgentRunReference, AgentSession,
     AgentSessionError, AgentSessionMemoryInsight, AgentSessionPlanContext, AgentSessionStatus,
     AgentSessionStore, AgentSessionSummary, AgentStepStatus, AgentToolConfigInitReport,
-    AgentToolError, AgentToolReport, apply_tools_to_plan, initialize_agent_tool_config,
-    load_agent_tool_report,
+    AgentToolError, AgentToolInvocation, AgentToolInvocationInput, AgentToolInvocationReport,
+    AgentToolReport, apply_tools_to_plan, initialize_agent_tool_config, load_agent_tool_report,
 };
 use super::ai_provider::{
     AiConfigError, AiConfigReport, AiExecutionError, AiExecutionReport, AiProviderRegistry,
@@ -16,7 +16,7 @@ use super::memory::{
 };
 use crate::{
     CycleReport, CycleResult, EvolutionError, ExecutionError, ExecutionReport, ForgeError,
-    ForgeState, StateError, Supervisor, next_version_after,
+    ForgeState, StateError, Supervisor, VersionError, next_version_after, version_major_file_name,
 };
 use std::error::Error;
 use std::fmt;
@@ -142,6 +142,20 @@ pub enum AgentRunError {
     },
 }
 
+#[derive(Debug)]
+pub enum AgentToolInvocationError {
+    Tools(AgentToolError),
+    Memory(MemoryContextError),
+    Session(AgentSessionError),
+    Run(AgentRunError),
+    AiRequest(AiRequestError),
+    Setup(MinimalLoopError),
+    Version(VersionError),
+    ToolNotAssigned { agent_id: String, tool_id: String },
+    UnsupportedInput { tool_id: String, expected: String },
+    ToolRunnerMissing { tool_id: String },
+}
+
 impl SelfForgeApp {
     pub fn new(root: impl AsRef<Path>) -> Self {
         let root = root.as_ref().to_path_buf();
@@ -237,6 +251,213 @@ impl SelfForgeApp {
             insights,
             tools,
         })
+    }
+
+    pub fn invoke_agent_tool(
+        &self,
+        invocation: AgentToolInvocation,
+    ) -> Result<AgentToolInvocationReport, AgentToolInvocationError> {
+        let tools = self.agent_tools(&invocation.version)?;
+        let assigned_tools = tools.tool_ids_for_agent(&invocation.agent_id);
+        if !assigned_tools
+            .iter()
+            .any(|tool_id| tool_id == &invocation.tool_id)
+        {
+            return Err(AgentToolInvocationError::ToolNotAssigned {
+                agent_id: invocation.agent_id,
+                tool_id: invocation.tool_id,
+            });
+        }
+
+        let AgentToolInvocation {
+            agent_id,
+            tool_id,
+            version,
+            input,
+        } = invocation;
+
+        match tool_id.as_str() {
+            "memory.context" => match input {
+                AgentToolInvocationInput::MemoryContext { limit } => {
+                    let report = self.memory_context(&version, limit)?;
+                    Ok(AgentToolInvocationReport {
+                        agent_id,
+                        tool_id,
+                        version,
+                        summary: format!("已读取最近记忆 {} 条。", report.entries.len()),
+                        details: report
+                            .entries
+                            .iter()
+                            .map(|entry| {
+                                format!(
+                                    "{} 标题 {} 字符 {}",
+                                    entry.version,
+                                    entry.title,
+                                    entry.body.chars().count()
+                                )
+                            })
+                            .collect(),
+                        run: None,
+                    })
+                }
+                _ => Err(AgentToolInvocationError::UnsupportedInput {
+                    tool_id,
+                    expected: "MemoryContext".to_string(),
+                }),
+            },
+            "memory.insights" => match input {
+                AgentToolInvocationInput::MemoryInsights { limit } => {
+                    let report = self.memory_insights(&version, limit)?;
+                    Ok(AgentToolInvocationReport {
+                        agent_id,
+                        tool_id,
+                        version,
+                        summary: format!(
+                            "已提取记忆经验，来源 {}，成功 {}，风险 {}，建议 {}，经验 {}。",
+                            report.source_versions.len(),
+                            report.success_experiences.len(),
+                            report.failure_experiences.len(),
+                            report.optimization_suggestions.len(),
+                            report.reusable_experiences.len()
+                        ),
+                        details: report
+                            .source_versions
+                            .iter()
+                            .map(|source| format!("来源版本 {source}"))
+                            .collect(),
+                        run: None,
+                    })
+                }
+                _ => Err(AgentToolInvocationError::UnsupportedInput {
+                    tool_id,
+                    expected: "MemoryInsights".to_string(),
+                }),
+            },
+            "agent.session" => match input {
+                AgentToolInvocationInput::AgentSessions { limit, all_major } => {
+                    let sessions = if all_major {
+                        self.agent_sessions_all(&version, limit)?
+                    } else {
+                        self.agent_sessions(&version, limit)?
+                    };
+                    Ok(AgentToolInvocationReport {
+                        agent_id,
+                        tool_id,
+                        version,
+                        summary: format!("已查询 Agent 会话 {} 条。", sessions.len()),
+                        details: sessions
+                            .iter()
+                            .map(|session| {
+                                format!(
+                                    "{} 版本 {} 状态 {} 步骤 {}",
+                                    session.id, session.version, session.status, session.step_count
+                                )
+                            })
+                            .collect(),
+                        run: None,
+                    })
+                }
+                _ => Err(AgentToolInvocationError::UnsupportedInput {
+                    tool_id,
+                    expected: "AgentSessions".to_string(),
+                }),
+            },
+            "runtime.run" => match input {
+                AgentToolInvocationInput::RuntimeRun {
+                    session_version,
+                    session_id,
+                    target_version,
+                    step_order,
+                    program,
+                    args,
+                    timeout_ms,
+                } => {
+                    let report = self.agent_run(
+                        &session_version,
+                        &session_id,
+                        &target_version,
+                        step_order,
+                        &program,
+                        &args,
+                        timeout_ms,
+                    )?;
+                    let report_path = report.execution.run_dir.join("report.json");
+                    let report_file = report_path
+                        .strip_prefix(&self.root)
+                        .unwrap_or(&report_path)
+                        .to_string_lossy()
+                        .into_owned();
+                    let run = AgentRunReference {
+                        run_id: report.run_id.clone(),
+                        version: report.execution.version.clone(),
+                        report_file,
+                        exit_code: report.execution.exit_code,
+                        timed_out: report.execution.timed_out,
+                    };
+                    Ok(AgentToolInvocationReport {
+                        agent_id,
+                        tool_id,
+                        version,
+                        summary: format!(
+                            "运行 {} 完成，退出码 {:?}，超时 {}。",
+                            report.run_id, report.execution.exit_code, report.execution.timed_out
+                        ),
+                        details: vec![format!("会话 {} 步骤 {}", session_id, step_order)],
+                        run: Some(run),
+                    })
+                }
+                _ => Err(AgentToolInvocationError::UnsupportedInput {
+                    tool_id,
+                    expected: "RuntimeRun".to_string(),
+                }),
+            },
+            "ai.request" => match input {
+                AgentToolInvocationInput::AiRequestPreview { prompt } => {
+                    let spec = self.ai_request_preview(&prompt)?;
+                    Ok(AgentToolInvocationReport {
+                        agent_id,
+                        tool_id,
+                        version,
+                        summary: format!(
+                            "已生成 AI 请求预览，提供商 {}，模型 {}。",
+                            spec.provider_id, spec.model
+                        ),
+                        details: vec![
+                            format!("协议 {}", spec.protocol),
+                            format!("方法 {}", spec.method),
+                            format!("地址 {}", spec.url),
+                            format!("密钥变量 {}", spec.api_key_env_var),
+                        ],
+                        run: None,
+                    })
+                }
+                _ => Err(AgentToolInvocationError::UnsupportedInput {
+                    tool_id,
+                    expected: "AiRequestPreview".to_string(),
+                }),
+            },
+            "forge.archive" => match input {
+                AgentToolInvocationInput::ForgeArchiveStatus | AgentToolInvocationInput::Empty => {
+                    let archive_file = version_major_file_name(&version)?;
+                    Ok(AgentToolInvocationReport {
+                        agent_id,
+                        tool_id,
+                        version,
+                        summary: "已解析当前 major 聚合归档路径。".to_string(),
+                        details: ["memory", "tasks", "errors", "versions"]
+                            .iter()
+                            .map(|directory| format!("forge/{directory}/{archive_file}"))
+                            .collect(),
+                        run: None,
+                    })
+                }
+                _ => Err(AgentToolInvocationError::UnsupportedInput {
+                    tool_id,
+                    expected: "ForgeArchiveStatus".to_string(),
+                }),
+            },
+            _ => Err(AgentToolInvocationError::ToolRunnerMissing { tool_id }),
+        }
     }
 
     pub fn memory_context(
@@ -1005,6 +1226,89 @@ impl Error for AgentRunError {
 impl From<AgentSessionError> for AgentRunError {
     fn from(error: AgentSessionError) -> Self {
         AgentRunError::Session(error)
+    }
+}
+
+impl fmt::Display for AgentToolInvocationError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AgentToolInvocationError::Tools(error) => write!(formatter, "{error}"),
+            AgentToolInvocationError::Memory(error) => write!(formatter, "{error}"),
+            AgentToolInvocationError::Session(error) => write!(formatter, "{error}"),
+            AgentToolInvocationError::Run(error) => write!(formatter, "{error}"),
+            AgentToolInvocationError::AiRequest(error) => write!(formatter, "{error}"),
+            AgentToolInvocationError::Setup(error) => write!(formatter, "{error}"),
+            AgentToolInvocationError::Version(error) => write!(formatter, "{error}"),
+            AgentToolInvocationError::ToolNotAssigned { agent_id, tool_id } => {
+                write!(formatter, "Agent {agent_id} 未绑定工具 {tool_id}，禁止调用")
+            }
+            AgentToolInvocationError::UnsupportedInput { tool_id, expected } => write!(
+                formatter,
+                "工具 {tool_id} 的调用输入不匹配，期望 {expected}"
+            ),
+            AgentToolInvocationError::ToolRunnerMissing { tool_id } => {
+                write!(formatter, "工具 {tool_id} 尚未实现执行器")
+            }
+        }
+    }
+}
+
+impl Error for AgentToolInvocationError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            AgentToolInvocationError::Tools(error) => Some(error),
+            AgentToolInvocationError::Memory(error) => Some(error),
+            AgentToolInvocationError::Session(error) => Some(error),
+            AgentToolInvocationError::Run(error) => Some(error),
+            AgentToolInvocationError::AiRequest(error) => Some(error),
+            AgentToolInvocationError::Setup(error) => Some(error),
+            AgentToolInvocationError::Version(error) => Some(error),
+            AgentToolInvocationError::ToolNotAssigned { .. }
+            | AgentToolInvocationError::UnsupportedInput { .. }
+            | AgentToolInvocationError::ToolRunnerMissing { .. } => None,
+        }
+    }
+}
+
+impl From<AgentToolError> for AgentToolInvocationError {
+    fn from(error: AgentToolError) -> Self {
+        AgentToolInvocationError::Tools(error)
+    }
+}
+
+impl From<MemoryContextError> for AgentToolInvocationError {
+    fn from(error: MemoryContextError) -> Self {
+        AgentToolInvocationError::Memory(error)
+    }
+}
+
+impl From<AgentSessionError> for AgentToolInvocationError {
+    fn from(error: AgentSessionError) -> Self {
+        AgentToolInvocationError::Session(error)
+    }
+}
+
+impl From<AgentRunError> for AgentToolInvocationError {
+    fn from(error: AgentRunError) -> Self {
+        AgentToolInvocationError::Run(error)
+    }
+}
+
+impl From<AiRequestError> for AgentToolInvocationError {
+    fn from(error: AiRequestError) -> Self {
+        AgentToolInvocationError::AiRequest(error)
+    }
+}
+
+impl From<MinimalLoopError> for AgentToolInvocationError {
+    fn from(error: MinimalLoopError) -> Self {
+        AgentToolInvocationError::Setup(error)
+    }
+}
+
+impl From<VersionError> for AgentToolInvocationError {
+    fn from(error: VersionError) -> Self {
+        AgentToolInvocationError::Version(error)
     }
 }
 

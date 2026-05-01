@@ -1,0 +1,400 @@
+{
+  "id": "agent-session-1777627058971603500-000",
+  "version": "v0.1.37",
+  "goal": "验证 Agent Tool Runtime 调用",
+  "status": "Planned",
+  "created_at_unix_seconds": 1777627058,
+  "updated_at_unix_seconds": 1777627058,
+  "plan": {
+    "goal": "验证 Agent Tool Runtime 调用",
+    "agents": [
+      {
+        "id": "architect",
+        "name": "架构 Agent",
+        "purpose": "负责边界设计、模块拆分、约束解释和演进路线",
+        "capabilities": [
+          "Architecture",
+          "Planning"
+        ],
+        "inputs": [
+          "目标",
+          "历史记忆",
+          "系统约束"
+        ],
+        "outputs": [
+          "架构决策",
+          "可验证计划"
+        ]
+      },
+      {
+        "id": "builder",
+        "name": "实现 Agent",
+        "purpose": "负责在既定边界内完成最小必要代码修改",
+        "capabilities": [
+          "Implementation",
+          "Runtime"
+        ],
+        "inputs": [
+          "计划",
+          "代码上下文",
+          "接口约束"
+        ],
+        "outputs": [
+          "代码变更",
+          "运行记录"
+        ]
+      },
+      {
+        "id": "verifier",
+        "name": "验证 Agent",
+        "purpose": "负责测试设计、执行验证、边界用例和失败复现",
+        "capabilities": [
+          "Testing",
+          "Runtime"
+        ],
+        "inputs": [
+          "代码变更",
+          "验收标准"
+        ],
+        "outputs": [
+          "测试结果",
+          "验证报告"
+        ]
+      },
+      {
+        "id": "reviewer",
+        "name": "审查 Agent",
+        "purpose": "负责风险审查、架构一致性检查和回归风险识别",
+        "capabilities": [
+          "Review",
+          "Architecture"
+        ],
+        "inputs": [
+          "代码变更",
+          "测试结果",
+          "系统约束"
+        ],
+        "outputs": [
+          "审查结论",
+          "风险清单"
+        ]
+      },
+      {
+        "id": "archivist",
+        "name": "归档 Agent",
+        "purpose": "负责记忆、任务、错误和版本记录的中文归档",
+        "capabilities": [
+          "Documentation",
+          "Memory"
+        ],
+        "inputs": [
+          "计划",
+          "执行结果",
+          "测试结果",
+          "错误信息"
+        ],
+        "outputs": [
+          "记忆记录",
+          "任务记录",
+          "版本记录"
+        ]
+      }
+    ],
+    "steps": [
+      {
+        "order": 1,
+        "agent_id": "architect",
+        "title": "读取记忆并拆解目标",
+        "capability": "Planning",
+        "inputs": [
+          "目标",
+          "最近记忆",
+          "系统约束"
+        ],
+        "outputs": [
+          "任务边界",
+          "执行顺序"
+        ],
+        "verification": "计划步骤必须有明确顺序和验收条件",
+        "tool_ids": [
+          "memory.context",
+          "memory.insights",
+          "agent.session",
+          "ai.request"
+        ]
+      },
+      {
+        "order": 2,
+        "agent_id": "architect",
+        "title": "确认模块边界和扩展点",
+        "capability": "Architecture",
+        "inputs": [
+          "任务边界",
+          "现有代码结构"
+        ],
+        "outputs": [
+          "模块边界",
+          "接口契约"
+        ],
+        "verification": "新增能力必须进入合适应用层模块",
+        "tool_ids": [
+          "memory.context",
+          "memory.insights",
+          "agent.session",
+          "ai.request"
+        ]
+      },
+      {
+        "order": 3,
+        "agent_id": "builder",
+        "title": "完成最小必要实现",
+        "capability": "Implementation",
+        "inputs": [
+          "接口契约",
+          "代码上下文"
+        ],
+        "outputs": [
+          "代码变更",
+          "局部运行结果"
+        ],
+        "verification": "实现必须保持小步可回滚",
+        "tool_ids": [
+          "runtime.run",
+          "ai.request"
+        ]
+      },
+      {
+        "order": 4,
+        "agent_id": "verifier",
+        "title": "执行单元、边界和错误测试",
+        "capability": "Testing",
+        "inputs": [
+          "代码变更",
+          "验收条件"
+        ],
+        "outputs": [
+          "测试结果",
+          "失败记录"
+        ],
+        "verification": "测试失败必须停止提升版本",
+        "tool_ids": [
+          "runtime.run"
+        ]
+      },
+      {
+        "order": 5,
+        "agent_id": "reviewer",
+        "title": "审查风险和架构一致性",
+        "capability": "Review",
+        "inputs": [
+          "代码变更",
+          "测试结果"
+        ],
+        "outputs": [
+          "审查结论",
+          "风险处理建议"
+        ],
+        "verification": "不得引入越界修改和未解释风险",
+        "tool_ids": [
+          "ai.request"
+        ]
+      },
+      {
+        "order": 6,
+        "agent_id": "archivist",
+        "title": "写入记忆、任务、错误和版本归档",
+        "capability": "Documentation",
+        "inputs": [
+          "执行结果",
+          "测试结果",
+          "审查结论"
+        ],
+        "outputs": [
+          "中文归档",
+          "版本记录"
+        ],
+        "verification": "归档必须写入当前 major 聚合文件",
+        "tool_ids": [
+          "memory.context",
+          "memory.insights",
+          "agent.session",
+          "forge.archive"
+        ]
+      }
+    ]
+  },
+  "plan_context": {
+    "memory_version": "v0.1.37",
+    "memory_archive_file": "forge\\memory\\v0.md",
+    "source_versions": [
+      "v0.1.37",
+      "v0.1.36",
+      "v0.1.35",
+      "v0.1.34",
+      "v0.1.33"
+    ],
+    "success_experiences": [
+      {
+        "version": "v0.1.37",
+        "text": "v0.1.37 建立了 Agent Tool 的可插拔配置基础，Agent 计划从“按能力分工”进一步扩展为“按能力和工具组合执行”，为后续真实工具执行、AI 工具接入和多 Agent 编排打下了可维护边界。"
+      },
+      {
+        "version": "v0.1.36",
+        "text": "v0.1.36 让 Agent 会话不仅保存计划和执行结果，还保存计划依据，计划、记忆、执行和审计之间的连接更完整。"
+      },
+      {
+        "version": "v0.1.35",
+        "text": "v0.1.35 让 Agent 计划阶段真实消费历史记忆经验，计划输出从静态步骤扩展为带上下文证据的协作计划，进一步接近自动进化流程的可解释闭环。"
+      },
+      {
+        "version": "v0.1.34",
+        "text": "v0.1.34 将记忆系统从读取推进到结构化提取，后续 Agent 计划可以直接消费历史经验，向自动生成计划更近一步。"
+      },
+      {
+        "version": "v0.1.33",
+        "text": "v0.1.33 让进化流程显式读取历史记忆，提升了计划可解释性和审计能力，符合受控自进化系统的核心约束。"
+      }
+    ],
+    "failure_experiences": [
+      {
+        "version": "v0.1.37",
+        "text": "测试阶段发现机械版本替换误改了 `Cargo.lock` 中依赖 `tracing-core` 的版本号，已恢复依赖版本并复验通过。动态配置测试初版未创建父目录，已补齐夹具目录创建。本轮没有未解决错误。"
+      },
+      {
+        "version": "v0.1.36",
+        "text": "测试阶段发现初始化记忆归档可能为空白可读但没有可提取的小节，已通过显式测试夹具修正断言。本轮没有未解决错误。"
+      }
+    ],
+    "optimization_suggestions": [
+      {
+        "version": "v0.1.37",
+        "text": "下一步应实现工具执行协议，让工具定义不仅能进入计划，还能由 Agent 步骤通过统一接口调用 Runtime、AI 请求、记忆读取和归档能力。"
+      },
+      {
+        "version": "v0.1.36",
+        "text": "下一步应让自动进化流程在候选验证前自动执行一组受控验证命令，并把 Runtime 运行证据绑定到同一 Agent 会话中。"
+      },
+      {
+        "version": "v0.1.35",
+        "text": "下一步应让 Agent 会话在执行计划时引用 `agent-plan` 的结构化经验摘要，并逐步把 AI 提供商能力接入规划 Agent，而不是直接写入 CLI。"
+      },
+      {
+        "version": "v0.1.34",
+        "text": "下一步可将 `memory-insights` 的结果注入 `agent-plan` 输出，让计划命令显式展示历史经验如何影响步骤设计。"
+      },
+      {
+        "version": "v0.1.33",
+        "text": "下一步可将记忆上下文中的成功经验和失败经验提取为结构化计划输入，进一步减少手写计划依赖。"
+      }
+    ],
+    "reusable_experiences": [
+      {
+        "version": "v0.1.37",
+        "text": "动态配置必须先做结构化验证，再进入计划；工具绑定结果应写入计划和会话，避免执行阶段重新推断导致审计不一致。"
+      },
+      {
+        "version": "v0.1.36",
+        "text": "会话文件中的历史依据应保存为摘要和引用，避免复制完整记忆正文；新增字段必须使用可选结构并提供旧文件兼容测试。"
+      },
+      {
+        "version": "v0.1.35",
+        "text": "计划上下文应通过应用层统一报告传递；CLI 只做参数解析和展示，可以避免未来真实多 Agent 执行时出现第二套记忆读取逻辑。"
+      },
+      {
+        "version": "v0.1.34",
+        "text": "历史经验提取应保持只读、可重复、可测试；先生成结构化视图，再接入计划和执行流程，可以避免直接改写记忆造成审计混乱。"
+      },
+      {
+        "version": "v0.1.33",
+        "text": "记忆读取应放在应用用例层并复用 major 聚合文件；Agent 会话只记录读取结果和数量，避免复制完整历史造成会话文件膨胀。"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "order": 1,
+      "agent_id": "architect",
+      "title": "读取记忆并拆解目标",
+      "capability": "Planning",
+      "tool_ids": [
+        "memory.context",
+        "memory.insights",
+        "agent.session",
+        "ai.request"
+      ],
+      "status": "Pending",
+      "verification": "计划步骤必须有明确顺序和验收条件"
+    },
+    {
+      "order": 2,
+      "agent_id": "architect",
+      "title": "确认模块边界和扩展点",
+      "capability": "Architecture",
+      "tool_ids": [
+        "memory.context",
+        "memory.insights",
+        "agent.session",
+        "ai.request"
+      ],
+      "status": "Pending",
+      "verification": "新增能力必须进入合适应用层模块"
+    },
+    {
+      "order": 3,
+      "agent_id": "builder",
+      "title": "完成最小必要实现",
+      "capability": "Implementation",
+      "tool_ids": [
+        "runtime.run",
+        "ai.request"
+      ],
+      "status": "Pending",
+      "verification": "实现必须保持小步可回滚"
+    },
+    {
+      "order": 4,
+      "agent_id": "verifier",
+      "title": "执行单元、边界和错误测试",
+      "capability": "Testing",
+      "tool_ids": [
+        "runtime.run"
+      ],
+      "status": "Pending",
+      "verification": "测试失败必须停止提升版本"
+    },
+    {
+      "order": 5,
+      "agent_id": "reviewer",
+      "title": "审查风险和架构一致性",
+      "capability": "Review",
+      "tool_ids": [
+        "ai.request"
+      ],
+      "status": "Pending",
+      "verification": "不得引入越界修改和未解释风险"
+    },
+    {
+      "order": 6,
+      "agent_id": "archivist",
+      "title": "写入记忆、任务、错误和版本归档",
+      "capability": "Documentation",
+      "tool_ids": [
+        "memory.context",
+        "memory.insights",
+        "agent.session",
+        "forge.archive"
+      ],
+      "status": "Pending",
+      "verification": "归档必须写入当前 major 聚合文件"
+    }
+  ],
+  "events": [
+    {
+      "order": 1,
+      "timestamp_unix_seconds": 1777627058,
+      "kind": "SessionCreated",
+      "message": "会话已创建并生成 Agent 协作计划。"
+    }
+  ],
+  "file": "workspaces\\v0\\artifacts\\agents\\sessions\\agent-session-1777627058971603500-000.json"
+}

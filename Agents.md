@@ -194,6 +194,8 @@ AI 响应解析必须优先使用应用层统一文本响应结构。OpenAI、De
 
 Agent Tool 能力必须通过 `src/app/agent/` 扩展。工具定义必须表现为结构化 `AgentToolDefinition`，并通过 `agent-tools [--current|--candidate|--version VERSION] [--init]` 查询或初始化配置。动态配置文件只允许写入 `workspaces/vMAJOR/artifacts/agents/tool-config.json`，禁止为小版本创建独立工具配置文件。Agent 可以通过能力匹配和 `agent_bindings` 自由组合工具，但工具配置必须验证 Agent 标识、工具标识、启用状态和重复定义，禁止未知工具静默进入计划。`agent-plan` 和 Agent 会话必须展示或持久化工具绑定结果，CLI 不得绕过应用层直接解析工具配置。
 
+Agent Tool 调用必须通过统一调用协议执行。调用输入和调用结果必须使用结构化 `AgentToolInvocation`、`AgentToolInvocationInput` 和 `AgentToolInvocationReport`，命令入口使用 `agent-tool-run TOOL_ID --agent AGENT_ID`。调用前必须校验目标 Agent 是否已绑定该工具，未绑定时必须拒绝；自定义工具没有执行器时必须返回明确错误，禁止静默成功。工具执行分发必须位于应用用例层，CLI 只允许负责参数解析和结果展示。Runtime 类工具必须复用 `agent-run` 和 Runtime 运行记录，AI 类工具默认优先使用请求预览或统一 AI Provider，禁止泄露 API Key。
+
 Agent 会话必须通过 `agent-start [goal]` 创建，并写入 `workspaces/vMAJOR/artifacts/agents/sessions/`；会话摘要必须追加到 `workspaces/vMAJOR/artifacts/agents/index.jsonl`。查询会话使用 `agent-sessions [--limit N]`，读取单个会话使用 `agent-session SESSION_ID`。会话文件必须持久化计划上下文快照，包括记忆版本、记忆归档文件、来源版本、成功经验、失败风险、优化建议和可复用经验摘要；`agent-session` 必须输出计划依据摘要，便于审计计划来源。会话文件只允许进入 `artifacts/agents/` 分层，禁止写入 workspace 根目录，禁止为小版本创建独立会话目录，禁止把会话状态只保存在进程内存中。
 
 版本提升后需要审计最近 Agent 会话时，必须优先使用 `agent-sessions --all [--limit N]`。该命令只能读取同一 major 工作区的 `workspaces/vMAJOR/artifacts/agents/index.jsonl`，按最新摘要去重并返回最近会话；禁止为了跨小版本查询创建新的索引文件、目录或小版本归档。
