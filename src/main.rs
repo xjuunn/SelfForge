@@ -933,13 +933,20 @@ fn agent_start(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Box
                     .as_ref()
                     .map(format_plan_context_summary)
                     .unwrap_or_else(|| "计划依据 无".to_string());
+                let work_queue = session
+                    .plan_context
+                    .as_ref()
+                    .and_then(|context| context.work_queue.as_ref())
+                    .map(format_work_queue_context_summary)
+                    .unwrap_or_else(|| "协作任务板 无".to_string());
                 format!(
-                    "SelfForge Agent 会话已创建 {} 版本 {} 状态 {} 步骤 {} {} 文件 {}",
+                    "SelfForge Agent 会话已创建 {} 版本 {} 状态 {} 步骤 {} {} {} 文件 {}",
                     session.id,
                     session.version,
                     session.status,
                     session.steps.len(),
                     context,
+                    work_queue,
                     session.file.display()
                 )
             }),
@@ -995,6 +1002,9 @@ fn agent_session(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, B
                 )];
                 if let Some(context) = session.plan_context.as_ref() {
                     lines.push(format_plan_context_summary(context));
+                    if let Some(queue) = context.work_queue.as_ref() {
+                        lines.push(format_work_queue_context_summary(queue));
+                    }
                     if !context.source_versions.is_empty() {
                         lines.push(format!(
                             "计划依据来源 {}",
@@ -1075,6 +1085,23 @@ fn format_plan_context_summary(context: &self_forge::AgentSessionPlanContext) ->
         context.optimization_suggestions.len(),
         context.reusable_experiences.len(),
         context.memory_archive_file
+    )
+}
+
+fn format_work_queue_context_summary(queue: &self_forge::AgentSessionWorkQueueContext) -> String {
+    let created = if queue.created {
+        "已创建"
+    } else {
+        "已复用"
+    };
+    format!(
+        "协作任务板 {} 版本 {} 任务 {} 线程 {} 租约 {} 秒 文件 {}",
+        created,
+        queue.version,
+        queue.task_count,
+        queue.thread_count,
+        queue.lease_duration_seconds,
+        queue.queue_file
     )
 }
 

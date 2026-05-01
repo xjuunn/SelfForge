@@ -13,7 +13,7 @@ pub use registry::AgentRegistry;
 pub use session::{
     AgentRunReference, AgentSession, AgentSessionError, AgentSessionEvent, AgentSessionEventKind,
     AgentSessionMemoryInsight, AgentSessionPlanContext, AgentSessionStatus, AgentSessionStep,
-    AgentSessionStore, AgentSessionSummary, AgentStepStatus,
+    AgentSessionStore, AgentSessionSummary, AgentSessionWorkQueueContext, AgentStepStatus,
 };
 pub use tool_invocation::{
     AgentStepExecutionReport, AgentStepExecutionRequest, AgentToolInvocation,

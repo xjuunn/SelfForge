@@ -1,0 +1,418 @@
+{
+  "id": "agent-session-1777630670861410300-000",
+  "version": "v0.1.43",
+  "goal": "验证 Agent 会话自动关联协作任务板",
+  "status": "Planned",
+  "created_at_unix_seconds": 1777630670,
+  "updated_at_unix_seconds": 1777630670,
+  "plan": {
+    "goal": "验证 Agent 会话自动关联协作任务板",
+    "agents": [
+      {
+        "id": "architect",
+        "name": "架构 Agent",
+        "purpose": "负责边界设计、模块拆分、约束解释和演进路线",
+        "capabilities": [
+          "Architecture",
+          "Planning"
+        ],
+        "inputs": [
+          "目标",
+          "历史记忆",
+          "系统约束"
+        ],
+        "outputs": [
+          "架构决策",
+          "可验证计划"
+        ]
+      },
+      {
+        "id": "builder",
+        "name": "实现 Agent",
+        "purpose": "负责在既定边界内完成最小必要代码修改",
+        "capabilities": [
+          "Implementation",
+          "Runtime"
+        ],
+        "inputs": [
+          "计划",
+          "代码上下文",
+          "接口约束"
+        ],
+        "outputs": [
+          "代码变更",
+          "运行记录"
+        ]
+      },
+      {
+        "id": "verifier",
+        "name": "验证 Agent",
+        "purpose": "负责测试设计、执行验证、边界用例和失败复现",
+        "capabilities": [
+          "Testing",
+          "Runtime"
+        ],
+        "inputs": [
+          "代码变更",
+          "验收标准"
+        ],
+        "outputs": [
+          "测试结果",
+          "验证报告"
+        ]
+      },
+      {
+        "id": "reviewer",
+        "name": "审查 Agent",
+        "purpose": "负责风险审查、架构一致性检查和回归风险识别",
+        "capabilities": [
+          "Review",
+          "Architecture"
+        ],
+        "inputs": [
+          "代码变更",
+          "测试结果",
+          "系统约束"
+        ],
+        "outputs": [
+          "审查结论",
+          "风险清单"
+        ]
+      },
+      {
+        "id": "archivist",
+        "name": "归档 Agent",
+        "purpose": "负责记忆、任务、错误和版本记录的中文归档",
+        "capabilities": [
+          "Documentation",
+          "Memory"
+        ],
+        "inputs": [
+          "计划",
+          "执行结果",
+          "测试结果",
+          "错误信息"
+        ],
+        "outputs": [
+          "记忆记录",
+          "任务记录",
+          "版本记录"
+        ]
+      }
+    ],
+    "steps": [
+      {
+        "order": 1,
+        "agent_id": "architect",
+        "title": "读取记忆并拆解目标",
+        "capability": "Planning",
+        "inputs": [
+          "目标",
+          "最近记忆",
+          "系统约束"
+        ],
+        "outputs": [
+          "任务边界",
+          "执行顺序"
+        ],
+        "verification": "计划步骤必须有明确顺序和验收条件",
+        "tool_ids": [
+          "memory.context",
+          "memory.insights",
+          "agent.session",
+          "ai.request"
+        ]
+      },
+      {
+        "order": 2,
+        "agent_id": "architect",
+        "title": "确认模块边界和扩展点",
+        "capability": "Architecture",
+        "inputs": [
+          "任务边界",
+          "现有代码结构"
+        ],
+        "outputs": [
+          "模块边界",
+          "接口契约"
+        ],
+        "verification": "新增能力必须进入合适应用层模块",
+        "tool_ids": [
+          "memory.context",
+          "memory.insights",
+          "agent.session",
+          "ai.request"
+        ]
+      },
+      {
+        "order": 3,
+        "agent_id": "builder",
+        "title": "完成最小必要实现",
+        "capability": "Implementation",
+        "inputs": [
+          "接口契约",
+          "代码上下文"
+        ],
+        "outputs": [
+          "代码变更",
+          "局部运行结果"
+        ],
+        "verification": "实现必须保持小步可回滚",
+        "tool_ids": [
+          "runtime.run",
+          "ai.request"
+        ]
+      },
+      {
+        "order": 4,
+        "agent_id": "verifier",
+        "title": "执行单元、边界和错误测试",
+        "capability": "Testing",
+        "inputs": [
+          "代码变更",
+          "验收条件"
+        ],
+        "outputs": [
+          "测试结果",
+          "失败记录"
+        ],
+        "verification": "测试失败必须停止提升版本",
+        "tool_ids": [
+          "runtime.run"
+        ]
+      },
+      {
+        "order": 5,
+        "agent_id": "reviewer",
+        "title": "审查风险和架构一致性",
+        "capability": "Review",
+        "inputs": [
+          "代码变更",
+          "测试结果"
+        ],
+        "outputs": [
+          "审查结论",
+          "风险处理建议"
+        ],
+        "verification": "不得引入越界修改和未解释风险",
+        "tool_ids": [
+          "ai.request"
+        ]
+      },
+      {
+        "order": 6,
+        "agent_id": "archivist",
+        "title": "写入记忆、任务、错误和版本归档",
+        "capability": "Documentation",
+        "inputs": [
+          "执行结果",
+          "测试结果",
+          "审查结论"
+        ],
+        "outputs": [
+          "中文归档",
+          "版本记录"
+        ],
+        "verification": "归档必须写入当前 major 聚合文件",
+        "tool_ids": [
+          "memory.context",
+          "memory.insights",
+          "agent.session",
+          "forge.archive"
+        ]
+      }
+    ]
+  },
+  "plan_context": {
+    "memory_version": "v0.1.43",
+    "memory_archive_file": "forge\\memory\\v0.md",
+    "work_queue": {
+      "version": "v0.1.43",
+      "queue_file": "workspaces\\v0\\artifacts\\agents\\coordination\\work-queue.json",
+      "task_count": 5,
+      "thread_count": 3,
+      "lease_duration_seconds": 3600,
+      "created": false
+    },
+    "source_versions": [
+      "v0.1.43",
+      "v0.1.42",
+      "v0.1.41",
+      "v0.1.40",
+      "v0.1.39"
+    ],
+    "success_experiences": [
+      {
+        "version": "v0.1.43",
+        "text": "候选版本生成完成后仍需通过验证与提升流程才能成为当前版本。"
+      },
+      {
+        "version": "v0.1.42",
+        "text": "v0.1.42 让多 AI 协作任务板从“能领取任务”推进到“能从中断领取中恢复”。租约机制保持轻量，只处理任务所有权过期和恢复，不引入复杂调度器，符合当前阶段稳定优先的策略。"
+      },
+      {
+        "version": "v0.1.41",
+        "text": "v0.1.41 建立了多 AI 同步修改代码的最小协调层。它不直接启动真实并发 AI 执行器，而是先把并发协作中最关键的事实来源、写入范围、依赖关系、领取状态和提示词边界持久化，符合受控自进化的安全顺序。"
+      },
+      {
+        "version": "v0.1.40",
+        "text": "v0.1.40 将记忆系统从“单文件持续追加”推进到“热记忆加冷归档”的结构，既保留审计追溯能力，又降低默认 AI 上下文读取成本。自动压缩接入 `agent-evolve` 后，后续进化不会继续让热记忆无限增长。"
+      },
+      {
+        "version": "v0.1.39",
+        "text": "v0.1.39 让 Agent 会话从“记录计划和工具”推进到“可以执行下一步计划”，自我迭代闭环更进一步。系统仍保持克制：需要外部输入的 Runtime 和 AI 工具不会自动猜测输入，而是明确阻断或要求调用方提供。"
+      }
+    ],
+    "failure_experiences": [
+      {
+        "version": "v0.1.41",
+        "text": "测试阶段发现一个已解决问题：领取提示词生成时仍可领取任务列表包含当前已领取任务，可能诱导多线程重复处理；已在提示词生成阶段排除当前任务，并让释放后的任务恢复为候选任务提示词，新增测试验证。本轮没有未解决错误。"
+      },
+      {
+        "version": "v0.1.40",
+        "text": "本轮没有未解决错误。并行执行两个 `cargo run` 时出现 Cargo 文件锁等待提示，命令最终成功，不构成系统错误。"
+      },
+      {
+        "version": "v0.1.39",
+        "text": "本轮没有未解决错误。开发阶段 `cargo fmt --check` 提示 rustfmt 排版调整，已运行 `cargo fmt` 并复验通过。"
+      }
+    ],
+    "optimization_suggestions": [
+      {
+        "version": "v0.1.43",
+        "text": "继续减少小版本碎片化文件和目录。"
+      },
+      {
+        "version": "v0.1.42",
+        "text": "下一步应把协作任务板和 Agent 会话步进器连接起来：会话开始时自动初始化任务板，执行前领取任务，步骤成功后完成任务，失败或阻断时释放任务，并将 Runtime 验证结果写回同一协作事件链。"
+      },
+      {
+        "version": "v0.1.41",
+        "text": "下一步应让 Agent 会话或自动进化流程在开始执行前自动创建协作队列，并把队列任务与 Agent 步进执行、Runtime 验证和最终归档串联起来。后续可增加超时租约、任务阻断状态、冲突人工审查和任务动态拆分。"
+      },
+      {
+        "version": "v0.1.40",
+        "text": "下一步应继续完善 Agent 多步自动执行，让系统在受控工具范围内自动推进多个计划步骤，并在遇到需要外部输入或验证失败时暂停、归档并给出清晰原因。"
+      },
+      {
+        "version": "v0.1.39",
+        "text": "下一步应实现受控的多步执行命令，让系统可以在安全工具范围内自动推进多个步骤，并在遇到 Runtime、AI 或错误阻断时暂停并生成可审计的待办。"
+      }
+    ],
+    "reusable_experiences": [
+      {
+        "version": "v0.1.43",
+        "text": "小版本记录应追加到 major 聚合文件，避免目录数量随 patch 增长。"
+      },
+      {
+        "version": "v0.1.42",
+        "text": "多 AI 协作必须同时管理“任务是否有人做”和“领取是否仍有效”。租约过期不应直接删除任务，而应恢复为待领取、保留事件和原因，确保后续线程可以基于同一事实来源继续工作。"
+      },
+      {
+        "version": "v0.1.41",
+        "text": "多 AI 并行写代码前，必须先持久化任务所有权和写入范围。提示词不能只描述能力，还必须描述边界、禁止事项、完成命令和释放命令；否则多个线程很容易重复做同一个任务或覆盖彼此改动。"
+      },
+      {
+        "version": "v0.1.40",
+        "text": "记忆读取和记忆压缩要分离：默认读取只访问热记忆，冷归档只服务审计和复盘。进化流程中的维护动作应放在应用用例层，由 `agent-evolve` 统一编排，避免 CLI 或 Agent 业务逻辑各自实现一套规则。"
+      },
+      {
+        "version": "v0.1.39",
+        "text": "自动执行必须以会话中的待执行步骤为唯一来源，不能重新推断计划；缺少必要输入时保持步骤待执行，比伪造成功结果更安全。"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "order": 1,
+      "agent_id": "architect",
+      "title": "读取记忆并拆解目标",
+      "capability": "Planning",
+      "tool_ids": [
+        "memory.context",
+        "memory.insights",
+        "agent.session",
+        "ai.request"
+      ],
+      "status": "Pending",
+      "verification": "计划步骤必须有明确顺序和验收条件"
+    },
+    {
+      "order": 2,
+      "agent_id": "architect",
+      "title": "确认模块边界和扩展点",
+      "capability": "Architecture",
+      "tool_ids": [
+        "memory.context",
+        "memory.insights",
+        "agent.session",
+        "ai.request"
+      ],
+      "status": "Pending",
+      "verification": "新增能力必须进入合适应用层模块"
+    },
+    {
+      "order": 3,
+      "agent_id": "builder",
+      "title": "完成最小必要实现",
+      "capability": "Implementation",
+      "tool_ids": [
+        "runtime.run",
+        "ai.request"
+      ],
+      "status": "Pending",
+      "verification": "实现必须保持小步可回滚"
+    },
+    {
+      "order": 4,
+      "agent_id": "verifier",
+      "title": "执行单元、边界和错误测试",
+      "capability": "Testing",
+      "tool_ids": [
+        "runtime.run"
+      ],
+      "status": "Pending",
+      "verification": "测试失败必须停止提升版本"
+    },
+    {
+      "order": 5,
+      "agent_id": "reviewer",
+      "title": "审查风险和架构一致性",
+      "capability": "Review",
+      "tool_ids": [
+        "ai.request"
+      ],
+      "status": "Pending",
+      "verification": "不得引入越界修改和未解释风险"
+    },
+    {
+      "order": 6,
+      "agent_id": "archivist",
+      "title": "写入记忆、任务、错误和版本归档",
+      "capability": "Documentation",
+      "tool_ids": [
+        "memory.context",
+        "memory.insights",
+        "agent.session",
+        "forge.archive"
+      ],
+      "status": "Pending",
+      "verification": "归档必须写入当前 major 聚合文件"
+    }
+  ],
+  "events": [
+    {
+      "order": 1,
+      "timestamp_unix_seconds": 1777630670,
+      "kind": "SessionCreated",
+      "message": "会话已创建并生成 Agent 协作计划。"
+    },
+    {
+      "order": 2,
+      "timestamp_unix_seconds": 1777630670,
+      "kind": "WorkQueuePrepared",
+      "message": "协作任务板已复用：workspaces\\v0\\artifacts\\agents\\coordination\\work-queue.json"
+    }
+  ],
+  "file": "workspaces\\v0\\artifacts\\agents\\sessions\\agent-session-1777630670861410300-000.json"
+}

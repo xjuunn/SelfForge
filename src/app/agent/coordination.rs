@@ -176,7 +176,19 @@ impl AgentWorkCoordinator {
         let goal = normalize_goal(goal);
         self.with_lock(&version, |layout| {
             if layout.queue_path.exists() {
-                let queue = read_queue(&layout.queue_path)?;
+                let mut queue = read_queue(&layout.queue_path)?;
+                if queue.version != version {
+                    queue.version = version.clone();
+                    queue.updated_at_unix_seconds = current_unix_seconds();
+                    push_event(
+                        &mut queue,
+                        "retarget",
+                        None,
+                        None,
+                        format!("协作队列已复用到版本 {version}。"),
+                    );
+                    write_queue(&layout.queue_path, &queue)?;
+                }
                 return Ok(AgentWorkQueueReport {
                     version: version.clone(),
                     queue_path: layout.queue_path.clone(),

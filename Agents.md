@@ -210,6 +210,8 @@ Agent 步进执行必须通过 `agent-step SESSION_ID` 或应用层 `execute_nex
 
 Agent 会话必须通过 `agent-start [goal]` 创建，并写入 `workspaces/vMAJOR/artifacts/agents/sessions/`；会话摘要必须追加到 `workspaces/vMAJOR/artifacts/agents/index.jsonl`。查询会话使用 `agent-sessions [--limit N]`，读取单个会话使用 `agent-session SESSION_ID`。会话文件必须持久化计划上下文快照，包括记忆版本、记忆归档文件、来源版本、成功经验、失败风险、优化建议和可复用经验摘要；`agent-session` 必须输出计划依据摘要，便于审计计划来源。会话文件只允许进入 `artifacts/agents/` 分层，禁止写入 workspace 根目录，禁止为小版本创建独立会话目录，禁止把会话状态只保存在进程内存中。
 
+`agent-start` 创建会话时必须自动初始化或复用当前 major 的协作任务板，并将任务板路径、任务数量、线程数量、租约配置和创建或复用状态写入会话计划上下文。会话事件必须记录协作任务板准备结果。`agent-session` 必须展示协作任务板摘要，后续 Agent 步进和多 AI 执行只能复用该任务板上下文，禁止重新猜测或另建并行任务队列。
+
 版本提升后需要审计最近 Agent 会话时，必须优先使用 `agent-sessions --all [--limit N]`。该命令只能读取同一 major 工作区的 `workspaces/vMAJOR/artifacts/agents/index.jsonl`，按最新摘要去重并返回最近会话；禁止为了跨小版本查询创建新的索引文件、目录或小版本归档。
 
 Agent 会话必须保存结构化事件时间线。会话创建、状态变化、步骤更新、成功完成和失败停止都必须写入同一个会话 JSON 的 `events` 字段；会话摘要可记录事件数量，CLI 详情必须能展示事件。禁止为事件时间线创建平行目录、额外索引或只保存在进程内存中。

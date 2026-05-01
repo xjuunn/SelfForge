@@ -1,11 +1,12 @@
 use super::agent::{
     AgentDefinition, AgentError, AgentPlan, AgentRegistry, AgentRunReference, AgentSession,
     AgentSessionError, AgentSessionMemoryInsight, AgentSessionPlanContext, AgentSessionStatus,
-    AgentSessionStep, AgentSessionStore, AgentSessionSummary, AgentStepExecutionReport,
-    AgentStepExecutionRequest, AgentStepStatus, AgentToolConfigInitReport, AgentToolError,
-    AgentToolInvocation, AgentToolInvocationInput, AgentToolInvocationReport, AgentToolReport,
-    AgentWorkClaimReport, AgentWorkCoordinator, AgentWorkError, AgentWorkQueueReport,
-    AgentWorkReapReport, apply_tools_to_plan, initialize_agent_tool_config, load_agent_tool_report,
+    AgentSessionStep, AgentSessionStore, AgentSessionSummary, AgentSessionWorkQueueContext,
+    AgentStepExecutionReport, AgentStepExecutionRequest, AgentStepStatus,
+    AgentToolConfigInitReport, AgentToolError, AgentToolInvocation, AgentToolInvocationInput,
+    AgentToolInvocationReport, AgentToolReport, AgentWorkClaimReport, AgentWorkCoordinator,
+    AgentWorkError, AgentWorkQueueReport, AgentWorkReapReport, apply_tools_to_plan,
+    initialize_agent_tool_config, load_agent_tool_report,
 };
 use super::ai_provider::{
     AiConfigError, AiConfigReport, AiExecutionError, AiExecutionReport, AiProviderRegistry,
@@ -653,6 +654,12 @@ impl SelfForgeApp {
         let mut session = self.start_session_with_tools(&store, version, goal)?;
         match self.attach_plan_context(&mut session, version, 5) {
             Ok(_) => {
+                if let Err(error) = self.attach_work_queue_context(&mut session, version) {
+                    let message = error.to_string();
+                    session.mark_failed(message.clone());
+                    store.save(&session)?;
+                    return Err(AgentSessionError::PlanContext { message });
+                }
                 store.save(&session)?;
                 Ok(session)
             }
@@ -1345,6 +1352,38 @@ impl SelfForgeApp {
         Ok(insights)
     }
 
+    fn attach_work_queue_context(
+        &self,
+        session: &mut AgentSession,
+        version: &str,
+    ) -> Result<AgentWorkQueueReport, AgentWorkError> {
+        let thread_count = session.plan.agents.len().max(1);
+        let report = AgentWorkCoordinator::new(&self.root).initialize(
+            version,
+            &session.goal,
+            thread_count,
+        )?;
+        let queue_file = report
+            .queue_path
+            .strip_prefix(&self.root)
+            .unwrap_or(&report.queue_path)
+            .to_string_lossy()
+            .into_owned();
+
+        if let Some(context) = session.plan_context.as_mut() {
+            context.work_queue = Some(AgentSessionWorkQueueContext {
+                version: report.version.clone(),
+                queue_file: queue_file.clone(),
+                task_count: report.queue.tasks.len(),
+                thread_count: report.queue.thread_count,
+                lease_duration_seconds: report.queue.lease_duration_seconds,
+                created: report.created,
+            });
+        }
+        session.record_work_queue_prepared(&queue_file, report.created);
+        Ok(report)
+    }
+
     fn session_plan_context(&self, insights: &MemoryInsightReport) -> AgentSessionPlanContext {
         let archive_file = insights
             .archive_path
@@ -1356,6 +1395,7 @@ impl SelfForgeApp {
         AgentSessionPlanContext {
             memory_version: insights.version.clone(),
             memory_archive_file: archive_file,
+            work_queue: None,
             source_versions: insights.source_versions.clone(),
             success_experiences: session_memory_insights(&insights.success_experiences),
             failure_experiences: session_memory_insights(&insights.failure_experiences),

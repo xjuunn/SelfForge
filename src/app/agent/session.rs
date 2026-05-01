@@ -36,6 +36,7 @@ pub enum AgentSessionEventKind {
     SessionStatusChanged,
     StepUpdated,
     RuntimeRun,
+    WorkQueuePrepared,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -63,6 +64,8 @@ pub struct AgentSession {
 pub struct AgentSessionPlanContext {
     pub memory_version: String,
     pub memory_archive_file: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work_queue: Option<AgentSessionWorkQueueContext>,
     #[serde(default)]
     pub source_versions: Vec<String>,
     #[serde(default)]
@@ -73,6 +76,16 @@ pub struct AgentSessionPlanContext {
     pub optimization_suggestions: Vec<AgentSessionMemoryInsight>,
     #[serde(default)]
     pub reusable_experiences: Vec<AgentSessionMemoryInsight>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentSessionWorkQueueContext {
+    pub version: String,
+    pub queue_file: String,
+    pub task_count: usize,
+    pub thread_count: usize,
+    pub lease_duration_seconds: u64,
+    pub created: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -543,6 +556,16 @@ impl AgentSession {
         Ok(())
     }
 
+    pub fn record_work_queue_prepared(&mut self, queue_file: &str, created: bool) {
+        let action = if created { "已创建" } else { "已复用" };
+        self.record_event(
+            AgentSessionEventKind::WorkQueuePrepared,
+            None,
+            None,
+            format!("协作任务板{action}：{queue_file}"),
+        );
+    }
+
     fn summary(&self) -> AgentSessionSummary {
         AgentSessionSummary {
             id: self.id.clone(),
@@ -608,6 +631,7 @@ impl fmt::Display for AgentSessionEventKind {
             AgentSessionEventKind::SessionStatusChanged => formatter.write_str("会话状态"),
             AgentSessionEventKind::StepUpdated => formatter.write_str("步骤更新"),
             AgentSessionEventKind::RuntimeRun => formatter.write_str("运行记录"),
+            AgentSessionEventKind::WorkQueuePrepared => formatter.write_str("协作任务板"),
         }
     }
 }
