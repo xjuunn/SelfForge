@@ -248,6 +248,8 @@ AI 补丁候选应用验证通过后，源码覆盖前必须优先使用 `agent-
 
 AI 补丁源码覆盖准备通过后，真实覆盖源码必须优先使用 `agent-patch-source-execute [--current|--candidate|--version VERSION] [--timeout-ms N] SOURCE_PLAN_ID`。执行记录只能写入 `workspaces/vMAJOR/artifacts/agents/patch-source-executions/`，索引文件为同目录 `index.jsonl`，执行级回滚备份只能写入单条执行目录下的 `rollback/` 分层，禁止为小版本创建独立目录或文件。该命令只能读取已准备的源码覆盖计划，执行前必须重新校验目标路径、候选镜像、目标文件存在状态、字节数和准备级回滚备份，若目标文件在准备后变化必须阻断。执行覆盖后必须运行固定验证命令：`cargo fmt --check`、`cargo test`、`cargo run -- validate` 和 `cargo run -- preflight`。验证失败或写入失败时必须按执行级备份回滚，并在同一条执行记录中保存覆盖文件、验证结果、回滚步骤和错误信息。查询执行记录使用 `agent-patch-source-executions [--limit N]`，读取单条执行记录使用 `agent-patch-source-execution-record SOURCE_EXECUTION_ID`。源码覆盖执行成功后，才允许进入版本提升衔接记录和下一候选生成。
 
+AI 补丁源码覆盖执行成功后，版本提升衔接必须优先使用 `agent-patch-source-promotion [--current|--candidate|--version VERSION] SOURCE_EXECUTION_ID`。衔接记录只能写入 `workspaces/vMAJOR/artifacts/agents/patch-source-promotions/`，索引文件为同目录 `index.jsonl`，禁止为小版本创建独立目录或文件。该命令只能读取源码覆盖执行记录，必须确认执行状态为已覆盖、验证状态为通过、验证运行记录存在、未发生回滚且覆盖文件非空；任一条件不满足时必须写入已阻断衔接记录。衔接记录必须包含源码覆盖执行编号、覆盖准备记录、候选应用记录、验证摘要、建议提交信息、下一候选版本和下一候选目标。该命令只生成可审计衔接记录，禁止直接修改 `state/state.json`、生成候选版本或执行真实 Git 提交。查询衔接记录使用 `agent-patch-source-promotions [--limit N]`，读取单条衔接记录使用 `agent-patch-source-promotion-record PROMOTION_ID`。
+
 ---
 
 # 八、Git 提交规范

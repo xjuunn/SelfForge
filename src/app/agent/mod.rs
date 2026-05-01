@@ -5,6 +5,7 @@ mod patch_draft;
 mod patch_preview;
 mod patch_source_execution;
 mod patch_source_plan;
+mod patch_source_promotion;
 mod registry;
 mod self_upgrade_audit;
 mod self_upgrade_summary;
@@ -41,6 +42,10 @@ pub use patch_source_execution::{
 pub use patch_source_plan::{
     AiPatchSourcePlanFile, AiPatchSourcePlanRecord, AiPatchSourcePlanStatus,
     AiPatchSourcePlanStore, AiPatchSourcePlanStoreError, AiPatchSourcePlanSummary,
+};
+pub use patch_source_promotion::{
+    AiPatchSourcePromotionRecord, AiPatchSourcePromotionStatus, AiPatchSourcePromotionStore,
+    AiPatchSourcePromotionStoreError, AiPatchSourcePromotionSummary,
 };
 pub use registry::AgentRegistry;
 pub use self_upgrade_audit::{
