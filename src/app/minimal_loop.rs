@@ -6,6 +6,8 @@ use super::agent::{
     AgentToolConfigInitReport, AgentToolError, AgentToolInvocation, AgentToolInvocationInput,
     AgentToolInvocationReport, AgentToolReport, AgentWorkClaimReport, AgentWorkCoordinator,
     AgentWorkError, AgentWorkQueueReport, AgentWorkReapReport, AgentWorkTaskStatus,
+    AiPatchApplicationFile, AiPatchApplicationRecord, AiPatchApplicationStatus,
+    AiPatchApplicationStore, AiPatchApplicationStoreError, AiPatchApplicationSummary,
     AiPatchAuditFinding, AiPatchAuditFindingKind, AiPatchAuditRecord, AiPatchAuditSeverity,
     AiPatchAuditStatus, AiPatchAuditStore, AiPatchAuditStoreError, AiPatchAuditSummary,
     AiPatchDraftRecord, AiPatchDraftStatus, AiPatchDraftStore, AiPatchDraftStoreError,
@@ -36,6 +38,7 @@ use std::fmt;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 const PREFLIGHT_OPEN_ERROR_LIMIT: usize = 10;
 const DEFAULT_MEMORY_COMPACTION_KEEP: usize = 5;
@@ -158,6 +161,14 @@ pub struct AiPatchPreviewReport {
     pub audit: AiPatchAuditRecord,
     pub draft: AiPatchDraftRecord,
     pub record: AiPatchPreviewRecord,
+}
+
+#[derive(Debug, Clone)]
+pub struct AiPatchApplicationReport {
+    pub preview: AiPatchPreviewRecord,
+    pub draft: AiPatchDraftRecord,
+    pub prepared_candidate_version: Option<String>,
+    pub record: AiPatchApplicationRecord,
 }
 
 #[derive(Debug, Clone)]
@@ -303,6 +314,19 @@ pub enum AiPatchPreviewError {
     Draft(AiPatchDraftStoreError),
     Store(AiPatchPreviewStoreError),
     Io { path: PathBuf, source: io::Error },
+}
+
+#[derive(Debug)]
+pub enum AiPatchApplicationError {
+    Preflight(MinimalLoopError),
+    Evolution(EvolutionError),
+    Preview(AiPatchPreviewStoreError),
+    Draft(AiPatchDraftStoreError),
+    Store(AiPatchApplicationStoreError),
+    Version(VersionError),
+    Forge(ForgeError),
+    Io { path: PathBuf, source: io::Error },
+    InvalidPath { path: String, reason: String },
 }
 
 #[derive(Debug)]
@@ -786,6 +810,192 @@ impl SelfForgeApp {
         id: &str,
     ) -> Result<AiPatchPreviewRecord, AiPatchPreviewStoreError> {
         AiPatchPreviewStore::new(&self.root).load(version, id)
+    }
+
+    pub fn ai_patch_apply(
+        &self,
+        version: &str,
+        preview_id: &str,
+    ) -> Result<AiPatchApplicationReport, AiPatchApplicationError> {
+        let preflight = self
+            .preflight()
+            .map_err(AiPatchApplicationError::Preflight)?;
+        let preview = AiPatchPreviewStore::new(&self.root)
+            .load(version, preview_id)
+            .map_err(AiPatchApplicationError::Preview)?;
+        let draft = AiPatchDraftStore::new(&self.root)
+            .load(version, &preview.draft_id)
+            .map_err(AiPatchApplicationError::Draft)?;
+
+        let mut status = AiPatchApplicationStatus::Applied;
+        let mut error = None;
+        let mut files = Vec::new();
+        let mut application_dir = None;
+        let mut validation_checked_paths = Vec::new();
+        let mut prepared_candidate_version = None;
+        let mut candidate_version = preflight
+            .candidate_version
+            .clone()
+            .unwrap_or_else(|| preview.target_version.clone());
+        let application_id = make_patch_application_id(&self.root, version)?;
+
+        if !preflight.open_errors.is_empty() {
+            status = AiPatchApplicationStatus::Blocked;
+            error = Some(format!(
+                "当前稳定版本存在 {} 个未解决错误，禁止应用补丁预演。",
+                preflight.open_errors.len()
+            ));
+        } else if preview.status != AiPatchPreviewStatus::Previewed {
+            status = AiPatchApplicationStatus::Blocked;
+            error = Some("补丁预演不是已预演状态，禁止应用到候选工作区。".to_string());
+        } else if preview.changes.is_empty() {
+            status = AiPatchApplicationStatus::Blocked;
+            error = Some("补丁预演没有可应用变更。".to_string());
+        } else {
+            let draft_markdown = read_patch_draft_markdown(&self.root, &draft)
+                .map_err(|(path, source)| AiPatchApplicationError::Io { path, source })?;
+            let code_blocks = extract_patch_preview_code_blocks(&draft_markdown);
+            let mut prepared_files = Vec::new();
+
+            for change in &preview.changes {
+                let block_index = change.code_block_index.saturating_sub(1);
+                let Some(block) = code_blocks.get(block_index) else {
+                    status = AiPatchApplicationStatus::Blocked;
+                    error = Some(format!("预演变更 {} 缺少对应代码块。", change.path));
+                    break;
+                };
+                let safe_path = match patch_application_safe_relative_path(&change.path) {
+                    Ok(path) => path,
+                    Err(path_error) => {
+                        status = AiPatchApplicationStatus::Blocked;
+                        error = Some(path_error.to_string());
+                        break;
+                    }
+                };
+                prepared_files.push((change.path.clone(), safe_path, block.content.clone()));
+            }
+
+            if status == AiPatchApplicationStatus::Applied {
+                if preflight.candidate_version.is_none() {
+                    let prepared = self
+                        .supervisor
+                        .prepare_next_version(&format!("应用补丁预演 {preview_id}"))
+                        .map_err(AiPatchApplicationError::Evolution)?;
+                    candidate_version = prepared.next_version.clone();
+                    prepared_candidate_version = Some(prepared.next_version);
+                }
+
+                let major = version_major_key(&candidate_version)
+                    .map_err(AiPatchApplicationError::Version)?;
+                let relative_application_dir = PathBuf::from("workspaces")
+                    .join(&major)
+                    .join("source")
+                    .join("patch-applications")
+                    .join(&application_id);
+                let absolute_application_dir = self.root.join(&relative_application_dir);
+                fs::create_dir_all(&absolute_application_dir).map_err(|source| {
+                    AiPatchApplicationError::Io {
+                        path: absolute_application_dir.clone(),
+                        source,
+                    }
+                })?;
+
+                for (source_path, safe_path, contents) in prepared_files {
+                    let relative_mirror_file = relative_application_dir.join(&safe_path);
+                    let absolute_mirror_file = self.root.join(&relative_mirror_file);
+                    if let Some(parent) = absolute_mirror_file.parent() {
+                        fs::create_dir_all(parent).map_err(|source| {
+                            AiPatchApplicationError::Io {
+                                path: parent.to_path_buf(),
+                                source,
+                            }
+                        })?;
+                    }
+                    fs::write(&absolute_mirror_file, &contents).map_err(|source| {
+                        AiPatchApplicationError::Io {
+                            path: absolute_mirror_file.clone(),
+                            source,
+                        }
+                    })?;
+                    files.push(AiPatchApplicationFile {
+                        source_path,
+                        mirror_file: relative_mirror_file,
+                        content_bytes: contents.len(),
+                    });
+                }
+
+                application_dir = Some(relative_application_dir);
+                let validation = self
+                    .supervisor
+                    .verify_version(&candidate_version)
+                    .map_err(AiPatchApplicationError::Forge)?;
+                validation_checked_paths = validation.checked_paths;
+            }
+        }
+
+        if status == AiPatchApplicationStatus::Blocked {
+            files.clear();
+        }
+
+        let verification_commands = patch_application_verification_commands();
+        let rollback_hint = format!(
+            "如后续验证失败，执行 rollback \"补丁预演 {preview_id} 应用失败\" 并保留本记录。"
+        );
+        let report_markdown = build_ai_patch_application_markdown(
+            &preview,
+            &candidate_version,
+            status,
+            application_dir.as_ref(),
+            &files,
+            &verification_commands,
+            &rollback_hint,
+            error.as_deref(),
+        );
+        let record = AiPatchApplicationRecord {
+            id: application_id,
+            version: version.to_string(),
+            candidate_version,
+            preview_id: preview.id.clone(),
+            audit_id: preview.audit_id.clone(),
+            draft_id: preview.draft_id.clone(),
+            created_at_unix_seconds: 0,
+            status,
+            application_dir,
+            applied_file_count: files.len(),
+            files,
+            validation_checked_paths,
+            verification_commands,
+            rollback_hint,
+            report_file: None,
+            error,
+            file: PathBuf::new(),
+        };
+        let record = AiPatchApplicationStore::new(&self.root)
+            .create(record, Some(&report_markdown))
+            .map_err(AiPatchApplicationError::Store)?;
+
+        Ok(AiPatchApplicationReport {
+            preview,
+            draft,
+            prepared_candidate_version,
+            record,
+        })
+    }
+
+    pub fn ai_patch_application_records(
+        &self,
+        version: &str,
+        limit: usize,
+    ) -> Result<Vec<AiPatchApplicationSummary>, AiPatchApplicationStoreError> {
+        AiPatchApplicationStore::new(&self.root).list(version, limit)
+    }
+
+    pub fn ai_patch_application_record(
+        &self,
+        version: &str,
+        id: &str,
+    ) -> Result<AiPatchApplicationRecord, AiPatchApplicationStoreError> {
+        AiPatchApplicationStore::new(&self.root).load(version, id)
     }
 
     pub fn ai_self_upgrade_preview(
@@ -2860,6 +3070,145 @@ fn build_ai_patch_preview_markdown(
     markdown
 }
 
+fn read_patch_draft_markdown(
+    root: &Path,
+    draft: &AiPatchDraftRecord,
+) -> Result<String, (PathBuf, io::Error)> {
+    let Some(draft_file) = draft.draft_file.as_ref() else {
+        return Err((
+            PathBuf::from("无"),
+            io::Error::new(io::ErrorKind::NotFound, "补丁草案缺少 Markdown 文件"),
+        ));
+    };
+    let path = root.join(draft_file);
+    fs::read_to_string(&path).map_err(|source| (path, source))
+}
+
+fn make_patch_application_id(
+    root: &Path,
+    version: &str,
+) -> Result<String, AiPatchApplicationError> {
+    let major = version_major_key(version).map_err(AiPatchApplicationError::Version)?;
+    let clock = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    let id_seed = clock.as_nanos();
+    for attempt in 0..1000 {
+        let id = format!("patch-application-{id_seed}-{attempt:03}");
+        let record_path = root
+            .join("workspaces")
+            .join(&major)
+            .join("artifacts")
+            .join("agents")
+            .join("patch-applications")
+            .join(format!("{id}.json"));
+        let application_dir = root
+            .join("workspaces")
+            .join(&major)
+            .join("source")
+            .join("patch-applications")
+            .join(&id);
+        if !record_path.exists() && !application_dir.exists() {
+            return Ok(id);
+        }
+    }
+
+    Err(AiPatchApplicationError::Store(
+        AiPatchApplicationStoreError::IdExhausted {
+            version: version.to_string(),
+        },
+    ))
+}
+
+fn patch_application_safe_relative_path(value: &str) -> Result<PathBuf, AiPatchApplicationError> {
+    let normalized = normalize_patch_scope_path(value).map_err(|reason| {
+        AiPatchApplicationError::InvalidPath {
+            path: value.to_string(),
+            reason,
+        }
+    })?;
+    if normalized.starts_with("runtime/")
+        || normalized.starts_with("supervisor/")
+        || normalized.starts_with("state/")
+        || normalized.starts_with(".git/")
+        || normalized == ".env"
+    {
+        return Err(AiPatchApplicationError::InvalidPath {
+            path: value.to_string(),
+            reason: "候选应用禁止写入受保护路径。".to_string(),
+        });
+    }
+
+    let mut path = PathBuf::new();
+    for part in normalized.split('/') {
+        path.push(part);
+    }
+    Ok(path)
+}
+
+fn patch_application_verification_commands() -> Vec<String> {
+    vec![
+        "cargo fmt --check".to_string(),
+        "cargo test".to_string(),
+        "cargo run -- validate".to_string(),
+        "cargo run -- preflight".to_string(),
+    ]
+}
+
+fn build_ai_patch_application_markdown(
+    preview: &AiPatchPreviewRecord,
+    candidate_version: &str,
+    status: AiPatchApplicationStatus,
+    application_dir: Option<&PathBuf>,
+    files: &[AiPatchApplicationFile],
+    verification_commands: &[String],
+    rollback_hint: &str,
+    error: Option<&str>,
+) -> String {
+    let mut markdown = String::new();
+    markdown.push_str("# AI 补丁候选应用记录\n\n");
+    markdown.push_str("# 基本信息\n\n");
+    markdown.push_str(&format!(
+        "- 源版本：{}\n- 候选版本：{}\n- 预演记录：{}\n- 审计记录：{}\n- 草案记录：{}\n- 应用状态：{}\n- 应用目录：{}\n- 错误信息：{}\n\n",
+        preview.version,
+        candidate_version,
+        preview.id,
+        preview.audit_id,
+        preview.draft_id,
+        status,
+        application_dir
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|| "无".to_string()),
+        error.unwrap_or("无")
+    ));
+
+    markdown.push_str("# 应用文件\n\n");
+    if files.is_empty() {
+        markdown.push_str("- 本次没有写入候选应用镜像文件。\n\n");
+    } else {
+        for file in files {
+            markdown.push_str(&format!(
+                "- 来源路径：{}；镜像文件：{}；字节：{}\n",
+                file.source_path,
+                file.mirror_file.display(),
+                file.content_bytes
+            ));
+        }
+        markdown.push('\n');
+    }
+
+    markdown.push_str("# 验证命令\n\n");
+    for command in verification_commands {
+        markdown.push_str(&format!("- `{command}`\n"));
+    }
+    markdown.push('\n');
+
+    markdown.push_str("# 回滚准备\n\n");
+    markdown.push_str(&format!("- {rollback_hint}\n"));
+    markdown.push_str("- 当前命令只写入候选工作区镜像，后续真实覆盖仓库源码前必须再次审计写入范围并执行完整验证。\n");
+    markdown
+}
+
 #[derive(Debug)]
 struct PatchWriteScopeAudit {
     normalized_write_scope: Vec<String>,
@@ -3603,6 +3952,59 @@ impl Error for AiPatchPreviewError {
             AiPatchPreviewError::Draft(error) => Some(error),
             AiPatchPreviewError::Store(error) => Some(error),
             AiPatchPreviewError::Io { source, .. } => Some(source),
+        }
+    }
+}
+
+impl fmt::Display for AiPatchApplicationError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AiPatchApplicationError::Preflight(error) => {
+                write!(formatter, "AI 补丁候选应用前置检查失败：{error}")
+            }
+            AiPatchApplicationError::Evolution(error) => {
+                write!(formatter, "AI 补丁候选应用准备候选版本失败：{error}")
+            }
+            AiPatchApplicationError::Preview(error) => {
+                write!(formatter, "AI 补丁候选应用读取预演失败：{error}")
+            }
+            AiPatchApplicationError::Draft(error) => {
+                write!(formatter, "AI 补丁候选应用读取草案失败：{error}")
+            }
+            AiPatchApplicationError::Store(error) => {
+                write!(formatter, "AI 补丁候选应用记录失败：{error}")
+            }
+            AiPatchApplicationError::Version(error) => write!(formatter, "{error}"),
+            AiPatchApplicationError::Forge(error) => {
+                write!(formatter, "AI 补丁候选应用验证失败：{error}")
+            }
+            AiPatchApplicationError::Io { path, source } => {
+                write!(
+                    formatter,
+                    "AI 补丁候选应用文件读写失败 {}：{}",
+                    path.display(),
+                    source
+                )
+            }
+            AiPatchApplicationError::InvalidPath { path, reason } => {
+                write!(formatter, "AI 补丁候选应用路径不合法 {path}：{reason}")
+            }
+        }
+    }
+}
+
+impl Error for AiPatchApplicationError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            AiPatchApplicationError::Preflight(error) => Some(error),
+            AiPatchApplicationError::Evolution(error) => Some(error),
+            AiPatchApplicationError::Preview(error) => Some(error),
+            AiPatchApplicationError::Draft(error) => Some(error),
+            AiPatchApplicationError::Store(error) => Some(error),
+            AiPatchApplicationError::Version(error) => Some(error),
+            AiPatchApplicationError::Forge(error) => Some(error),
+            AiPatchApplicationError::Io { source, .. } => Some(source),
+            AiPatchApplicationError::InvalidPath { .. } => None,
         }
     }
 }

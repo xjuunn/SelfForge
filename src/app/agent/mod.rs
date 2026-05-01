@@ -1,4 +1,5 @@
 mod coordination;
+mod patch_application;
 mod patch_audit;
 mod patch_draft;
 mod patch_preview;
@@ -13,6 +14,10 @@ mod types;
 pub use coordination::{
     AgentWorkClaimReport, AgentWorkCoordinator, AgentWorkError, AgentWorkEvent, AgentWorkQueue,
     AgentWorkQueueReport, AgentWorkReapReport, AgentWorkTask, AgentWorkTaskStatus,
+};
+pub use patch_application::{
+    AiPatchApplicationFile, AiPatchApplicationRecord, AiPatchApplicationStatus,
+    AiPatchApplicationStore, AiPatchApplicationStoreError, AiPatchApplicationSummary,
 };
 pub use patch_audit::{
     AiPatchAuditFinding, AiPatchAuditFindingKind, AiPatchAuditRecord, AiPatchAuditSeverity,
