@@ -11,7 +11,9 @@ pub use agent::{
     AgentSessionStore, AgentSessionSummary, AgentStepExecutionReport, AgentStepExecutionRequest,
     AgentStepStatus, AgentToolAssignment, AgentToolBinding, AgentToolConfig,
     AgentToolConfigInitReport, AgentToolDefinition, AgentToolError, AgentToolInvocation,
-    AgentToolInvocationInput, AgentToolInvocationReport, AgentToolReport,
+    AgentToolInvocationInput, AgentToolInvocationReport, AgentToolReport, AgentWorkClaimReport,
+    AgentWorkCoordinator, AgentWorkError, AgentWorkEvent, AgentWorkQueue, AgentWorkQueueReport,
+    AgentWorkTask, AgentWorkTaskStatus,
 };
 pub use ai_provider::{
     AiConfigError, AiConfigReport, AiExecutionError, AiExecutionReport, AiProviderRegistry,

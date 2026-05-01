@@ -1,9 +1,14 @@
+mod coordination;
 mod registry;
 mod session;
 mod tool_invocation;
 mod tools;
 mod types;
 
+pub use coordination::{
+    AgentWorkClaimReport, AgentWorkCoordinator, AgentWorkError, AgentWorkEvent, AgentWorkQueue,
+    AgentWorkQueueReport, AgentWorkTask, AgentWorkTaskStatus,
+};
 pub use registry::AgentRegistry;
 pub use session::{
     AgentRunReference, AgentSession, AgentSessionError, AgentSessionEvent, AgentSessionEventKind,

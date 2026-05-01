@@ -1,7 +1,7 @@
 use self_forge::{
-    AgentStepExecutionRequest, AgentToolInvocation, AgentToolInvocationInput, CURRENT_VERSION,
-    CycleResult, ErrorArchive, ErrorListQuery, ForgeState, MinimalLoopOutcome, RunQuery,
-    SelfForgeApp, Supervisor, VersionBump,
+    AgentStepExecutionRequest, AgentToolInvocation, AgentToolInvocationInput, AgentWorkQueueReport,
+    AgentWorkTaskStatus, CURRENT_VERSION, CycleResult, ErrorArchive, ErrorListQuery, ForgeState,
+    MinimalLoopOutcome, RunQuery, SelfForgeApp, Supervisor, VersionBump,
 };
 use std::env;
 use std::error::Error;
@@ -53,6 +53,11 @@ fn main() {
         "ai-request" => ai_request(&app, args.collect()),
         "agents" => agents(&app),
         "agent-tools" => agent_tools(&app, args.collect()),
+        "agent-work-init" => agent_work_init(&app, args.collect()),
+        "agent-work-status" => agent_work_status(&app, args.collect()),
+        "agent-work-claim" => agent_work_claim(&app, args.collect()),
+        "agent-work-complete" => agent_work_complete(&app, args.collect()),
+        "agent-work-release" => agent_work_release(&app, args.collect()),
         "agent-tool-run" => agent_tool_run(&app, args.collect()),
         "agent-step" => agent_step(&app, args.collect()),
         "agent-plan" => agent_plan(&app, args.collect()),
@@ -608,6 +613,167 @@ fn agent_tools(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Box
     }))
 }
 
+fn agent_work_init(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Box<dyn Error>> {
+    let command = parse_agent_work_init_args(arguments)?;
+    boxed(
+        app.init_agent_work_queue(&command.version, &command.goal, command.thread_count)
+            .map(|report| {
+                let action = if report.created {
+                    "已创建"
+                } else {
+                    "已存在"
+                };
+                let mut lines = vec![format!(
+                    "SelfForge 多 AI 协作任务板 {} 版本 {} 线程 {} 文件 {}",
+                    action,
+                    report.version,
+                    report.queue.thread_count,
+                    report.queue_path.display()
+                )];
+                append_agent_work_queue_lines(&mut lines, &report);
+                lines.join("\n")
+            }),
+    )
+}
+
+fn agent_work_status(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Box<dyn Error>> {
+    let command = parse_agent_work_version_args(arguments, "agent-work-status")?;
+    boxed(app.agent_work_status(&command.version).map(|report| {
+        let mut lines = vec![format!(
+            "SelfForge 多 AI 协作任务板 版本 {} 文件 {}",
+            report.version,
+            report.queue_path.display()
+        )];
+        append_agent_work_queue_lines(&mut lines, &report);
+        lines.join("\n")
+    }))
+}
+
+fn agent_work_claim(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Box<dyn Error>> {
+    let command = parse_agent_work_claim_args(arguments)?;
+    boxed(
+        app.claim_agent_work(
+            &command.version,
+            &command.worker_id,
+            command.preferred_agent_id.as_deref(),
+        )
+        .map(|report| {
+            let mut lines = vec![format!(
+                "SelfForge 协作任务已领取 版本 {} 线程 {} 任务 {} 剩余可领取 {} 文件 {}",
+                report.version,
+                report.worker_id,
+                report.task.id,
+                report.remaining_available,
+                report.queue_path.display()
+            )];
+            lines.push(format!(
+                "标题 {} Agent {} 写入 {}",
+                report.task.title,
+                report.task.preferred_agent_id,
+                join_or_none(&report.task.write_scope)
+            ));
+            lines.push("提示词：".to_string());
+            lines.push(report.prompt);
+            lines.join("\n")
+        }),
+    )
+}
+
+fn agent_work_complete(
+    app: &SelfForgeApp,
+    arguments: Vec<String>,
+) -> Result<String, Box<dyn Error>> {
+    let command = parse_agent_work_update_args(arguments, "agent-work-complete", "--summary")?;
+    boxed(
+        app.complete_agent_work(
+            &command.version,
+            &command.task_id,
+            &command.worker_id,
+            &command.text,
+        )
+        .map(|report| {
+            let mut lines = vec![format!(
+                "SelfForge 协作任务已完成 版本 {} 任务 {} 线程 {} 文件 {}",
+                report.version,
+                command.task_id,
+                command.worker_id,
+                report.queue_path.display()
+            )];
+            append_agent_work_queue_lines(&mut lines, &report);
+            lines.join("\n")
+        }),
+    )
+}
+
+fn agent_work_release(
+    app: &SelfForgeApp,
+    arguments: Vec<String>,
+) -> Result<String, Box<dyn Error>> {
+    let command = parse_agent_work_update_args(arguments, "agent-work-release", "--reason")?;
+    boxed(
+        app.release_agent_work(
+            &command.version,
+            &command.task_id,
+            &command.worker_id,
+            &command.text,
+        )
+        .map(|report| {
+            let mut lines = vec![format!(
+                "SelfForge 协作任务已释放 版本 {} 任务 {} 线程 {} 文件 {}",
+                report.version,
+                command.task_id,
+                command.worker_id,
+                report.queue_path.display()
+            )];
+            append_agent_work_queue_lines(&mut lines, &report);
+            lines.join("\n")
+        }),
+    )
+}
+
+fn append_agent_work_queue_lines(lines: &mut Vec<String>, report: &AgentWorkQueueReport) {
+    lines.push(format!(
+        "目标 {} 任务 {} 待领取 {} 已领取 {} 已完成 {} 已阻断 {}",
+        report.queue.goal,
+        report.queue.tasks.len(),
+        count_agent_work_status(report, AgentWorkTaskStatus::Pending),
+        count_agent_work_status(report, AgentWorkTaskStatus::Claimed),
+        count_agent_work_status(report, AgentWorkTaskStatus::Completed),
+        count_agent_work_status(report, AgentWorkTaskStatus::Blocked)
+    ));
+    lines.push(format!("冲突策略 {}", report.queue.conflict_policy));
+    for task in &report.queue.tasks {
+        let claimed_by = task.claimed_by.as_deref().unwrap_or("无");
+        lines.push(format!(
+            "任务 {} 状态 {} Agent {} 优先级 {} 领取 {} 依赖 {} 写入 {}",
+            task.id,
+            task.status,
+            task.preferred_agent_id,
+            task.priority,
+            claimed_by,
+            join_or_none(&task.depends_on),
+            join_or_none(&task.write_scope)
+        ));
+    }
+}
+
+fn count_agent_work_status(report: &AgentWorkQueueReport, status: AgentWorkTaskStatus) -> usize {
+    report
+        .queue
+        .tasks
+        .iter()
+        .filter(|task| task.status == status)
+        .count()
+}
+
+fn join_or_none(values: &[String]) -> String {
+    if values.is_empty() {
+        "无".to_string()
+    } else {
+        values.join("、")
+    }
+}
+
 fn agent_tool_run(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Box<dyn Error>> {
     let invocation = parse_agent_tool_run_args(arguments)?;
 
@@ -1150,6 +1316,29 @@ struct AgentToolsArgs {
     init: bool,
 }
 
+struct AgentWorkInitArgs {
+    version: String,
+    goal: String,
+    thread_count: usize,
+}
+
+struct AgentWorkVersionArgs {
+    version: String,
+}
+
+struct AgentWorkClaimArgs {
+    version: String,
+    worker_id: String,
+    preferred_agent_id: Option<String>,
+}
+
+struct AgentWorkUpdateArgs {
+    version: String,
+    task_id: String,
+    worker_id: String,
+    text: String,
+}
+
 struct AgentToolRunArgs {
     agent_id: String,
     tool_id: String,
@@ -1558,6 +1747,211 @@ fn parse_agent_tools_args(arguments: Vec<String>) -> Result<AgentToolsArgs, Box<
     }
 
     Ok(AgentToolsArgs { version, init })
+}
+
+fn parse_agent_work_init_args(arguments: Vec<String>) -> Result<AgentWorkInitArgs, Box<dyn Error>> {
+    let state = ForgeState::load(env::current_dir()?)?;
+    let mut version = state.current_version.clone();
+    let mut thread_count = 1;
+    let mut goal_parts = Vec::new();
+    let mut index = 0;
+
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "--current" => {
+                version = state.current_version.clone();
+                index += 1;
+            }
+            "--candidate" => {
+                version = state.candidate_version.clone().ok_or("当前没有候选版本")?;
+                index += 1;
+            }
+            "--version" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--version 需要版本号".into());
+                };
+                version = value.clone();
+                index += 2;
+            }
+            "--threads" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--threads 需要线程数量".into());
+                };
+                thread_count = value.parse::<usize>()?;
+                index += 2;
+            }
+            "--" => {
+                goal_parts.extend(arguments[index + 1..].iter().cloned());
+                break;
+            }
+            other if other.starts_with("--") => {
+                return Err(format!("未知 agent-work-init 参数: {other}").into());
+            }
+            _ => {
+                goal_parts.extend(arguments[index..].iter().cloned());
+                break;
+            }
+        }
+    }
+
+    let goal = if goal_parts.is_empty() {
+        "协调多个 AI 线程完成受控代码修改".to_string()
+    } else {
+        goal_parts.join(" ")
+    };
+
+    Ok(AgentWorkInitArgs {
+        version,
+        goal,
+        thread_count,
+    })
+}
+
+fn parse_agent_work_version_args(
+    arguments: Vec<String>,
+    command_name: &str,
+) -> Result<AgentWorkVersionArgs, Box<dyn Error>> {
+    let state = ForgeState::load(env::current_dir()?)?;
+    let mut version = state.current_version.clone();
+    let mut index = 0;
+
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "--current" => {
+                version = state.current_version.clone();
+                index += 1;
+            }
+            "--candidate" => {
+                version = state.candidate_version.clone().ok_or("当前没有候选版本")?;
+                index += 1;
+            }
+            "--version" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--version 需要版本号".into());
+                };
+                version = value.clone();
+                index += 2;
+            }
+            other => return Err(format!("未知 {command_name} 参数: {other}").into()),
+        }
+    }
+
+    Ok(AgentWorkVersionArgs { version })
+}
+
+fn parse_agent_work_claim_args(
+    arguments: Vec<String>,
+) -> Result<AgentWorkClaimArgs, Box<dyn Error>> {
+    let state = ForgeState::load(env::current_dir()?)?;
+    let mut version = state.current_version.clone();
+    let mut worker_id = "ai-1".to_string();
+    let mut preferred_agent_id = None;
+    let mut index = 0;
+
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "--current" => {
+                version = state.current_version.clone();
+                index += 1;
+            }
+            "--candidate" => {
+                version = state.candidate_version.clone().ok_or("当前没有候选版本")?;
+                index += 1;
+            }
+            "--version" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--version 需要版本号".into());
+                };
+                version = value.clone();
+                index += 2;
+            }
+            "--worker" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--worker 需要线程标识".into());
+                };
+                worker_id = value.clone();
+                index += 2;
+            }
+            "--agent" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--agent 需要 Agent 标识".into());
+                };
+                preferred_agent_id = Some(value.clone());
+                index += 2;
+            }
+            other => return Err(format!("未知 agent-work-claim 参数: {other}").into()),
+        }
+    }
+
+    Ok(AgentWorkClaimArgs {
+        version,
+        worker_id,
+        preferred_agent_id,
+    })
+}
+
+fn parse_agent_work_update_args(
+    arguments: Vec<String>,
+    command_name: &str,
+    text_flag: &str,
+) -> Result<AgentWorkUpdateArgs, Box<dyn Error>> {
+    let state = ForgeState::load(env::current_dir()?)?;
+    let mut version = state.current_version.clone();
+    let mut task_id = None;
+    let mut worker_id = "ai-1".to_string();
+    let mut text = String::new();
+    let mut index = 0;
+
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "--current" => {
+                version = state.current_version.clone();
+                index += 1;
+            }
+            "--candidate" => {
+                version = state.candidate_version.clone().ok_or("当前没有候选版本")?;
+                index += 1;
+            }
+            "--version" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--version 需要版本号".into());
+                };
+                version = value.clone();
+                index += 2;
+            }
+            "--worker" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--worker 需要线程标识".into());
+                };
+                worker_id = value.clone();
+                index += 2;
+            }
+            flag if flag == text_flag => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err(format!("{text_flag} 需要说明文本").into());
+                };
+                text = value.clone();
+                index += 2;
+            }
+            other if other.starts_with("--") => {
+                return Err(format!("未知 {command_name} 参数: {other}").into());
+            }
+            other => {
+                if task_id.is_some() {
+                    return Err(format!("{command_name} 只能接收一个任务标识").into());
+                }
+                task_id = Some(other.to_string());
+                index += 1;
+            }
+        }
+    }
+
+    Ok(AgentWorkUpdateArgs {
+        version,
+        task_id: task_id.ok_or(format!("{command_name} 需要任务标识"))?,
+        worker_id,
+        text,
+    })
 }
 
 fn parse_agent_tool_run_args(
@@ -2162,7 +2556,7 @@ fn parse_agent_verify_args(arguments: Vec<String>) -> Result<AgentVerifyArgs, Bo
 }
 
 fn help_text() -> &'static str {
-    "SelfForge commands: init, validate, status, preflight, memory-context [--current|--candidate|--version VERSION] [--limit N], memory-insights [--current|--candidate|--version VERSION] [--limit N], memory-compact [--current|--candidate|--version VERSION] [--keep N], ai-config, ai-request [--dry-run] [--timeout-ms N] [prompt], agents, agent-tools [--current|--candidate|--version VERSION] [--init], agent-tool-run TOOL_ID --agent AGENT_ID [--current|--candidate|--version VERSION] [--limit N] [--all] [--session SESSION_ID] [--session-version VERSION] [--step N] [--target-version VERSION] [--timeout-ms N] [--prompt TEXT] [-- PROGRAM ARGS...], agent-step [--session-version VERSION] [--target-version VERSION] [--tool TOOL_ID] [--limit N] [--timeout-ms N] [--prompt TEXT] SESSION_ID [-- PROGRAM ARGS...], agent-plan [--current|--candidate|--version VERSION] [--limit N] [goal], agent-start [--current|--candidate|--version VERSION] [goal], agent-sessions [--current|--candidate|--version VERSION] [--limit N] [--all], agent-session [--current|--candidate|--version VERSION] SESSION_ID, agent-run [--session-version VERSION] [--current|--candidate|--version VERSION] [--step N] [--timeout-ms N] SESSION_ID -- PROGRAM [ARGS...], agent-verify [--current|--candidate|--version VERSION] [--timeout-ms N] [goal] -- PROGRAM [ARGS...], agent-advance [goal], agent-evolve [goal], advance [goal], promote, rollback [reason], cycle, run [--current|--candidate|--version VERSION] [--timeout-ms N] -- PROGRAM [ARGS...], runs [--current|--candidate|--version VERSION] [--limit N] [--failed] [--timed-out], errors [--current|--candidate|--version VERSION] [--limit N] [--open] [--resolved], record-error [--current|--candidate|--version VERSION] [--run-id RUN_ID] [--stage TEXT] [--solution TEXT], resolve-error [--current|--candidate|--version VERSION] --run-id RUN_ID [--verification TEXT], evolve [--patch|--minor|--major] [goal]"
+    "SelfForge commands: init, validate, status, preflight, memory-context [--current|--candidate|--version VERSION] [--limit N], memory-insights [--current|--candidate|--version VERSION] [--limit N], memory-compact [--current|--candidate|--version VERSION] [--keep N], ai-config, ai-request [--dry-run] [--timeout-ms N] [prompt], agents, agent-tools [--current|--candidate|--version VERSION] [--init], agent-work-init [--current|--candidate|--version VERSION] [--threads N] [goal], agent-work-status [--current|--candidate|--version VERSION], agent-work-claim [--current|--candidate|--version VERSION] [--worker ID] [--agent AGENT_ID], agent-work-complete [--current|--candidate|--version VERSION] TASK_ID [--worker ID] [--summary TEXT], agent-work-release [--current|--candidate|--version VERSION] TASK_ID [--worker ID] [--reason TEXT], agent-tool-run TOOL_ID --agent AGENT_ID [--current|--candidate|--version VERSION] [--limit N] [--all] [--session SESSION_ID] [--session-version VERSION] [--step N] [--target-version VERSION] [--timeout-ms N] [--prompt TEXT] [-- PROGRAM ARGS...], agent-step [--session-version VERSION] [--target-version VERSION] [--tool TOOL_ID] [--limit N] [--timeout-ms N] [--prompt TEXT] SESSION_ID [-- PROGRAM ARGS...], agent-plan [--current|--candidate|--version VERSION] [--limit N] [goal], agent-start [--current|--candidate|--version VERSION] [goal], agent-sessions [--current|--candidate|--version VERSION] [--limit N] [--all], agent-session [--current|--candidate|--version VERSION] SESSION_ID, agent-run [--session-version VERSION] [--current|--candidate|--version VERSION] [--step N] [--timeout-ms N] SESSION_ID -- PROGRAM [ARGS...], agent-verify [--current|--candidate|--version VERSION] [--timeout-ms N] [goal] -- PROGRAM [ARGS...], agent-advance [goal], agent-evolve [goal], advance [goal], promote, rollback [reason], cycle, run [--current|--candidate|--version VERSION] [--timeout-ms N] -- PROGRAM [ARGS...], runs [--current|--candidate|--version VERSION] [--limit N] [--failed] [--timed-out], errors [--current|--candidate|--version VERSION] [--limit N] [--open] [--resolved], record-error [--current|--candidate|--version VERSION] [--run-id RUN_ID] [--stage TEXT] [--solution TEXT], resolve-error [--current|--candidate|--version VERSION] --run-id RUN_ID [--verification TEXT], evolve [--patch|--minor|--major] [goal]"
 }
 
 fn exit_with_error(error: Box<dyn Error>) -> ! {

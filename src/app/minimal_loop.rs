@@ -4,6 +4,7 @@ use super::agent::{
     AgentSessionStep, AgentSessionStore, AgentSessionSummary, AgentStepExecutionReport,
     AgentStepExecutionRequest, AgentStepStatus, AgentToolConfigInitReport, AgentToolError,
     AgentToolInvocation, AgentToolInvocationInput, AgentToolInvocationReport, AgentToolReport,
+    AgentWorkClaimReport, AgentWorkCoordinator, AgentWorkError, AgentWorkQueueReport,
     apply_tools_to_plan, initialize_agent_tool_config, load_agent_tool_report,
 };
 use super::ai_provider::{
@@ -258,6 +259,48 @@ impl SelfForgeApp {
         version: &str,
     ) -> Result<AgentToolConfigInitReport, AgentToolError> {
         initialize_agent_tool_config(&self.root, version)
+    }
+
+    pub fn init_agent_work_queue(
+        &self,
+        version: &str,
+        goal: &str,
+        thread_count: usize,
+    ) -> Result<AgentWorkQueueReport, AgentWorkError> {
+        AgentWorkCoordinator::new(&self.root).initialize(version, goal, thread_count)
+    }
+
+    pub fn agent_work_status(&self, version: &str) -> Result<AgentWorkQueueReport, AgentWorkError> {
+        AgentWorkCoordinator::new(&self.root).status(version)
+    }
+
+    pub fn claim_agent_work(
+        &self,
+        version: &str,
+        worker_id: &str,
+        preferred_agent_id: Option<&str>,
+    ) -> Result<AgentWorkClaimReport, AgentWorkError> {
+        AgentWorkCoordinator::new(&self.root).claim_next(version, worker_id, preferred_agent_id)
+    }
+
+    pub fn complete_agent_work(
+        &self,
+        version: &str,
+        task_id: &str,
+        worker_id: &str,
+        summary: &str,
+    ) -> Result<AgentWorkQueueReport, AgentWorkError> {
+        AgentWorkCoordinator::new(&self.root).complete(version, task_id, worker_id, summary)
+    }
+
+    pub fn release_agent_work(
+        &self,
+        version: &str,
+        task_id: &str,
+        worker_id: &str,
+        reason: &str,
+    ) -> Result<AgentWorkQueueReport, AgentWorkError> {
+        AgentWorkCoordinator::new(&self.root).release(version, task_id, worker_id, reason)
     }
 
     pub fn agent_plan(&self, goal: &str) -> Result<AgentPlan, AgentError> {

@@ -1,0 +1,906 @@
+use crate::{VersionError, version_major_key};
+use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
+use std::error::Error;
+use std::fmt;
+use std::fs::{self, OpenOptions};
+use std::io::{self, Write};
+use std::path::{Path, PathBuf};
+use std::thread;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+const COORDINATION_DIRECTORY: &str = "coordination";
+const WORK_QUEUE_FILE: &str = "work-queue.json";
+const WORK_QUEUE_LOCK: &str = "work-queue.lock";
+const LOCK_RETRY_COUNT: usize = 80;
+const LOCK_RETRY_DELAY_MS: u64 = 25;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AgentWorkTaskStatus {
+    Pending,
+    Claimed,
+    Completed,
+    Blocked,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentWorkQueue {
+    pub version: String,
+    pub goal: String,
+    pub thread_count: usize,
+    pub created_at_unix_seconds: u64,
+    pub updated_at_unix_seconds: u64,
+    pub conflict_policy: String,
+    pub prompt_policy: String,
+    pub tasks: Vec<AgentWorkTask>,
+    #[serde(default)]
+    pub events: Vec<AgentWorkEvent>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentWorkTask {
+    pub id: String,
+    pub title: String,
+    pub description: String,
+    pub preferred_agent_id: String,
+    pub priority: usize,
+    #[serde(default)]
+    pub depends_on: Vec<String>,
+    #[serde(default)]
+    pub write_scope: Vec<String>,
+    #[serde(default)]
+    pub acceptance: Vec<String>,
+    pub status: AgentWorkTaskStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub claimed_by: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub claimed_at_unix_seconds: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub completed_at_unix_seconds: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result: Option<String>,
+    pub prompt: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentWorkEvent {
+    pub order: usize,
+    pub timestamp_unix_seconds: u64,
+    pub action: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worker_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_id: Option<String>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentWorkQueueReport {
+    pub version: String,
+    pub queue_path: PathBuf,
+    pub created: bool,
+    pub queue: AgentWorkQueue,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentWorkClaimReport {
+    pub version: String,
+    pub queue_path: PathBuf,
+    pub worker_id: String,
+    pub task: AgentWorkTask,
+    pub remaining_available: usize,
+    pub prompt: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct AgentWorkCoordinator {
+    root: PathBuf,
+}
+
+#[derive(Debug)]
+pub enum AgentWorkError {
+    Version(VersionError),
+    WorkspaceMissing {
+        version: String,
+        path: PathBuf,
+    },
+    MissingQueue {
+        version: String,
+        path: PathBuf,
+    },
+    InvalidThreadCount,
+    InvalidWorkerId {
+        worker_id: String,
+    },
+    InvalidTaskId {
+        task_id: String,
+    },
+    TaskNotFound {
+        task_id: String,
+    },
+    TaskNotClaimedByWorker {
+        task_id: String,
+        worker_id: String,
+    },
+    NoAvailableTask {
+        version: String,
+    },
+    LockBusy {
+        path: PathBuf,
+    },
+    Io {
+        path: PathBuf,
+        source: io::Error,
+    },
+    Parse {
+        path: PathBuf,
+        source: serde_json::Error,
+    },
+    Serialize {
+        path: PathBuf,
+        source: serde_json::Error,
+    },
+}
+
+impl AgentWorkCoordinator {
+    pub fn new(root: impl AsRef<Path>) -> Self {
+        Self {
+            root: root.as_ref().to_path_buf(),
+        }
+    }
+
+    pub fn initialize(
+        &self,
+        version: &str,
+        goal: &str,
+        thread_count: usize,
+    ) -> Result<AgentWorkQueueReport, AgentWorkError> {
+        if thread_count == 0 {
+            return Err(AgentWorkError::InvalidThreadCount);
+        }
+        let version = version.to_string();
+        let goal = normalize_goal(goal);
+        self.with_lock(&version, |layout| {
+            if layout.queue_path.exists() {
+                let queue = read_queue(&layout.queue_path)?;
+                return Ok(AgentWorkQueueReport {
+                    version: version.clone(),
+                    queue_path: layout.queue_path.clone(),
+                    created: false,
+                    queue,
+                });
+            }
+
+            let queue = create_queue(&version, &goal, thread_count);
+            write_queue(&layout.queue_path, &queue)?;
+            Ok(AgentWorkQueueReport {
+                version: version.clone(),
+                queue_path: layout.queue_path.clone(),
+                created: true,
+                queue,
+            })
+        })
+    }
+
+    pub fn status(&self, version: &str) -> Result<AgentWorkQueueReport, AgentWorkError> {
+        let version = version.to_string();
+        let layout = self.layout(&version)?;
+        if !layout.queue_path.exists() {
+            return Err(AgentWorkError::MissingQueue {
+                version,
+                path: layout.queue_path,
+            });
+        }
+        let queue = read_queue(&layout.queue_path)?;
+        Ok(AgentWorkQueueReport {
+            version,
+            queue_path: layout.queue_path,
+            created: false,
+            queue,
+        })
+    }
+
+    pub fn claim_next(
+        &self,
+        version: &str,
+        worker_id: &str,
+        preferred_agent_id: Option<&str>,
+    ) -> Result<AgentWorkClaimReport, AgentWorkError> {
+        validate_worker_id(worker_id)?;
+        let version = version.to_string();
+        let worker_id = worker_id.to_string();
+        let preferred_agent_id = preferred_agent_id.map(str::to_string);
+        self.with_lock(&version, |layout| {
+            if !layout.queue_path.exists() {
+                return Err(AgentWorkError::MissingQueue {
+                    version: version.clone(),
+                    path: layout.queue_path.clone(),
+                });
+            }
+
+            let mut queue = read_queue(&layout.queue_path)?;
+            let Some(task_index) = select_claimable_task(&queue, preferred_agent_id.as_deref())
+            else {
+                return Err(AgentWorkError::NoAvailableTask {
+                    version: version.clone(),
+                });
+            };
+
+            let now = current_unix_seconds();
+            queue.updated_at_unix_seconds = now;
+            let prompt = build_thread_prompt(&queue, &queue.tasks[task_index], &worker_id);
+            {
+                let task = &mut queue.tasks[task_index];
+                task.status = AgentWorkTaskStatus::Claimed;
+                task.claimed_by = Some(worker_id.clone());
+                task.claimed_at_unix_seconds = Some(now);
+                task.prompt = prompt.clone();
+            }
+            let task_id = queue.tasks[task_index].id.clone();
+            push_event(
+                &mut queue,
+                "claim",
+                Some(worker_id.clone()),
+                Some(task_id),
+                "任务已被工作线程领取。",
+            );
+            write_queue(&layout.queue_path, &queue)?;
+            let remaining_available = claimable_task_count(&queue, preferred_agent_id.as_deref());
+            Ok(AgentWorkClaimReport {
+                version: version.clone(),
+                queue_path: layout.queue_path.clone(),
+                worker_id,
+                task: queue.tasks[task_index].clone(),
+                remaining_available,
+                prompt,
+            })
+        })
+    }
+
+    pub fn complete(
+        &self,
+        version: &str,
+        task_id: &str,
+        worker_id: &str,
+        summary: &str,
+    ) -> Result<AgentWorkQueueReport, AgentWorkError> {
+        validate_worker_id(worker_id)?;
+        validate_task_id(task_id)?;
+        self.update_claimed_task(version, task_id, worker_id, |queue, index| {
+            let now = current_unix_seconds();
+            let message = default_summary(summary, "任务已完成。");
+            queue.updated_at_unix_seconds = now;
+            {
+                let task = &mut queue.tasks[index];
+                task.status = AgentWorkTaskStatus::Completed;
+                task.completed_at_unix_seconds = Some(now);
+                task.result = Some(message.clone());
+            }
+            push_event(
+                queue,
+                "complete",
+                Some(worker_id.to_string()),
+                Some(task_id.to_string()),
+                message,
+            );
+        })
+    }
+
+    pub fn release(
+        &self,
+        version: &str,
+        task_id: &str,
+        worker_id: &str,
+        reason: &str,
+    ) -> Result<AgentWorkQueueReport, AgentWorkError> {
+        validate_worker_id(worker_id)?;
+        validate_task_id(task_id)?;
+        self.update_claimed_task(version, task_id, worker_id, |queue, index| {
+            let message = default_summary(reason, "任务已释放。");
+            let goal = queue.goal.clone();
+            queue.updated_at_unix_seconds = current_unix_seconds();
+            {
+                let task = &mut queue.tasks[index];
+                task.status = AgentWorkTaskStatus::Pending;
+                task.claimed_by = None;
+                task.claimed_at_unix_seconds = None;
+                task.result = Some(message.clone());
+                task.prompt = build_base_prompt(&goal, task);
+            }
+            push_event(
+                queue,
+                "release",
+                Some(worker_id.to_string()),
+                Some(task_id.to_string()),
+                message,
+            );
+        })
+    }
+
+    fn update_claimed_task<F>(
+        &self,
+        version: &str,
+        task_id: &str,
+        worker_id: &str,
+        update: F,
+    ) -> Result<AgentWorkQueueReport, AgentWorkError>
+    where
+        F: FnOnce(&mut AgentWorkQueue, usize),
+    {
+        let version = version.to_string();
+        let task_id = task_id.to_string();
+        let worker_id = worker_id.to_string();
+        self.with_lock(&version, |layout| {
+            if !layout.queue_path.exists() {
+                return Err(AgentWorkError::MissingQueue {
+                    version: version.clone(),
+                    path: layout.queue_path.clone(),
+                });
+            }
+            let mut queue = read_queue(&layout.queue_path)?;
+            let Some(index) = queue.tasks.iter().position(|task| task.id == task_id) else {
+                return Err(AgentWorkError::TaskNotFound {
+                    task_id: task_id.clone(),
+                });
+            };
+            if queue.tasks[index].claimed_by.as_deref() != Some(worker_id.as_str()) {
+                return Err(AgentWorkError::TaskNotClaimedByWorker {
+                    task_id: task_id.clone(),
+                    worker_id: worker_id.clone(),
+                });
+            }
+            update(&mut queue, index);
+            write_queue(&layout.queue_path, &queue)?;
+            Ok(AgentWorkQueueReport {
+                version: version.clone(),
+                queue_path: layout.queue_path.clone(),
+                created: false,
+                queue,
+            })
+        })
+    }
+
+    fn with_lock<T, F>(&self, version: &str, action: F) -> Result<T, AgentWorkError>
+    where
+        F: FnOnce(&AgentWorkLayout) -> Result<T, AgentWorkError>,
+    {
+        let layout = self.layout(version)?;
+        fs::create_dir_all(&layout.coordination_dir).map_err(|source| AgentWorkError::Io {
+            path: layout.coordination_dir.clone(),
+            source,
+        })?;
+        let _guard = AgentWorkLock::acquire(&layout.lock_path)?;
+        action(&layout)
+    }
+
+    fn layout(&self, version: &str) -> Result<AgentWorkLayout, AgentWorkError> {
+        let major = version_major_key(version)?;
+        let workspace = self.root.join("workspaces").join(&major);
+        if !workspace.is_dir() {
+            return Err(AgentWorkError::WorkspaceMissing {
+                version: version.to_string(),
+                path: workspace,
+            });
+        }
+
+        let coordination_dir = workspace
+            .join("artifacts")
+            .join("agents")
+            .join(COORDINATION_DIRECTORY);
+        Ok(AgentWorkLayout {
+            queue_path: coordination_dir.join(WORK_QUEUE_FILE),
+            lock_path: coordination_dir.join(WORK_QUEUE_LOCK),
+            coordination_dir,
+        })
+    }
+}
+
+struct AgentWorkLayout {
+    coordination_dir: PathBuf,
+    queue_path: PathBuf,
+    lock_path: PathBuf,
+}
+
+struct AgentWorkLock {
+    path: PathBuf,
+}
+
+impl AgentWorkLock {
+    fn acquire(path: &Path) -> Result<Self, AgentWorkError> {
+        for _ in 0..LOCK_RETRY_COUNT {
+            match OpenOptions::new().write(true).create_new(true).open(path) {
+                Ok(mut file) => {
+                    let _ = writeln!(file, "pid={}", std::process::id());
+                    let _ = writeln!(file, "time={}", current_unix_seconds());
+                    return Ok(Self {
+                        path: path.to_path_buf(),
+                    });
+                }
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+                    thread::sleep(Duration::from_millis(LOCK_RETRY_DELAY_MS));
+                }
+                Err(source) => {
+                    return Err(AgentWorkError::Io {
+                        path: path.to_path_buf(),
+                        source,
+                    });
+                }
+            }
+        }
+
+        Err(AgentWorkError::LockBusy {
+            path: path.to_path_buf(),
+        })
+    }
+}
+
+impl Drop for AgentWorkLock {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
+    }
+}
+
+fn create_queue(version: &str, goal: &str, thread_count: usize) -> AgentWorkQueue {
+    let now = current_unix_seconds();
+    let major = version_major_key(version).unwrap_or_else(|_| "v0".to_string());
+    let mut queue = AgentWorkQueue {
+        version: version.to_string(),
+        goal: goal.to_string(),
+        thread_count,
+        created_at_unix_seconds: now,
+        updated_at_unix_seconds: now,
+        conflict_policy:
+            "同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。"
+                .to_string(),
+        prompt_policy:
+            "每个线程只执行领取到的任务，必须遵守写入范围、依赖关系、验收标准和归档规则。"
+                .to_string(),
+        tasks: default_tasks(goal, &major),
+        events: Vec::new(),
+    };
+    push_event(&mut queue, "init", None, None, "多 AI 协作队列已初始化。");
+    queue
+}
+
+fn default_tasks(goal: &str, major: &str) -> Vec<AgentWorkTask> {
+    vec![
+        work_task(
+            "coord-001-architecture",
+            "拆解协作架构和提示词边界",
+            "梳理目标、协作规则、提示词约束、冲突策略和后续扩展点。",
+            "architect",
+            10,
+            &[],
+            vec![
+                "Agents.md".to_string(),
+                format!("workspaces/{major}/artifacts/agents/coordination/"),
+            ],
+            &[
+                "提示词必须说明只处理已领取任务。",
+                "冲突处理必须明确释放或阻断流程。",
+            ],
+            goal,
+        ),
+        work_task(
+            "coord-002-application",
+            "实现应用层协作队列",
+            "实现任务板持久化、领取、完成、释放和冲突检测。",
+            "builder",
+            20,
+            &[],
+            vec![
+                "src/app/agent/".to_string(),
+                "src/app/minimal_loop.rs".to_string(),
+                "src/app/mod.rs".to_string(),
+            ],
+            &[
+                "队列必须写入 major 工作区 artifacts/agents/coordination。",
+                "领取必须防止重复任务和写入范围冲突。",
+            ],
+            goal,
+        ),
+        work_task(
+            "coord-003-cli",
+            "实现协作命令入口",
+            "提供初始化、状态查询、领取、完成和释放命令。",
+            "builder",
+            30,
+            &[],
+            vec!["src/main.rs".to_string(), "README.md".to_string()],
+            &[
+                "CLI 只能解析参数和展示应用层结果。",
+                "领取命令必须输出当前任务提示词。",
+            ],
+            goal,
+        ),
+        work_task(
+            "coord-004-tests",
+            "补充协作队列测试",
+            "覆盖单线程领取、多线程不重复领取、依赖阻断、冲突范围和错误完成。",
+            "verifier",
+            40,
+            &["coord-002-application", "coord-003-cli"],
+            vec!["src/lib.rs".to_string()],
+            &[
+                "必须包含单元、边界和错误测试。",
+                "测试必须验证重复领取被阻止。",
+            ],
+            goal,
+        ),
+        work_task(
+            "coord-005-review-archive",
+            "审查并写入中文归档",
+            "审查协作队列规则，补充任务、记忆、版本和错误归档。",
+            "archivist",
+            50,
+            &[
+                "coord-001-architecture",
+                "coord-002-application",
+                "coord-003-cli",
+                "coord-004-tests",
+            ],
+            vec![
+                format!("forge/tasks/{major}.md"),
+                format!("forge/memory/{major}.md"),
+                format!("forge/errors/{major}.md"),
+                format!("forge/versions/{major}.md"),
+            ],
+            &["归档必须为中文。", "不得创建小版本独立归档文件。"],
+            goal,
+        ),
+    ]
+}
+
+fn work_task(
+    id: &str,
+    title: &str,
+    description: &str,
+    preferred_agent_id: &str,
+    priority: usize,
+    depends_on: &[&str],
+    write_scope: Vec<String>,
+    acceptance: &[&str],
+    goal: &str,
+) -> AgentWorkTask {
+    let mut task = AgentWorkTask {
+        id: id.to_string(),
+        title: title.to_string(),
+        description: description.to_string(),
+        preferred_agent_id: preferred_agent_id.to_string(),
+        priority,
+        depends_on: depends_on
+            .iter()
+            .map(|value| (*value).to_string())
+            .collect(),
+        write_scope,
+        acceptance: acceptance
+            .iter()
+            .map(|value| (*value).to_string())
+            .collect(),
+        status: AgentWorkTaskStatus::Pending,
+        claimed_by: None,
+        claimed_at_unix_seconds: None,
+        completed_at_unix_seconds: None,
+        result: None,
+        prompt: String::new(),
+    };
+    task.prompt = build_base_prompt(goal, &task);
+    task
+}
+
+fn read_queue(path: &Path) -> Result<AgentWorkQueue, AgentWorkError> {
+    let contents = fs::read_to_string(path).map_err(|source| AgentWorkError::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    serde_json::from_str::<AgentWorkQueue>(&contents).map_err(|source| AgentWorkError::Parse {
+        path: path.to_path_buf(),
+        source,
+    })
+}
+
+fn write_queue(path: &Path, queue: &AgentWorkQueue) -> Result<(), AgentWorkError> {
+    let contents =
+        serde_json::to_string_pretty(queue).map_err(|source| AgentWorkError::Serialize {
+            path: path.to_path_buf(),
+            source,
+        })? + "\n";
+    fs::write(path, contents).map_err(|source| AgentWorkError::Io {
+        path: path.to_path_buf(),
+        source,
+    })
+}
+
+fn select_claimable_task(
+    queue: &AgentWorkQueue,
+    preferred_agent_id: Option<&str>,
+) -> Option<usize> {
+    let available = claimable_task_indexes(queue);
+    if let Some(agent_id) = preferred_agent_id {
+        if let Some(index) = available
+            .iter()
+            .copied()
+            .find(|index| queue.tasks[*index].preferred_agent_id == agent_id)
+        {
+            return Some(index);
+        }
+    }
+    available.into_iter().next()
+}
+
+fn claimable_task_count(queue: &AgentWorkQueue, preferred_agent_id: Option<&str>) -> usize {
+    claimable_task_indexes(queue)
+        .into_iter()
+        .filter(|index| {
+            preferred_agent_id
+                .map(|agent_id| queue.tasks[*index].preferred_agent_id == agent_id)
+                .unwrap_or(true)
+        })
+        .count()
+}
+
+fn claimable_task_indexes(queue: &AgentWorkQueue) -> Vec<usize> {
+    let completed = queue
+        .tasks
+        .iter()
+        .filter(|task| task.status == AgentWorkTaskStatus::Completed)
+        .map(|task| task.id.as_str())
+        .collect::<HashSet<_>>();
+    let mut indexes = queue
+        .tasks
+        .iter()
+        .enumerate()
+        .filter(|(_, task)| task.status == AgentWorkTaskStatus::Pending)
+        .filter(|(_, task)| {
+            task.depends_on
+                .iter()
+                .all(|dependency| completed.contains(dependency.as_str()))
+        })
+        .filter(|(_, task)| !has_active_scope_conflict(queue, task))
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+    indexes.sort_by_key(|index| queue.tasks[*index].priority);
+    indexes
+}
+
+fn has_active_scope_conflict(queue: &AgentWorkQueue, task: &AgentWorkTask) -> bool {
+    queue
+        .tasks
+        .iter()
+        .filter(|other| other.status == AgentWorkTaskStatus::Claimed)
+        .any(|other| scopes_overlap(&other.write_scope, &task.write_scope))
+}
+
+fn scopes_overlap(left: &[String], right: &[String]) -> bool {
+    left.iter().any(|left_scope| {
+        let left = normalize_scope(left_scope);
+        right.iter().any(|right_scope| {
+            let right = normalize_scope(right_scope);
+            left == right
+                || left.starts_with(&(right.clone() + "/"))
+                || right.starts_with(&(left.clone() + "/"))
+        })
+    })
+}
+
+fn normalize_scope(scope: &str) -> String {
+    scope
+        .trim()
+        .trim_end_matches(['/', '\\'])
+        .replace('\\', "/")
+}
+
+fn build_base_prompt(goal: &str, task: &AgentWorkTask) -> String {
+    format!(
+        "你是 SelfForge 多 AI 协作任务的候选执行者。\n\n全局目标：{goal}\n任务编号：{}\n任务标题：{}\n职责 Agent：{}\n\n任务描述：{}\n\n写入范围：{}\n\n验收标准：{}\n\n协作规则：先领取任务，再修改代码；只处理领取到的任务；不得修改其他任务的写入范围；发现冲突时释放任务并记录原因。",
+        task.id,
+        task.title,
+        task.preferred_agent_id,
+        task.description,
+        task.write_scope.join("，"),
+        join_chinese_sentences(&task.acceptance)
+    )
+}
+
+fn build_thread_prompt(queue: &AgentWorkQueue, task: &AgentWorkTask, worker_id: &str) -> String {
+    let dependency_text = if task.depends_on.is_empty() {
+        "无".to_string()
+    } else {
+        task.depends_on.join("，")
+    };
+    let available = claimable_task_indexes(queue)
+        .into_iter()
+        .filter(|index| queue.tasks[*index].id != task.id)
+        .map(|index| queue.tasks[index].id.clone())
+        .collect::<Vec<_>>()
+        .join("，");
+    format!(
+        "你是 SelfForge 多 AI 协作线程 `{worker_id}`。\n\n全局目标：{}\n当前任务：{} - {}\n职责 Agent：{}\n任务说明：{}\n\n必须遵守：\n1. 只完成当前已领取任务，禁止重复实现其他任务。\n2. 只修改写入范围：{}。\n3. 依赖任务：{}。\n4. 验收标准：{}。\n5. 如发现写入范围冲突、依赖缺失或无法完成，执行 `agent-work-release {} --worker {worker_id} --reason 原因`。\n6. 完成后执行必要测试，并执行 `agent-work-complete {} --worker {worker_id} --summary 摘要`。\n\n当前仍可领取任务：{}。\n冲突策略：{}",
+        queue.goal,
+        task.id,
+        task.title,
+        task.preferred_agent_id,
+        task.description,
+        task.write_scope.join("，"),
+        dependency_text,
+        join_chinese_sentences(&task.acceptance),
+        task.id,
+        task.id,
+        if available.is_empty() {
+            "无".to_string()
+        } else {
+            available
+        },
+        queue.conflict_policy
+    )
+}
+
+fn join_chinese_sentences(values: &[String]) -> String {
+    values
+        .iter()
+        .map(|value| value.trim().trim_end_matches(['。', '；', ';']).to_string())
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>()
+        .join("；")
+}
+
+fn push_event(
+    queue: &mut AgentWorkQueue,
+    action: &str,
+    worker_id: Option<String>,
+    task_id: Option<String>,
+    message: impl Into<String>,
+) {
+    queue.events.push(AgentWorkEvent {
+        order: queue.events.len() + 1,
+        timestamp_unix_seconds: current_unix_seconds(),
+        action: action.to_string(),
+        worker_id,
+        task_id,
+        message: message.into(),
+    });
+}
+
+fn validate_worker_id(worker_id: &str) -> Result<(), AgentWorkError> {
+    if valid_identifier(worker_id) {
+        Ok(())
+    } else {
+        Err(AgentWorkError::InvalidWorkerId {
+            worker_id: worker_id.to_string(),
+        })
+    }
+}
+
+fn validate_task_id(task_id: &str) -> Result<(), AgentWorkError> {
+    if valid_identifier(task_id) {
+        Ok(())
+    } else {
+        Err(AgentWorkError::InvalidTaskId {
+            task_id: task_id.to_string(),
+        })
+    }
+}
+
+fn valid_identifier(value: &str) -> bool {
+    !value.trim().is_empty()
+        && value.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.')
+        })
+}
+
+fn normalize_goal(goal: &str) -> String {
+    if goal.trim().is_empty() {
+        "协调多个 AI 线程完成受控代码修改".to_string()
+    } else {
+        goal.trim().to_string()
+    }
+}
+
+fn default_summary(value: &str, fallback: &str) -> String {
+    if value.trim().is_empty() {
+        fallback.to_string()
+    } else {
+        value.trim().to_string()
+    }
+}
+
+fn current_unix_seconds() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
+impl fmt::Display for AgentWorkTaskStatus {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AgentWorkTaskStatus::Pending => formatter.write_str("待领取"),
+            AgentWorkTaskStatus::Claimed => formatter.write_str("已领取"),
+            AgentWorkTaskStatus::Completed => formatter.write_str("已完成"),
+            AgentWorkTaskStatus::Blocked => formatter.write_str("已阻断"),
+        }
+    }
+}
+
+impl fmt::Display for AgentWorkError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AgentWorkError::Version(error) => write!(formatter, "{error}"),
+            AgentWorkError::WorkspaceMissing { version, path } => write!(
+                formatter,
+                "版本 {version} 的协作工作区不存在：{}",
+                path.display()
+            ),
+            AgentWorkError::MissingQueue { version, path } => {
+                write!(
+                    formatter,
+                    "版本 {version} 的协作队列不存在：{}",
+                    path.display()
+                )
+            }
+            AgentWorkError::InvalidThreadCount => write!(formatter, "线程数量必须大于 0"),
+            AgentWorkError::InvalidWorkerId { worker_id } => {
+                write!(formatter, "工作线程标识不合法：{worker_id}")
+            }
+            AgentWorkError::InvalidTaskId { task_id } => {
+                write!(formatter, "任务标识不合法：{task_id}")
+            }
+            AgentWorkError::TaskNotFound { task_id } => {
+                write!(formatter, "协作任务不存在：{task_id}")
+            }
+            AgentWorkError::TaskNotClaimedByWorker { task_id, worker_id } => write!(
+                formatter,
+                "任务 {task_id} 未被工作线程 {worker_id} 领取，禁止完成或释放"
+            ),
+            AgentWorkError::NoAvailableTask { version } => {
+                write!(formatter, "版本 {version} 当前没有可领取任务")
+            }
+            AgentWorkError::LockBusy { path } => {
+                write!(formatter, "协作队列锁繁忙：{}", path.display())
+            }
+            AgentWorkError::Io { path, source } => {
+                write!(formatter, "{}: {}", path.display(), source)
+            }
+            AgentWorkError::Parse { path, source } => {
+                write!(
+                    formatter,
+                    "解析协作队列 {} 失败：{}",
+                    path.display(),
+                    source
+                )
+            }
+            AgentWorkError::Serialize { path, source } => write!(
+                formatter,
+                "序列化协作队列 {} 失败：{}",
+                path.display(),
+                source
+            ),
+        }
+    }
+}
+
+impl Error for AgentWorkError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            AgentWorkError::Version(error) => Some(error),
+            AgentWorkError::Io { source, .. } => Some(source),
+            AgentWorkError::Parse { source, .. } => Some(source),
+            AgentWorkError::Serialize { source, .. } => Some(source),
+            AgentWorkError::WorkspaceMissing { .. }
+            | AgentWorkError::MissingQueue { .. }
+            | AgentWorkError::InvalidThreadCount
+            | AgentWorkError::InvalidWorkerId { .. }
+            | AgentWorkError::InvalidTaskId { .. }
+            | AgentWorkError::TaskNotFound { .. }
+            | AgentWorkError::TaskNotClaimedByWorker { .. }
+            | AgentWorkError::NoAvailableTask { .. }
+            | AgentWorkError::LockBusy { .. } => None,
+        }
+    }
+}
+
+impl From<VersionError> for AgentWorkError {
+    fn from(error: VersionError) -> Self {
+        AgentWorkError::Version(error)
+    }
+}
