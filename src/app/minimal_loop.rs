@@ -11,7 +11,9 @@ use super::agent::{
     AiPatchDraftRecord, AiPatchDraftStatus, AiPatchDraftStore, AiPatchDraftStoreError,
     AiPatchDraftSummary, AiSelfUpgradeAuditError, AiSelfUpgradeAuditRecord,
     AiSelfUpgradeAuditStatus, AiSelfUpgradeAuditStore, AiSelfUpgradeAuditSummary,
-    apply_tools_to_plan, initialize_agent_tool_config, load_agent_tool_report,
+    AiSelfUpgradeSummaryIndexEntry, AiSelfUpgradeSummaryRecord, AiSelfUpgradeSummaryStatus,
+    AiSelfUpgradeSummaryStore, AiSelfUpgradeSummaryStoreError, apply_tools_to_plan,
+    initialize_agent_tool_config, load_agent_tool_report,
 };
 use super::ai_provider::{
     AiConfigError, AiConfigReport, AiExecutionError, AiExecutionReport, AiProviderRegistry,
@@ -113,6 +115,14 @@ pub struct AiSelfUpgradeReport {
     pub proposed_goal: String,
     pub evolution: AgentSingleEvolutionReport,
     pub audit: AiSelfUpgradeAuditRecord,
+    pub summary: AiSelfUpgradeSummaryRecord,
+}
+
+#[derive(Debug, Clone)]
+pub struct AiSelfUpgradeSummaryReport {
+    pub audit: AiSelfUpgradeAuditRecord,
+    pub session: Option<AgentSession>,
+    pub record: AiSelfUpgradeSummaryRecord,
 }
 
 #[derive(Debug, Clone)]
@@ -243,6 +253,14 @@ pub enum AiSelfUpgradeError {
         response_preview: String,
     },
     Evolution(AgentEvolutionError),
+    Summary(AiSelfUpgradeSummaryError),
+}
+
+#[derive(Debug)]
+pub enum AiSelfUpgradeSummaryError {
+    Audit(AiSelfUpgradeAuditError),
+    Session(AgentSessionError),
+    Store(AiSelfUpgradeSummaryStoreError),
 }
 
 #[derive(Debug)]
@@ -733,6 +751,10 @@ impl SelfForgeApp {
         };
         let audit =
             self.record_ai_self_upgrade_success(&preview, &ai, &proposed_goal, &evolution)?;
+        let summary = self
+            .create_ai_self_upgrade_summary_from_audit(audit.clone())
+            .map_err(AiSelfUpgradeError::Summary)?
+            .record;
 
         Ok(AiSelfUpgradeReport {
             preview,
@@ -740,6 +762,7 @@ impl SelfForgeApp {
             proposed_goal,
             evolution,
             audit,
+            summary,
         })
     }
 
@@ -765,6 +788,33 @@ impl SelfForgeApp {
         session_id: &str,
     ) -> Result<Option<AiSelfUpgradeAuditSummary>, AiSelfUpgradeAuditError> {
         AiSelfUpgradeAuditStore::new(&self.root).find_by_session(version, session_id)
+    }
+
+    pub fn ai_self_upgrade_summary(
+        &self,
+        version: &str,
+        audit_id: &str,
+    ) -> Result<AiSelfUpgradeSummaryReport, AiSelfUpgradeSummaryError> {
+        let audit = AiSelfUpgradeAuditStore::new(&self.root)
+            .load(version, audit_id)
+            .map_err(AiSelfUpgradeSummaryError::Audit)?;
+        self.create_ai_self_upgrade_summary_from_audit(audit)
+    }
+
+    pub fn ai_self_upgrade_summary_records(
+        &self,
+        version: &str,
+        limit: usize,
+    ) -> Result<Vec<AiSelfUpgradeSummaryIndexEntry>, AiSelfUpgradeSummaryStoreError> {
+        AiSelfUpgradeSummaryStore::new(&self.root).list(version, limit)
+    }
+
+    pub fn ai_self_upgrade_summary_record(
+        &self,
+        version: &str,
+        id: &str,
+    ) -> Result<AiSelfUpgradeSummaryRecord, AiSelfUpgradeSummaryStoreError> {
+        AiSelfUpgradeSummaryStore::new(&self.root).load(version, id)
     }
 
     pub fn agents(&self) -> Vec<AgentDefinition> {
@@ -2103,6 +2153,49 @@ impl SelfForgeApp {
         Ok(report)
     }
 
+    fn create_ai_self_upgrade_summary_from_audit(
+        &self,
+        audit: AiSelfUpgradeAuditRecord,
+    ) -> Result<AiSelfUpgradeSummaryReport, AiSelfUpgradeSummaryError> {
+        let session = if let Some(session_id) = audit.session_id.as_deref() {
+            Some(
+                AgentSessionStore::new(&self.root)
+                    .load(&audit.version, session_id)
+                    .map_err(AiSelfUpgradeSummaryError::Session)?,
+            )
+        } else {
+            None
+        };
+        let markdown = build_ai_self_upgrade_summary_markdown(&audit, session.as_ref());
+        let status = match audit.status {
+            AiSelfUpgradeAuditStatus::Succeeded => AiSelfUpgradeSummaryStatus::Succeeded,
+            AiSelfUpgradeAuditStatus::Failed => AiSelfUpgradeSummaryStatus::Failed,
+        };
+        let record = AiSelfUpgradeSummaryRecord {
+            id: String::new(),
+            version: audit.version.clone(),
+            audit_id: audit.id.clone(),
+            created_at_unix_seconds: 0,
+            status,
+            proposed_goal: audit.proposed_goal.clone(),
+            session_id: audit.session_id.clone(),
+            candidate_version: audit.candidate_version.clone(),
+            stable_version_after: audit.stable_version_after.clone(),
+            cycle_result: audit.cycle_result.clone(),
+            markdown_file: PathBuf::new(),
+            file: PathBuf::new(),
+        };
+        let record = AiSelfUpgradeSummaryStore::new(&self.root)
+            .create(record, &markdown)
+            .map_err(AiSelfUpgradeSummaryError::Store)?;
+
+        Ok(AiSelfUpgradeSummaryReport {
+            audit,
+            session,
+            record,
+        })
+    }
+
     fn record_ai_self_upgrade_success(
         &self,
         preview: &AiSelfUpgradePreview,
@@ -2263,6 +2356,136 @@ fn session_memory_insights(insights: &[MemoryInsight]) -> Vec<AgentSessionMemory
             text: insight.text.clone(),
         })
         .collect()
+}
+
+fn build_ai_self_upgrade_summary_markdown(
+    audit: &AiSelfUpgradeAuditRecord,
+    session: Option<&AgentSession>,
+) -> String {
+    let mut markdown = String::new();
+    markdown.push_str("# AI 自我升级总结报告\n\n");
+    markdown.push_str("# 基本信息\n\n");
+    markdown.push_str(&format!(
+        "- 源版本：{}\n- 审计记录：{}\n- 审计状态：{}\n- 生成时间：unix:{}\n- 提供商：{}\n- 模型：{}\n- 协议：{}\n",
+        audit.version,
+        audit.id,
+        audit.status,
+        audit.created_at_unix_seconds,
+        audit.provider_id,
+        audit.model,
+        audit.protocol
+    ));
+    markdown.push_str(&format!(
+        "- Agent 会话：{}\n- 候选版本：{}\n- 当前稳定版本：{}\n- 循环结果：{}\n\n",
+        audit.session_id.as_deref().unwrap_or("无"),
+        audit.candidate_version.as_deref().unwrap_or("无"),
+        audit.stable_version_after.as_deref().unwrap_or("无"),
+        audit.cycle_result.as_deref().unwrap_or("无")
+    ));
+
+    markdown.push_str("# 目标\n\n");
+    markdown.push_str(&format!(
+        "- 用户提示：{}\n- AI 归一化目标：{}\n- AI 响应摘要：{}\n\n",
+        audit.hint.as_deref().unwrap_or("无"),
+        audit.proposed_goal.as_deref().unwrap_or("无"),
+        audit.ai_response_preview.as_deref().unwrap_or("无")
+    ));
+
+    markdown.push_str("# 计划（Plan）\n\n");
+    if let Some(session) = session {
+        markdown.push_str(&format!(
+            "- 会话目标：{}\n- 会话状态：{}\n- 步骤数量：{}\n",
+            session.goal,
+            session.status,
+            session.steps.len()
+        ));
+        for step in &session.steps {
+            markdown.push_str(&format!(
+                "- 步骤 {}：{}；Agent：{}；能力：{}；状态：{}；验证：{}；结果：{}\n",
+                step.order,
+                step.title,
+                step.agent_id,
+                step.capability,
+                step.status,
+                step.verification,
+                step.result.as_deref().unwrap_or("无")
+            ));
+        }
+        markdown.push('\n');
+    } else {
+        markdown.push_str("- 无关联 Agent 会话，无法展开步骤计划。\n\n");
+    }
+
+    markdown.push_str("# 代码变更\n\n");
+    markdown.push_str(&format!(
+        "- 准备候选版本：{}\n- 验证候选版本：{}\n- 提升后稳定版本：{}\n",
+        audit.prepared_candidate_version.as_deref().unwrap_or("无"),
+        audit.candidate_version.as_deref().unwrap_or("无"),
+        audit.stable_version_after.as_deref().unwrap_or("无")
+    ));
+    markdown.push_str("- 详细代码差异以对应版本归档、Git 提交和 Agent 会话事件为准。\n\n");
+
+    markdown.push_str("# 测试结果\n\n");
+    markdown.push_str(&format!(
+        "- 候选循环结果：{}\n- 预检开放错误数量：{}\n",
+        audit.cycle_result.as_deref().unwrap_or("无"),
+        audit.open_error_count
+    ));
+    if let Some(session) = session {
+        let run_events = session
+            .events
+            .iter()
+            .filter_map(|event| event.run.as_ref())
+            .collect::<Vec<_>>();
+        if run_events.is_empty() {
+            markdown.push_str("- 会话没有记录独立 Runtime 运行事件。\n");
+        } else {
+            for run in run_events {
+                markdown.push_str(&format!(
+                    "- Runtime 运行 {}：版本 {}，退出码 {:?}，超时 {}，报告 {}\n",
+                    run.run_id, run.version, run.exit_code, run.timed_out, run.report_file
+                ));
+            }
+        }
+    } else {
+        markdown.push_str("- 无关联会话，无法读取 Runtime 运行事件。\n");
+    }
+    markdown.push('\n');
+
+    markdown.push_str("# 错误信息\n\n");
+    let audit_error = audit.error.as_deref().unwrap_or("无");
+    let session_error = session
+        .and_then(|session| session.error.as_deref())
+        .unwrap_or("无");
+    markdown.push_str(&format!(
+        "- 审计错误：{}\n- 会话错误：{}\n\n",
+        audit_error, session_error
+    ));
+
+    markdown.push_str("# 审计记录\n\n");
+    markdown.push_str(&format!(
+        "- 审计文件：{}\n- 记忆来源：{}\n- 成功经验数量：{}\n- 失败风险数量：{}\n- 优化建议数量：{}\n- 可复用经验数量：{}\n\n",
+        audit.file.display(),
+        if audit.memory_source_versions.is_empty() {
+            "无".to_string()
+        } else {
+            audit.memory_source_versions.join("、")
+        },
+        audit.success_experience_count,
+        audit.failure_experience_count,
+        audit.optimization_suggestion_count,
+        audit.reusable_experience_count
+    ));
+
+    markdown.push_str("# 下一步建议\n\n");
+    if audit.status == AiSelfUpgradeAuditStatus::Succeeded {
+        markdown.push_str("- 继续执行 `preflight` 和开放错误查询，确认新稳定版本可以继续进化。\n");
+        markdown.push_str("- 根据任务队列和最新记忆选择下一轮最小 patch 级目标。\n");
+    } else {
+        markdown.push_str("- 先修复审计错误或会话错误，再重新执行自我升级。\n");
+        markdown.push_str("- 修复后必须重新运行测试、验证和预检。\n");
+    }
+    markdown
 }
 
 fn patch_draft_allowed_write_roots(version: &str) -> Result<Vec<String>, AiPatchDraftError> {
@@ -2957,6 +3180,9 @@ impl fmt::Display for AiSelfUpgradeError {
             AiSelfUpgradeError::Evolution(error) => {
                 write!(formatter, "AI 自我升级执行受控进化失败：{error}")
             }
+            AiSelfUpgradeError::Summary(error) => {
+                write!(formatter, "AI 自我升级总结报告失败：{error}")
+            }
         }
     }
 }
@@ -2969,7 +3195,34 @@ impl Error for AiSelfUpgradeError {
             AiSelfUpgradeError::Ai(error) => Some(error),
             AiSelfUpgradeError::Audit(error) => Some(error),
             AiSelfUpgradeError::Evolution(error) => Some(error),
+            AiSelfUpgradeError::Summary(error) => Some(error),
             AiSelfUpgradeError::Blocked { .. } | AiSelfUpgradeError::EmptyGoal { .. } => None,
+        }
+    }
+}
+
+impl fmt::Display for AiSelfUpgradeSummaryError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AiSelfUpgradeSummaryError::Audit(error) => {
+                write!(formatter, "读取自我升级审计记录失败：{error}")
+            }
+            AiSelfUpgradeSummaryError::Session(error) => {
+                write!(formatter, "读取自我升级会话失败：{error}")
+            }
+            AiSelfUpgradeSummaryError::Store(error) => {
+                write!(formatter, "写入自我升级总结报告失败：{error}")
+            }
+        }
+    }
+}
+
+impl Error for AiSelfUpgradeSummaryError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            AiSelfUpgradeSummaryError::Audit(error) => Some(error),
+            AiSelfUpgradeSummaryError::Session(error) => Some(error),
+            AiSelfUpgradeSummaryError::Store(error) => Some(error),
         }
     }
 }

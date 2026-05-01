@@ -3,6 +3,7 @@ mod patch_audit;
 mod patch_draft;
 mod registry;
 mod self_upgrade_audit;
+mod self_upgrade_summary;
 mod session;
 mod tool_invocation;
 mod tools;
@@ -24,6 +25,10 @@ pub use registry::AgentRegistry;
 pub use self_upgrade_audit::{
     AiSelfUpgradeAuditError, AiSelfUpgradeAuditRecord, AiSelfUpgradeAuditStatus,
     AiSelfUpgradeAuditStore, AiSelfUpgradeAuditSummary,
+};
+pub use self_upgrade_summary::{
+    AiSelfUpgradeSummaryIndexEntry, AiSelfUpgradeSummaryRecord, AiSelfUpgradeSummaryStatus,
+    AiSelfUpgradeSummaryStore, AiSelfUpgradeSummaryStoreError,
 };
 pub use session::{
     AgentRunReference, AgentSession, AgentSessionError, AgentSessionEvent, AgentSessionEventKind,

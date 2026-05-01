@@ -80,6 +80,11 @@ fn main() {
         "agent-self-upgrade" => agent_self_upgrade(&app, args.collect()),
         "agent-self-upgrades" => agent_self_upgrades(&app, args.collect()),
         "agent-self-upgrade-record" => agent_self_upgrade_record(&app, args.collect()),
+        "agent-self-upgrade-report" => agent_self_upgrade_report(&app, args.collect()),
+        "agent-self-upgrade-reports" => agent_self_upgrade_reports(&app, args.collect()),
+        "agent-self-upgrade-report-record" => {
+            agent_self_upgrade_report_record(&app, args.collect())
+        }
         "evolve" => evolve(&supervisor, args.collect()),
         "advance" => advance(&app, args.collect()),
         "promote" => boxed(supervisor.promote_candidate().map(|report| {
@@ -1297,7 +1302,7 @@ fn agent_self_upgrade(
             .as_deref()
             .unwrap_or("复用已有候选");
         format!(
-            "SelfForge AI 自我升级完成 当前版本 {} 提供商 {} 模型 {} 目标 {} 会话 {} 准备 {} 候选版本 {} 结果 {:?} 当前稳定版本 {} 未解决错误 {} 审计记录 {} 文件 {}",
+            "SelfForge AI 自我升级完成 当前版本 {} 提供商 {} 模型 {} 目标 {} 会话 {} 准备 {} 候选版本 {} 结果 {:?} 当前稳定版本 {} 未解决错误 {} 审计记录 {} 审计文件 {} 总结报告 {} 报告文件 {}",
             report.preview.current_version,
             report.ai.response.provider_id,
             report.ai.response.model,
@@ -1309,7 +1314,9 @@ fn agent_self_upgrade(
             report.evolution.cycle.state.current_version,
             report.evolution.preflight.open_errors.len(),
             report.audit.id,
-            report.audit.file.display()
+            report.audit.file.display(),
+            report.summary.id,
+            report.summary.markdown_file.display()
         )
     }))
 }
@@ -1603,6 +1610,93 @@ fn agent_self_upgrade_record(
     )
 }
 
+fn agent_self_upgrade_report(
+    app: &SelfForgeApp,
+    arguments: Vec<String>,
+) -> Result<String, Box<dyn Error>> {
+    let command = parse_agent_self_upgrade_report_args(arguments)?;
+    boxed(
+        app.ai_self_upgrade_summary(&command.version, &command.audit_id)
+            .map(|report| {
+                format!(
+                    "SelfForge AI 自我升级总结报告完成 版本 {} 审计 {} 状态 {} 目标 {} 会话 {} 当前稳定 {} 报告 {} Markdown {} JSON {}",
+                    report.record.version,
+                    report.record.audit_id,
+                    report.record.status,
+                    report.record.proposed_goal.as_deref().unwrap_or("无"),
+                    report.record.session_id.as_deref().unwrap_or("无"),
+                    report.record.stable_version_after.as_deref().unwrap_or("无"),
+                    report.record.id,
+                    report.record.markdown_file.display(),
+                    report.record.file.display()
+                )
+            }),
+    )
+}
+
+fn agent_self_upgrade_reports(
+    app: &SelfForgeApp,
+    arguments: Vec<String>,
+) -> Result<String, Box<dyn Error>> {
+    let command = parse_agent_self_upgrade_reports_args(arguments)?;
+    boxed(
+        app.ai_self_upgrade_summary_records(&command.version, command.limit)
+            .map(|records| {
+                if records.is_empty() {
+                    return format!(
+                        "SelfForge AI 自我升级总结报告 {}: no records",
+                        command.version
+                    );
+                }
+
+                let mut lines = vec![format!(
+                    "SelfForge AI 自我升级总结报告 {}: {} record(s)",
+                    command.version,
+                    records.len()
+                )];
+                for record in records {
+                    lines.push(format!(
+                        "{} 状态 {} 审计 {} 目标 {} 会话 {} 当前稳定 {} Markdown {} JSON {}",
+                        record.id,
+                        record.status,
+                        record.audit_id,
+                        record.proposed_goal.as_deref().unwrap_or("无"),
+                        record.session_id.as_deref().unwrap_or("无"),
+                        record.stable_version_after.as_deref().unwrap_or("无"),
+                        record.markdown_file.display(),
+                        record.file.display()
+                    ));
+                }
+                lines.join("\n")
+            }),
+    )
+}
+
+fn agent_self_upgrade_report_record(
+    app: &SelfForgeApp,
+    arguments: Vec<String>,
+) -> Result<String, Box<dyn Error>> {
+    let command = parse_agent_self_upgrade_report_record_args(arguments)?;
+    boxed(
+        app.ai_self_upgrade_summary_record(&command.version, &command.id)
+            .map(|record| {
+                format!(
+                    "SelfForge AI 自我升级总结报告 {} 版本 {} 审计 {} 状态 {} 目标 {} 会话 {} 候选 {} 当前稳定 {} Markdown {} JSON {}",
+                    record.id,
+                    record.version,
+                    record.audit_id,
+                    record.status,
+                    record.proposed_goal.as_deref().unwrap_or("无"),
+                    record.session_id.as_deref().unwrap_or("无"),
+                    record.candidate_version.as_deref().unwrap_or("无"),
+                    record.stable_version_after.as_deref().unwrap_or("无"),
+                    record.markdown_file.display(),
+                    record.file.display()
+                )
+            }),
+    )
+}
+
 struct AiRequestArgs {
     dry_run: bool,
     timeout_ms: u64,
@@ -1652,6 +1746,21 @@ struct AgentSelfUpgradesArgs {
 }
 
 struct AgentSelfUpgradeRecordArgs {
+    version: String,
+    id: String,
+}
+
+struct AgentSelfUpgradeReportArgs {
+    version: String,
+    audit_id: String,
+}
+
+struct AgentSelfUpgradeReportsArgs {
+    version: String,
+    limit: usize,
+}
+
+struct AgentSelfUpgradeReportRecordArgs {
     version: String,
     id: String,
 }
@@ -2088,6 +2197,133 @@ fn parse_agent_self_upgrade_record_args(
 
     let id = id.ok_or("agent-self-upgrade-record 需要记录编号")?;
     Ok(AgentSelfUpgradeRecordArgs { version, id })
+}
+
+fn parse_agent_self_upgrade_report_args(
+    arguments: Vec<String>,
+) -> Result<AgentSelfUpgradeReportArgs, Box<dyn Error>> {
+    let state = ForgeState::load(env::current_dir()?)?;
+    let mut version = state.current_version.clone();
+    let mut audit_id = None;
+    let mut index = 0;
+
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "--current" => {
+                version = state.current_version.clone();
+                index += 1;
+            }
+            "--candidate" => {
+                version = state.candidate_version.clone().ok_or("当前没有候选版本")?;
+                index += 1;
+            }
+            "--version" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--version 需要版本号".into());
+                };
+                version = value.clone();
+                index += 2;
+            }
+            other if other.starts_with("--") => {
+                return Err(format!("未知 agent-self-upgrade-report 参数: {other}").into());
+            }
+            other => {
+                if audit_id.is_some() {
+                    return Err("agent-self-upgrade-report 只允许一个审计记录编号".into());
+                }
+                audit_id = Some(other.to_string());
+                index += 1;
+            }
+        }
+    }
+
+    Ok(AgentSelfUpgradeReportArgs {
+        version,
+        audit_id: audit_id.ok_or("agent-self-upgrade-report 需要审计记录编号")?,
+    })
+}
+
+fn parse_agent_self_upgrade_reports_args(
+    arguments: Vec<String>,
+) -> Result<AgentSelfUpgradeReportsArgs, Box<dyn Error>> {
+    let state = ForgeState::load(env::current_dir()?)?;
+    let mut version = state.current_version.clone();
+    let mut limit = 10;
+    let mut index = 0;
+
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "--current" => {
+                version = state.current_version.clone();
+                index += 1;
+            }
+            "--candidate" => {
+                version = state.candidate_version.clone().ok_or("当前没有候选版本")?;
+                index += 1;
+            }
+            "--version" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--version 需要版本号".into());
+                };
+                version = value.clone();
+                index += 2;
+            }
+            "--limit" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--limit 需要数量".into());
+                };
+                limit = value.parse::<usize>()?;
+                index += 2;
+            }
+            other => return Err(format!("未知 agent-self-upgrade-reports 参数: {other}").into()),
+        }
+    }
+
+    Ok(AgentSelfUpgradeReportsArgs { version, limit })
+}
+
+fn parse_agent_self_upgrade_report_record_args(
+    arguments: Vec<String>,
+) -> Result<AgentSelfUpgradeReportRecordArgs, Box<dyn Error>> {
+    let state = ForgeState::load(env::current_dir()?)?;
+    let mut version = state.current_version.clone();
+    let mut id = None;
+    let mut index = 0;
+
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "--current" => {
+                version = state.current_version.clone();
+                index += 1;
+            }
+            "--candidate" => {
+                version = state.candidate_version.clone().ok_or("当前没有候选版本")?;
+                index += 1;
+            }
+            "--version" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--version 需要版本号".into());
+                };
+                version = value.clone();
+                index += 2;
+            }
+            other if other.starts_with("--") => {
+                return Err(format!("未知 agent-self-upgrade-report-record 参数: {other}").into());
+            }
+            other => {
+                if id.is_some() {
+                    return Err("agent-self-upgrade-report-record 只允许一个记录编号".into());
+                }
+                id = Some(other.to_string());
+                index += 1;
+            }
+        }
+    }
+
+    Ok(AgentSelfUpgradeReportRecordArgs {
+        version,
+        id: id.ok_or("agent-self-upgrade-report-record 需要记录编号")?,
+    })
 }
 
 fn parse_memory_context_args(arguments: Vec<String>) -> Result<MemoryContextArgs, Box<dyn Error>> {
@@ -3645,6 +3881,9 @@ agent-patch-audit-record [--current|--candidate|--version VERSION] AUDIT_RECORD_
 agent-self-upgrade [--dry-run] [--timeout-ms N] [hint]
 agent-self-upgrades [--current|--candidate|--version VERSION] [--limit N]
 agent-self-upgrade-record [--current|--candidate|--version VERSION] RECORD_ID
+agent-self-upgrade-report [--current|--candidate|--version VERSION] AUDIT_RECORD_ID
+agent-self-upgrade-reports [--current|--candidate|--version VERSION] [--limit N]
+agent-self-upgrade-report-record [--current|--candidate|--version VERSION] REPORT_RECORD_ID
 advance [goal], promote, rollback [reason], cycle
 run [--current|--candidate|--version VERSION] [--timeout-ms N] -- PROGRAM [ARGS...]
 runs [--current|--candidate|--version VERSION] [--limit N] [--failed] [--timed-out]

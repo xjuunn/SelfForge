@@ -19,6 +19,8 @@ pub use agent::{
     AiPatchDraftRecord, AiPatchDraftStatus, AiPatchDraftStore, AiPatchDraftStoreError,
     AiPatchDraftSummary, AiSelfUpgradeAuditError, AiSelfUpgradeAuditRecord,
     AiSelfUpgradeAuditStatus, AiSelfUpgradeAuditStore, AiSelfUpgradeAuditSummary,
+    AiSelfUpgradeSummaryIndexEntry, AiSelfUpgradeSummaryRecord, AiSelfUpgradeSummaryStatus,
+    AiSelfUpgradeSummaryStore, AiSelfUpgradeSummaryStoreError,
 };
 pub use ai_provider::{
     AiConfigError, AiConfigReport, AiExecutionError, AiExecutionReport, AiProviderRegistry,
@@ -39,6 +41,7 @@ pub use minimal_loop::{
     AgentStepRunError, AgentStepRunReport, AgentStepRunStop, AgentToolInvocationError,
     AgentVerificationReport, AiPatchAuditError, AiPatchAuditReport, AiPatchDraftError,
     AiPatchDraftPreview, AiPatchDraftReport, AiSelfUpgradeError, AiSelfUpgradePreview,
-    AiSelfUpgradeReport, MinimalLoopError, MinimalLoopOutcome, MinimalLoopReport, PreflightReport,
-    SelfForgeApp, normalize_ai_self_upgrade_goal,
+    AiSelfUpgradeReport, AiSelfUpgradeSummaryError, AiSelfUpgradeSummaryReport, MinimalLoopError,
+    MinimalLoopOutcome, MinimalLoopReport, PreflightReport, SelfForgeApp,
+    normalize_ai_self_upgrade_goal,
 };
