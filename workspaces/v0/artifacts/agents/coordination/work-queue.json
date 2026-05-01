@@ -1,10 +1,10 @@
 {
-  "version": "v0.1.47",
+  "version": "v0.1.48",
   "goal": "多 AI 协作修改代码",
   "thread_count": 3,
   "lease_duration_seconds": 3600,
   "created_at_unix_seconds": 1777630213,
-  "updated_at_unix_seconds": 1777633573,
+  "updated_at_unix_seconds": 1777634314,
   "conflict_policy": "同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。",
   "prompt_policy": "每个线程只执行领取到的任务，必须遵守写入范围、依赖关系、验收标准和归档规则。",
   "tasks": [
@@ -187,6 +187,12 @@
       "timestamp_unix_seconds": 1777633573,
       "action": "retarget",
       "message": "协作队列已复用到版本 v0.1.47。"
+    },
+    {
+      "order": 12,
+      "timestamp_unix_seconds": 1777634314,
+      "action": "retarget",
+      "message": "协作队列已复用到版本 v0.1.48。"
     }
   ]
 }

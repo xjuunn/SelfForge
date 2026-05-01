@@ -33,7 +33,8 @@ pub use memory::{
 pub use minimal_loop::{
     AgentEvolutionError, AgentEvolutionReport, AgentPlanReport, AgentPlanReportError,
     AgentRunError, AgentRunReport, AgentSingleEvolutionReport, AgentStepExecutionError,
-    AgentToolInvocationError, AgentVerificationReport, AiSelfUpgradeError, AiSelfUpgradePreview,
-    AiSelfUpgradeReport, MinimalLoopError, MinimalLoopOutcome, MinimalLoopReport, PreflightReport,
-    SelfForgeApp, normalize_ai_self_upgrade_goal,
+    AgentStepRunError, AgentStepRunReport, AgentStepRunStop, AgentToolInvocationError,
+    AgentVerificationReport, AiSelfUpgradeError, AiSelfUpgradePreview, AiSelfUpgradeReport,
+    MinimalLoopError, MinimalLoopOutcome, MinimalLoopReport, PreflightReport, SelfForgeApp,
+    normalize_ai_self_upgrade_goal,
 };

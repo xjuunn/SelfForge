@@ -208,6 +208,8 @@ Agent Tool 调用必须通过统一调用协议执行。调用输入和调用结
 
 Agent 步进执行必须通过 `agent-step SESSION_ID` 或应用层 `execute_next_agent_step`。步进器只能执行会话中的下一条待执行步骤，必须自动选择该步骤已绑定且可运行的工具，并把结果写回同一个 Agent 会话。需要外部输入的工具必须显式提供输入，例如 Runtime 工具需要 `-- PROGRAM [ARGS...]`，AI 工具需要 `--prompt TEXT`；缺少输入时必须保持步骤待执行并返回明确阻断原因，禁止编造执行结果。步骤执行失败时必须写入会话失败状态；Runtime 工具必须继续复用运行记录和沙箱路径。
 
+受控多步执行必须通过 `agent-steps SESSION_ID` 或应用层 `execute_agent_steps`。多步执行只能连续运行不需要外部输入的已绑定工具，默认按步骤顺序推进；遇到 Runtime 命令、AI 提示词、无可运行工具、工具失败或达到 `--max-steps` 时必须停止并返回结构化停止原因。多步执行禁止接受 `--tool`、`--prompt` 或 `-- PROGRAM`，禁止编造外部输入，禁止绕过会话、协作任务板、Runtime 记录和 Agent Tool 调用协议。
+
 Agent 会话必须通过 `agent-start [goal]` 创建，并写入 `workspaces/vMAJOR/artifacts/agents/sessions/`；会话摘要必须追加到 `workspaces/vMAJOR/artifacts/agents/index.jsonl`。查询会话使用 `agent-sessions [--limit N]`，读取单个会话使用 `agent-session SESSION_ID`。会话文件必须持久化计划上下文快照，包括记忆版本、记忆归档文件、来源版本、成功经验、失败风险、优化建议和可复用经验摘要；`agent-session` 必须输出计划依据摘要，便于审计计划来源。会话文件只允许进入 `artifacts/agents/` 分层，禁止写入 workspace 根目录，禁止为小版本创建独立会话目录，禁止把会话状态只保存在进程内存中。
 
 `agent-start` 创建会话时必须自动初始化或复用当前 major 的协作任务板，并将任务板路径、任务数量、线程数量、租约配置和创建或复用状态写入会话计划上下文。会话事件必须记录协作任务板准备结果。`agent-session` 必须展示协作任务板摘要，后续 Agent 步进和多 AI 执行只能复用该任务板上下文，禁止重新猜测或另建并行任务队列。

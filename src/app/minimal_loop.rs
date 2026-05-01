@@ -118,6 +118,36 @@ pub struct AgentRunReport {
 }
 
 #[derive(Debug, Clone)]
+pub struct AgentStepRunReport {
+    pub session_id: String,
+    pub session_version: String,
+    pub target_version: String,
+    pub max_steps: usize,
+    pub executed_steps: Vec<AgentStepExecutionReport>,
+    pub stop: AgentStepRunStop,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AgentStepRunStop {
+    SessionCompleted,
+    StepLimitReached,
+    NoPendingStep {
+        session_id: String,
+    },
+    InputRequired {
+        step_order: usize,
+        tool_id: String,
+        input: String,
+    },
+    NoRunnableTool {
+        step_order: usize,
+    },
+    Failed {
+        message: String,
+    },
+}
+
+#[derive(Debug, Clone)]
 struct AgentStepWorkClaim {
     task_id: String,
     worker_id: String,
@@ -230,6 +260,12 @@ pub enum AgentStepExecutionError {
         tool_id: String,
         input: String,
     },
+}
+
+#[derive(Debug)]
+pub enum AgentStepRunError {
+    InvalidStepLimit,
+    Step(AgentStepExecutionError),
 }
 
 impl SelfForgeApp {
@@ -858,6 +894,100 @@ impl SelfForgeApp {
             work_worker_id: work_claim.as_ref().map(|claim| claim.worker_id.clone()),
             tool,
             session_completed,
+        })
+    }
+
+    pub fn execute_agent_steps(
+        &self,
+        request: AgentStepExecutionRequest,
+        max_steps: usize,
+    ) -> Result<AgentStepRunReport, AgentStepRunError> {
+        if max_steps == 0 {
+            return Err(AgentStepRunError::InvalidStepLimit);
+        }
+
+        let session_id = request.session_id.clone();
+        let session_version = request.session_version.clone();
+        let target_version = request.target_version.clone();
+        let mut executed_steps = Vec::new();
+
+        for _ in 0..max_steps {
+            match self.execute_next_agent_step(request.clone()) {
+                Ok(report) => {
+                    let session_completed = report.session_completed;
+                    executed_steps.push(report);
+                    if session_completed {
+                        return Ok(AgentStepRunReport {
+                            session_id,
+                            session_version,
+                            target_version,
+                            max_steps,
+                            executed_steps,
+                            stop: AgentStepRunStop::SessionCompleted,
+                        });
+                    }
+                }
+                Err(AgentStepExecutionError::NoPendingStep { session_id }) => {
+                    return Ok(AgentStepRunReport {
+                        session_id: session_id.clone(),
+                        session_version,
+                        target_version,
+                        max_steps,
+                        executed_steps,
+                        stop: AgentStepRunStop::NoPendingStep { session_id },
+                    });
+                }
+                Err(AgentStepExecutionError::InputRequired {
+                    step_order,
+                    tool_id,
+                    input,
+                }) => {
+                    return Ok(AgentStepRunReport {
+                        session_id,
+                        session_version,
+                        target_version,
+                        max_steps,
+                        executed_steps,
+                        stop: AgentStepRunStop::InputRequired {
+                            step_order,
+                            tool_id,
+                            input,
+                        },
+                    });
+                }
+                Err(AgentStepExecutionError::NoRunnableTool { step_order }) => {
+                    return Ok(AgentStepRunReport {
+                        session_id,
+                        session_version,
+                        target_version,
+                        max_steps,
+                        executed_steps,
+                        stop: AgentStepRunStop::NoRunnableTool { step_order },
+                    });
+                }
+                Err(AgentStepExecutionError::Tool(error)) => {
+                    return Ok(AgentStepRunReport {
+                        session_id,
+                        session_version,
+                        target_version,
+                        max_steps,
+                        executed_steps,
+                        stop: AgentStepRunStop::Failed {
+                            message: error.to_string(),
+                        },
+                    });
+                }
+                Err(error) => return Err(AgentStepRunError::Step(error)),
+            }
+        }
+
+        Ok(AgentStepRunReport {
+            session_id,
+            session_version,
+            target_version,
+            max_steps,
+            executed_steps,
+            stop: AgentStepRunStop::StepLimitReached,
         })
     }
 
@@ -2196,6 +2326,52 @@ impl From<MinimalLoopError> for AgentToolInvocationError {
 impl From<VersionError> for AgentToolInvocationError {
     fn from(error: VersionError) -> Self {
         AgentToolInvocationError::Version(error)
+    }
+}
+
+impl fmt::Display for AgentStepRunStop {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AgentStepRunStop::SessionCompleted => write!(formatter, "会话已完成"),
+            AgentStepRunStop::StepLimitReached => write!(formatter, "达到最大步数"),
+            AgentStepRunStop::NoPendingStep { session_id } => {
+                write!(formatter, "会话 {session_id} 没有待执行步骤")
+            }
+            AgentStepRunStop::InputRequired {
+                step_order,
+                tool_id,
+                input,
+            } => write!(
+                formatter,
+                "步骤 {step_order} 的工具 {tool_id} 需要输入 {input}"
+            ),
+            AgentStepRunStop::NoRunnableTool { step_order } => {
+                write!(formatter, "步骤 {step_order} 没有可自动执行的工具")
+            }
+            AgentStepRunStop::Failed { message } => write!(formatter, "执行失败：{message}"),
+        }
+    }
+}
+
+impl fmt::Display for AgentStepRunError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AgentStepRunError::InvalidStepLimit => {
+                write!(formatter, "受控多步运行的最大步数必须大于 0")
+            }
+            AgentStepRunError::Step(error) => {
+                write!(formatter, "受控多步运行初始化失败：{error}")
+            }
+        }
+    }
+}
+
+impl Error for AgentStepRunError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            AgentStepRunError::InvalidStepLimit => None,
+            AgentStepRunError::Step(error) => Some(error),
+        }
     }
 }
 
