@@ -1,8 +1,9 @@
 mod model;
 
 pub use self::model::{
-    AgentWorkClaimReport, AgentWorkCoordinator, AgentWorkError, AgentWorkEvent, AgentWorkQueue,
-    AgentWorkQueueReport, AgentWorkReapReport, AgentWorkTask, AgentWorkTaskStatus,
+    AgentWorkClaimReport, AgentWorkCompactionReport, AgentWorkCoordinator, AgentWorkError,
+    AgentWorkEvent, AgentWorkQueue, AgentWorkQueueReport, AgentWorkReapReport, AgentWorkTask,
+    AgentWorkTaskStatus,
 };
 
 use self::model::DEFAULT_WORK_LEASE_SECONDS;
@@ -19,6 +20,7 @@ const WORK_QUEUE_FILE: &str = "work-queue.json";
 const WORK_QUEUE_LOCK: &str = "work-queue.lock";
 const LOCK_RETRY_COUNT: usize = 80;
 const LOCK_RETRY_DELAY_MS: u64 = 25;
+const DEFAULT_COMPACTED_EVENT_LIMIT: usize = 20;
 
 impl AgentWorkCoordinator {
     pub fn new(root: impl AsRef<Path>) -> Self {
@@ -272,6 +274,114 @@ impl AgentWorkCoordinator {
                 version: version.clone(),
                 queue_path: layout.queue_path.clone(),
                 released_tasks,
+                queue,
+            })
+        })
+    }
+
+    pub fn compact(
+        &self,
+        version: &str,
+        keep_events: Option<usize>,
+    ) -> Result<AgentWorkCompactionReport, AgentWorkError> {
+        let keep_events = keep_events.unwrap_or(DEFAULT_COMPACTED_EVENT_LIMIT);
+        if keep_events == 0 {
+            return Err(AgentWorkError::InvalidKeepEvents);
+        }
+        let version = version.to_string();
+        self.with_lock(&version, |layout| {
+            if !layout.queue_path.exists() {
+                return Err(AgentWorkError::MissingQueue {
+                    version: version.clone(),
+                    path: layout.queue_path.clone(),
+                });
+            }
+
+            let mut queue = read_queue(&layout.queue_path)?;
+            let mut compacted_task_prompts = 0;
+            for task in &mut queue.tasks {
+                if task.status == AgentWorkTaskStatus::Completed
+                    && !is_compacted_task_prompt(&task.prompt)
+                {
+                    task.prompt = compacted_task_prompt(task);
+                    compacted_task_prompts += 1;
+                }
+            }
+
+            let original_events = queue.events.len();
+            let removed_events = trim_old_events(&mut queue.events, keep_events);
+            if compacted_task_prompts > 0 || removed_events > 0 {
+                queue.updated_at_unix_seconds = current_unix_seconds();
+                push_event(
+                    &mut queue,
+                    "compact",
+                    None,
+                    None,
+                    format!(
+                        "协作任务板已压缩：压缩已完成任务提示词 {compacted_task_prompts} 个，移除旧事件 {removed_events} 条，压缩前事件 {original_events} 条。"
+                    ),
+                );
+                write_queue(&layout.queue_path, &queue)?;
+            }
+
+            Ok(AgentWorkCompactionReport {
+                version: version.clone(),
+                queue_path: layout.queue_path.clone(),
+                compacted_task_prompts,
+                removed_events,
+                retained_events: queue.events.len(),
+                queue,
+            })
+        })
+    }
+
+    pub fn block(
+        &self,
+        version: &str,
+        task_id: &str,
+        reason: &str,
+    ) -> Result<AgentWorkQueueReport, AgentWorkError> {
+        validate_task_id(task_id)?;
+        let version = version.to_string();
+        let task_id = task_id.to_string();
+        let reason = default_summary(reason, "任务已阻断。");
+        self.with_lock(&version, |layout| {
+            if !layout.queue_path.exists() {
+                return Err(AgentWorkError::MissingQueue {
+                    version: version.clone(),
+                    path: layout.queue_path.clone(),
+                });
+            }
+            let mut queue = read_queue(&layout.queue_path)?;
+            let Some(index) = queue.tasks.iter().position(|task| task.id == task_id) else {
+                return Err(AgentWorkError::TaskNotFound {
+                    task_id: task_id.clone(),
+                });
+            };
+            if queue.tasks[index].status == AgentWorkTaskStatus::Completed {
+                return Err(AgentWorkError::TaskAlreadyCompleted {
+                    task_id: task_id.clone(),
+                });
+            }
+
+            let now = current_unix_seconds();
+            queue.updated_at_unix_seconds = now;
+            {
+                let task = &mut queue.tasks[index];
+                task.status = AgentWorkTaskStatus::Blocked;
+                task.claimed_by = None;
+                task.claimed_at_unix_seconds = None;
+                task.lease_expires_at_unix_seconds = None;
+                task.completed_at_unix_seconds = None;
+                task.result = Some(reason.clone());
+                task.prompt = blocked_task_prompt(task, &reason);
+            }
+            push_event(&mut queue, "block", None, Some(task_id.clone()), reason);
+            write_queue(&layout.queue_path, &queue)?;
+            Ok(AgentWorkQueueReport {
+                version: version.clone(),
+                queue_path: layout.queue_path.clone(),
+                created: false,
                 queue,
             })
         })
@@ -636,6 +746,16 @@ fn write_queue(path: &Path, queue: &AgentWorkQueue) -> Result<(), AgentWorkError
     })
 }
 
+fn trim_old_events(events: &mut Vec<AgentWorkEvent>, keep_events: usize) -> usize {
+    if events.len() <= keep_events {
+        return 0;
+    }
+    let removed = events.len() - keep_events;
+    let retained = events.split_off(removed);
+    *events = retained;
+    removed
+}
+
 fn select_claimable_task(
     queue: &AgentWorkQueue,
     preferred_agent_id: Option<&str>,
@@ -727,6 +847,25 @@ fn build_base_prompt(goal: &str, task: &AgentWorkTask) -> String {
     )
 }
 
+fn is_compacted_task_prompt(prompt: &str) -> bool {
+    prompt.starts_with("已压缩：")
+}
+
+fn compacted_task_prompt(task: &AgentWorkTask) -> String {
+    let summary = task.result.as_deref().unwrap_or("无完成摘要");
+    format!(
+        "已压缩：任务 {} 已完成。完成摘要：{}。执行边界保留在 title、description、write_scope、acceptance 和 result 字段中。",
+        task.id, summary
+    )
+}
+
+fn blocked_task_prompt(task: &AgentWorkTask, reason: &str) -> String {
+    format!(
+        "已阻断：任务 {} 不再进入领取队列。阻断原因：{}。原始执行边界保留在 title、description、write_scope、acceptance 和 result 字段中。",
+        task.id, reason
+    )
+}
+
 fn build_thread_prompt(
     queue: &AgentWorkQueue,
     task: &AgentWorkTask,
@@ -782,8 +921,15 @@ fn push_event(
     task_id: Option<String>,
     message: impl Into<String>,
 ) {
+    let order = queue
+        .events
+        .iter()
+        .map(|event| event.order)
+        .max()
+        .unwrap_or(0)
+        + 1;
     queue.events.push(AgentWorkEvent {
-        order: queue.events.len() + 1,
+        order,
         timestamp_unix_seconds: current_unix_seconds(),
         action: action.to_string(),
         worker_id,

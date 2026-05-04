@@ -17,7 +17,26 @@ agent-work-claim --worker ID --agent AGENT_ID
 agent-work-complete TASK_ID --worker ID --summary TEXT
 agent-work-release TASK_ID --worker ID --reason TEXT
 agent-work-reap
+agent-work-compact --keep-events N
+agent-work-block TASK_ID --reason TEXT
 ```
+
+# 任务板压缩
+
+1. 任务板是热调度文件，不是永久归档文件。
+2. 当 `work-queue.json` 过大或旧事件影响 AI 读取时，使用 `agent-work-compact` 压缩。
+3. 压缩只能写回同一个 `work-queue.json`，禁止创建小版本队列文件或平行索引。
+4. 压缩必须保留所有待领取和已领取任务，保留任务状态、写入范围、依赖、验收标准和完成摘要。
+5. 已完成任务的长提示词可压缩为摘要，旧事件可折叠为最近事件加 `compact` 事件。
+6. 压缩前应确认关键结果已写入任务摘要或 forge 归档，避免把唯一证据只留在旧事件里。
+
+# 任务阻断
+
+1. 过期、重复或不再适用的待领取任务不得直接删除。
+2. 使用 `agent-work-block TASK_ID --reason TEXT` 标记为已阻断，并写明中文原因。
+3. 已阻断任务必须保留任务编号、写入范围、验收标准和阻断原因，用于审计。
+4. 已阻断任务不得再被领取；若后续需要继续，应新建明确的新任务。
+5. 已完成任务禁止改为阻断状态，避免破坏完成记录。
 
 # 领取边界
 

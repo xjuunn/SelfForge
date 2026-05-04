@@ -20,8 +20,9 @@ mod tools;
 mod types;
 
 pub use coordination::{
-    AgentWorkClaimReport, AgentWorkCoordinator, AgentWorkError, AgentWorkEvent, AgentWorkQueue,
-    AgentWorkQueueReport, AgentWorkReapReport, AgentWorkTask, AgentWorkTaskStatus,
+    AgentWorkClaimReport, AgentWorkCompactionReport, AgentWorkCoordinator, AgentWorkError,
+    AgentWorkEvent, AgentWorkQueue, AgentWorkQueueReport, AgentWorkReapReport, AgentWorkTask,
+    AgentWorkTaskStatus,
 };
 pub use patch_application::{
     AiPatchApplicationFile, AiPatchApplicationRecord, AiPatchApplicationStatus,

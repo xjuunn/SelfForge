@@ -622,6 +622,169 @@ fn agent_work_reap_keeps_active_claims() {
 }
 
 #[test]
+fn agent_work_compact_trims_completed_prompts_and_old_events() {
+    let root = temp_root("agent-work-compact");
+    let app = SelfForgeApp::new(&root);
+
+    app.supervisor()
+        .initialize_current_version()
+        .expect("bootstrap should succeed before compact test");
+    let init = app
+        .init_agent_work_queue(CURRENT_VERSION, "验证任务板压缩", 1)
+        .expect("work queue should initialize");
+    let claim = app
+        .claim_agent_work(CURRENT_VERSION, "ai-1", Some("architect"))
+        .expect("task should be claimed before completion");
+    app.complete_agent_work(CURRENT_VERSION, &claim.task.id, "ai-1", "架构任务完成")
+        .expect("claimed task should complete");
+
+    let mut queue: AgentWorkQueue =
+        serde_json::from_str(&fs::read_to_string(&init.queue_path).expect("queue readable"))
+            .expect("queue json should parse");
+    let pending_prompt = queue
+        .tasks
+        .iter()
+        .find(|task| task.id == "coord-002-application")
+        .expect("pending task should exist")
+        .prompt
+        .clone();
+    for index in 0..25 {
+        queue.events.push(AgentWorkEvent {
+            order: queue.events.len() + 1,
+            timestamp_unix_seconds: index,
+            action: "测试事件".to_string(),
+            worker_id: None,
+            task_id: None,
+            message: format!("压缩前事件 {index}"),
+        });
+    }
+    fs::write(
+        &init.queue_path,
+        serde_json::to_string_pretty(&queue).expect("queue should serialize"),
+    )
+    .expect("test should write verbose queue");
+
+    let report = app
+        .compact_agent_work_queue(CURRENT_VERSION, Some(5))
+        .expect("work queue compaction should succeed");
+
+    assert_eq!(report.compacted_task_prompts, 1);
+    assert!(report.removed_events > 0);
+    assert_eq!(report.retained_events, 6);
+    let completed = report
+        .queue
+        .tasks
+        .iter()
+        .find(|task| task.id == claim.task.id)
+        .expect("completed task should remain");
+    assert_eq!(completed.status, AgentWorkTaskStatus::Completed);
+    assert!(completed.prompt.starts_with("已压缩："));
+    let pending = report
+        .queue
+        .tasks
+        .iter()
+        .find(|task| task.id == "coord-002-application")
+        .expect("pending task should remain");
+    assert_eq!(pending.status, AgentWorkTaskStatus::Pending);
+    assert_eq!(pending.prompt, pending_prompt);
+    assert_eq!(
+        report
+            .queue
+            .events
+            .last()
+            .map(|event| event.action.as_str()),
+        Some("compact")
+    );
+
+    cleanup(&root);
+}
+
+#[test]
+fn agent_work_compact_rejects_zero_keep_events() {
+    let root = temp_root("agent-work-compact-zero");
+    let app = SelfForgeApp::new(&root);
+
+    app.supervisor()
+        .initialize_current_version()
+        .expect("bootstrap should succeed before compact zero test");
+    app.init_agent_work_queue(CURRENT_VERSION, "验证非法压缩参数", 1)
+        .expect("work queue should initialize");
+
+    let error = app
+        .compact_agent_work_queue(CURRENT_VERSION, Some(0))
+        .expect_err("zero retained events must be rejected");
+
+    assert!(matches!(error, AgentWorkError::InvalidKeepEvents));
+
+    cleanup(&root);
+}
+
+#[test]
+fn agent_work_block_marks_pending_task_unclaimable() {
+    let root = temp_root("agent-work-block");
+    let app = SelfForgeApp::new(&root);
+
+    app.supervisor()
+        .initialize_current_version()
+        .expect("bootstrap should succeed before block test");
+    app.init_agent_work_queue(CURRENT_VERSION, "验证任务阻断", 2)
+        .expect("work queue should initialize");
+
+    let report = app
+        .block_agent_work(CURRENT_VERSION, "coord-002-application", "旧任务不再适用")
+        .expect("pending task should be blockable");
+    let blocked = report
+        .queue
+        .tasks
+        .iter()
+        .find(|task| task.id == "coord-002-application")
+        .expect("blocked task should remain");
+    assert_eq!(blocked.status, AgentWorkTaskStatus::Blocked);
+    assert_eq!(blocked.result.as_deref(), Some("旧任务不再适用"));
+    assert!(blocked.prompt.starts_with("已阻断："));
+    assert_eq!(
+        report
+            .queue
+            .events
+            .last()
+            .map(|event| event.action.as_str()),
+        Some("block")
+    );
+
+    let claim = app
+        .claim_agent_work(CURRENT_VERSION, "ai-1", Some("builder"))
+        .expect("builder should claim next non-blocked task");
+    assert_eq!(claim.task.id, "coord-003-cli");
+
+    cleanup(&root);
+}
+
+#[test]
+fn agent_work_block_rejects_completed_task() {
+    let root = temp_root("agent-work-block-completed");
+    let app = SelfForgeApp::new(&root);
+
+    app.supervisor()
+        .initialize_current_version()
+        .expect("bootstrap should succeed before completed block test");
+    app.init_agent_work_queue(CURRENT_VERSION, "验证已完成任务不可阻断", 1)
+        .expect("work queue should initialize");
+    let claim = app
+        .claim_agent_work(CURRENT_VERSION, "ai-1", Some("architect"))
+        .expect("task should be claimed");
+    app.complete_agent_work(CURRENT_VERSION, &claim.task.id, "ai-1", "任务完成")
+        .expect("task should complete");
+
+    let error = app
+        .block_agent_work(CURRENT_VERSION, &claim.task.id, "不应阻断已完成任务")
+        .expect_err("completed task must not be blocked");
+
+    assert!(matches!(error, AgentWorkError::TaskAlreadyCompleted { .. }));
+
+    cleanup(&root);
+}
+
+#[test]
 fn agent_work_queue_rejects_zero_threads() {
     let root = temp_root("agent-work-zero-thread");
     let app = SelfForgeApp::new(&root);
@@ -2043,7 +2206,7 @@ fn agent_advance_prepares_candidate_and_completes_session() {
     assert_eq!(report.minimal_loop.stable_version, CURRENT_VERSION);
     assert_eq!(
         report.minimal_loop.candidate_version.as_deref(),
-        Some("v0.1.66")
+        Some("v0.1.67")
     );
     assert_eq!(report.session.status, AgentSessionStatus::Completed);
     assert!(
@@ -2056,7 +2219,7 @@ fn agent_advance_prepares_candidate_and_completes_session() {
 
     let state = ForgeState::load(&root).expect("state should remain readable");
     assert_eq!(state.current_version, CURRENT_VERSION);
-    assert_eq!(state.candidate_version.as_deref(), Some("v0.1.66"));
+    assert_eq!(state.candidate_version.as_deref(), Some("v0.1.67"));
     let sessions = app
         .agent_sessions(CURRENT_VERSION, 10)
         .expect("completed agent session should be listed");
@@ -2087,16 +2250,16 @@ fn agent_advance_promotes_existing_candidate_and_prepares_next() {
         MinimalLoopOutcome::PromotedAndPrepared
     );
     assert_eq!(report.minimal_loop.starting_version, CURRENT_VERSION);
-    assert_eq!(report.minimal_loop.stable_version, "v0.1.66");
+    assert_eq!(report.minimal_loop.stable_version, "v0.1.67");
     assert_eq!(
         report.minimal_loop.candidate_version.as_deref(),
-        Some("v0.1.67")
+        Some("v0.1.68")
     );
     assert_eq!(report.session.status, AgentSessionStatus::Completed);
 
     let state = ForgeState::load(&root).expect("state should remain readable");
-    assert_eq!(state.current_version, "v0.1.66");
-    assert_eq!(state.candidate_version.as_deref(), Some("v0.1.67"));
+    assert_eq!(state.current_version, "v0.1.67");
+    assert_eq!(state.candidate_version.as_deref(), Some("v0.1.68"));
 
     cleanup(&root);
 }
@@ -2178,12 +2341,12 @@ fn agent_evolve_prepares_candidate_runs_cycle_and_completes_session() {
 
     assert_eq!(
         report.prepared_candidate_version.as_deref(),
-        Some("v0.1.66")
+        Some("v0.1.67")
     );
     assert_eq!(report.cycle.previous_version, CURRENT_VERSION);
-    assert_eq!(report.cycle.candidate_version, "v0.1.66");
+    assert_eq!(report.cycle.candidate_version, "v0.1.67");
     assert_eq!(report.cycle.result, CycleResult::Promoted);
-    assert_eq!(report.cycle.state.current_version, "v0.1.66");
+    assert_eq!(report.cycle.state.current_version, "v0.1.67");
     assert_eq!(report.cycle.state.candidate_version, None);
     assert!(report.memory_compaction.is_some());
     assert_eq!(report.session.status, AgentSessionStatus::Completed);
@@ -2214,7 +2377,7 @@ fn agent_evolve_prepares_candidate_runs_cycle_and_completes_session() {
     );
 
     let state = ForgeState::load(&root).expect("state should remain readable");
-    assert_eq!(state.current_version, "v0.1.66");
+    assert_eq!(state.current_version, "v0.1.67");
     assert_eq!(state.candidate_version, None);
     let sessions = app
         .agent_sessions(CURRENT_VERSION, 10)
@@ -2238,10 +2401,10 @@ fn agent_session_list_all_major_finds_evolve_session_after_promotion() {
         .agent_evolve("提升后仍可审计 Agent 会话")
         .expect("agent evolve should promote a candidate");
 
-    assert_eq!(report.cycle.state.current_version, "v0.1.66");
+    assert_eq!(report.cycle.state.current_version, "v0.1.67");
 
     let promoted_version_only = app
-        .agent_sessions("v0.1.66", 10)
+        .agent_sessions("v0.1.67", 10)
         .expect("promoted version scoped session list should be readable");
     assert!(
         promoted_version_only.is_empty(),
@@ -2249,7 +2412,7 @@ fn agent_session_list_all_major_finds_evolve_session_after_promotion() {
     );
 
     let all = app
-        .agent_sessions_all("v0.1.66", 10)
+        .agent_sessions_all("v0.1.67", 10)
         .expect("all major session list should find previous patch session");
     assert_eq!(all.len(), 1);
     assert_eq!(all[0].id, report.session.id);
@@ -2277,9 +2440,9 @@ fn agent_evolve_cycles_existing_candidate_without_preparing_another() {
 
     assert_eq!(report.prepared_candidate_version, None);
     assert_eq!(report.cycle.previous_version, CURRENT_VERSION);
-    assert_eq!(report.cycle.candidate_version, "v0.1.66");
+    assert_eq!(report.cycle.candidate_version, "v0.1.67");
     assert_eq!(report.cycle.result, CycleResult::Promoted);
-    assert_eq!(report.cycle.state.current_version, "v0.1.66");
+    assert_eq!(report.cycle.state.current_version, "v0.1.67");
     assert_eq!(report.cycle.state.candidate_version, None);
     assert_eq!(report.session.status, AgentSessionStatus::Completed);
 

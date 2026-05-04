@@ -23,7 +23,7 @@ pub use version::{
     version_major_file_name, version_major_key,
 };
 
-pub const CURRENT_VERSION: &str = "v0.1.65";
+pub const CURRENT_VERSION: &str = "v0.1.66";
 
 pub use app::{
     AgentCapability, AgentDefinition, AgentError, AgentEvolutionError, AgentEvolutionReport,
@@ -36,10 +36,10 @@ pub use app::{
     AgentStepStatus, AgentToolAssignment, AgentToolBinding, AgentToolConfig,
     AgentToolConfigInitReport, AgentToolDefinition, AgentToolError, AgentToolInvocation,
     AgentToolInvocationError, AgentToolInvocationInput, AgentToolInvocationReport, AgentToolReport,
-    AgentVerificationReport, AgentWorkClaimReport, AgentWorkCoordinator, AgentWorkError,
-    AgentWorkEvent, AgentWorkQueue, AgentWorkQueueReport, AgentWorkReapReport, AgentWorkTask,
-    AgentWorkTaskStatus, AiConfigError, AiConfigReport, AiExecutionError, AiExecutionReport,
-    AiPatchApplicationError, AiPatchApplicationFile, AiPatchApplicationRecord,
+    AgentVerificationReport, AgentWorkClaimReport, AgentWorkCompactionReport, AgentWorkCoordinator,
+    AgentWorkError, AgentWorkEvent, AgentWorkQueue, AgentWorkQueueReport, AgentWorkReapReport,
+    AgentWorkTask, AgentWorkTaskStatus, AiConfigError, AiConfigReport, AiExecutionError,
+    AiExecutionReport, AiPatchApplicationError, AiPatchApplicationFile, AiPatchApplicationRecord,
     AiPatchApplicationReport, AiPatchApplicationStatus, AiPatchApplicationStore,
     AiPatchApplicationStoreError, AiPatchApplicationSummary, AiPatchAuditError,
     AiPatchAuditFinding, AiPatchAuditFindingKind, AiPatchAuditRecord, AiPatchAuditReport,

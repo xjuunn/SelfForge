@@ -6,15 +6,15 @@ use super::agent::{
     AgentSessionStep, AgentSessionStore, AgentSessionSummary, AgentSessionWorkQueueContext,
     AgentStepExecutionReport, AgentStepExecutionRequest, AgentStepStatus,
     AgentToolConfigInitReport, AgentToolError, AgentToolInvocation, AgentToolInvocationInput,
-    AgentToolInvocationReport, AgentToolReport, AgentWorkClaimReport, AgentWorkCoordinator,
-    AgentWorkError, AgentWorkQueueReport, AgentWorkReapReport, AgentWorkTaskStatus,
-    AiPatchApplicationFile, AiPatchApplicationRecord, AiPatchApplicationStatus,
-    AiPatchApplicationStore, AiPatchApplicationStoreError, AiPatchApplicationSummary,
-    AiPatchAuditFinding, AiPatchAuditFindingKind, AiPatchAuditRecord, AiPatchAuditSeverity,
-    AiPatchAuditStatus, AiPatchAuditStore, AiPatchAuditStoreError, AiPatchAuditSummary,
-    AiPatchDraftRecord, AiPatchDraftStatus, AiPatchDraftStore, AiPatchDraftStoreError,
-    AiPatchDraftSummary, AiPatchPreviewChange, AiPatchPreviewRecord, AiPatchPreviewStatus,
-    AiPatchPreviewStore, AiPatchPreviewStoreError, AiPatchPreviewSummary,
+    AgentToolInvocationReport, AgentToolReport, AgentWorkClaimReport, AgentWorkCompactionReport,
+    AgentWorkCoordinator, AgentWorkError, AgentWorkQueueReport, AgentWorkReapReport,
+    AgentWorkTaskStatus, AiPatchApplicationFile, AiPatchApplicationRecord,
+    AiPatchApplicationStatus, AiPatchApplicationStore, AiPatchApplicationStoreError,
+    AiPatchApplicationSummary, AiPatchAuditFinding, AiPatchAuditFindingKind, AiPatchAuditRecord,
+    AiPatchAuditSeverity, AiPatchAuditStatus, AiPatchAuditStore, AiPatchAuditStoreError,
+    AiPatchAuditSummary, AiPatchDraftRecord, AiPatchDraftStatus, AiPatchDraftStore,
+    AiPatchDraftStoreError, AiPatchDraftSummary, AiPatchPreviewChange, AiPatchPreviewRecord,
+    AiPatchPreviewStatus, AiPatchPreviewStore, AiPatchPreviewStoreError, AiPatchPreviewSummary,
     AiPatchSourceCandidateRecord, AiPatchSourceCandidateStatus, AiPatchSourceCandidateStore,
     AiPatchSourceCandidateStoreError, AiPatchSourceCandidateSummary,
     AiPatchSourceCycleFollowUpRecord, AiPatchSourceCycleFollowUpStatus,
@@ -2897,6 +2897,23 @@ impl SelfForgeApp {
 
     pub fn agent_work_status(&self, version: &str) -> Result<AgentWorkQueueReport, AgentWorkError> {
         AgentWorkCoordinator::new(&self.root).status(version)
+    }
+
+    pub fn compact_agent_work_queue(
+        &self,
+        version: &str,
+        keep_events: Option<usize>,
+    ) -> Result<AgentWorkCompactionReport, AgentWorkError> {
+        AgentWorkCoordinator::new(&self.root).compact(version, keep_events)
+    }
+
+    pub fn block_agent_work(
+        &self,
+        version: &str,
+        task_id: &str,
+        reason: &str,
+    ) -> Result<AgentWorkQueueReport, AgentWorkError> {
+        AgentWorkCoordinator::new(&self.root).block(version, task_id, reason)
     }
 
     pub fn branch_check(

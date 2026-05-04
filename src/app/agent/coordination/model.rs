@@ -96,6 +96,16 @@ pub struct AgentWorkReapReport {
     pub queue: AgentWorkQueue,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentWorkCompactionReport {
+    pub version: String,
+    pub queue_path: PathBuf,
+    pub compacted_task_prompts: usize,
+    pub removed_events: usize,
+    pub retained_events: usize,
+    pub queue: AgentWorkQueue,
+}
+
 #[derive(Debug, Clone)]
 pub struct AgentWorkCoordinator {
     pub(super) root: PathBuf,
@@ -114,6 +124,7 @@ pub enum AgentWorkError {
     },
     InvalidThreadCount,
     InvalidLeaseSeconds,
+    InvalidKeepEvents,
     InvalidWorkerId {
         worker_id: String,
     },
@@ -121,6 +132,9 @@ pub enum AgentWorkError {
         task_id: String,
     },
     TaskNotFound {
+        task_id: String,
+    },
+    TaskAlreadyCompleted {
         task_id: String,
     },
     TaskNotClaimedByWorker {
@@ -183,6 +197,7 @@ impl fmt::Display for AgentWorkError {
             }
             AgentWorkError::InvalidThreadCount => write!(formatter, "线程数量必须大于 0"),
             AgentWorkError::InvalidLeaseSeconds => write!(formatter, "任务租约秒数必须大于 0"),
+            AgentWorkError::InvalidKeepEvents => write!(formatter, "保留事件数量必须大于 0"),
             AgentWorkError::InvalidWorkerId { worker_id } => {
                 write!(formatter, "工作线程标识不合法：{worker_id}")
             }
@@ -191,6 +206,9 @@ impl fmt::Display for AgentWorkError {
             }
             AgentWorkError::TaskNotFound { task_id } => {
                 write!(formatter, "协作任务不存在：{task_id}")
+            }
+            AgentWorkError::TaskAlreadyCompleted { task_id } => {
+                write!(formatter, "任务 {task_id} 已完成，禁止改为阻断状态")
             }
             AgentWorkError::TaskNotClaimedByWorker { task_id, worker_id } => write!(
                 formatter,
@@ -237,9 +255,11 @@ impl Error for AgentWorkError {
             | AgentWorkError::MissingQueue { .. }
             | AgentWorkError::InvalidThreadCount
             | AgentWorkError::InvalidLeaseSeconds
+            | AgentWorkError::InvalidKeepEvents
             | AgentWorkError::InvalidWorkerId { .. }
             | AgentWorkError::InvalidTaskId { .. }
             | AgentWorkError::TaskNotFound { .. }
+            | AgentWorkError::TaskAlreadyCompleted { .. }
             | AgentWorkError::TaskNotClaimedByWorker { .. }
             | AgentWorkError::NoAvailableTask { .. }
             | AgentWorkError::QueueNotCompleted { .. }
