@@ -266,6 +266,45 @@ pub fn select_agent_skills(
     })
 }
 
+pub fn format_agent_skill_context(skills: &AgentSkillSelectionReport) -> String {
+    if skills.skills.is_empty() {
+        return format!(
+            "- 未召回技能；索引技能 {} 个，候选 {} 个，默认只使用当前状态和近期记忆。\n",
+            skills.index_skill_count, skills.candidate_skill_count
+        );
+    }
+
+    let mut lines = vec![format!(
+        "- 技能索引 {} 个，候选 {} 个，已选择 {} 个，已加载正文 {} 个，上下文 token 估算 {}。",
+        skills.index_skill_count,
+        skills.candidate_skill_count,
+        skills.selected_skill_count,
+        skills.loaded_skill_count,
+        skills.estimated_context_tokens
+    )];
+    for skill in &skills.skills {
+        lines.push(format!(
+            "- 技能 {}：{}；分数 {}；原因 {}；估算 token {}。",
+            skill.metadata.id,
+            skill.metadata.name,
+            skill.score,
+            skill.reason,
+            skill.estimated_tokens
+        ));
+        if !skill.metadata.summary.trim().is_empty() {
+            lines.push(format!("  摘要：{}", skill.metadata.summary.trim()));
+        }
+        if let Some(content) = &skill.content {
+            lines.push(format!(
+                "  正文：{}",
+                truncate_skill_context(content.trim(), 1_200)
+            ));
+        }
+    }
+    lines.push(String::new());
+    lines.join("\n")
+}
+
 fn validate_skill_index(root: &Path, index: &AgentSkillIndex) -> Result<(), AgentSkillError> {
     let mut ids = std::collections::HashSet::new();
     for skill in &index.skills {
@@ -423,6 +462,14 @@ fn skill_token_estimate(skill: &AgentSkillMetadata) -> usize {
 
 fn estimate_tokens(value: &str) -> usize {
     value.chars().count().div_ceil(4)
+}
+
+fn truncate_skill_context(value: &str, max: usize) -> String {
+    let mut output = value.chars().take(max).collect::<String>();
+    if value.chars().count() > max {
+        output.push_str("...");
+    }
+    output
 }
 
 fn valid_skill_id(value: &str) -> bool {

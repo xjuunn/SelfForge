@@ -36,8 +36,9 @@ use super::agent::{
     AiSelfUpgradeAuditRecord, AiSelfUpgradeAuditStatus, AiSelfUpgradeAuditStore,
     AiSelfUpgradeAuditSummary, AiSelfUpgradeSummaryIndexEntry, AiSelfUpgradeSummaryRecord,
     AiSelfUpgradeSummaryStatus, AiSelfUpgradeSummaryStore, AiSelfUpgradeSummaryStoreError,
-    apply_tools_to_plan, initialize_agent_skill_index, initialize_agent_tool_config,
-    load_agent_skill_index, load_agent_tool_report, select_agent_skills,
+    apply_tools_to_plan, format_agent_skill_context, initialize_agent_skill_index,
+    initialize_agent_tool_config, load_agent_skill_index, load_agent_tool_report,
+    select_agent_skills,
 };
 use super::ai_provider::{
     AiConfigError, AiConfigReport, AiExecutionError, AiExecutionReport, AiProviderRegistry,
@@ -6776,42 +6777,6 @@ fn build_ai_self_upgrade_prompt(
     prompt.push_str("\n# 输出格式\n");
     prompt.push_str("只返回一个中文目标句子，例如：继续完善 AI 自我升级流程的受控执行记录。\n");
     prompt
-}
-
-fn format_agent_skill_context(skills: &AgentSkillSelectionReport) -> String {
-    if skills.skills.is_empty() {
-        return format!(
-            "- 未召回技能；索引技能 {} 个，候选 {} 个，默认只使用当前状态和近期记忆。\n",
-            skills.index_skill_count, skills.candidate_skill_count
-        );
-    }
-
-    let mut lines = vec![format!(
-        "- 技能索引 {} 个，候选 {} 个，已选择 {} 个，已加载正文 {} 个，上下文 token 估算 {}。",
-        skills.index_skill_count,
-        skills.candidate_skill_count,
-        skills.selected_skill_count,
-        skills.loaded_skill_count,
-        skills.estimated_context_tokens
-    )];
-    for skill in &skills.skills {
-        lines.push(format!(
-            "- 技能 {}：{}；分数 {}；原因 {}；估算 token {}。",
-            skill.metadata.id,
-            skill.metadata.name,
-            skill.score,
-            skill.reason,
-            skill.estimated_tokens
-        ));
-        if !skill.metadata.summary.trim().is_empty() {
-            lines.push(format!("  摘要：{}", skill.metadata.summary.trim()));
-        }
-        if let Some(content) = &skill.content {
-            lines.push(format!("  正文：{}", truncate_chars(content.trim(), 1_200)));
-        }
-    }
-    lines.push(String::new());
-    lines.join("\n")
 }
 
 fn format_memory_insight_lines(insights: &[MemoryInsight], limit: usize) -> String {

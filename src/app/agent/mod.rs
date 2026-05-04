@@ -92,7 +92,8 @@ pub use session::{
 pub use skills::{
     AgentSkillError, AgentSkillIndex, AgentSkillIndexReport, AgentSkillMetadata,
     AgentSkillSelection, AgentSkillSelectionReport, AgentSkillSelectionRequest,
-    initialize_agent_skill_index, load_agent_skill_index, select_agent_skills,
+    format_agent_skill_context, initialize_agent_skill_index, load_agent_skill_index,
+    select_agent_skills,
 };
 pub use tool_invocation::{
     AgentStepExecutionReport, AgentStepExecutionRequest, AgentToolInvocation,

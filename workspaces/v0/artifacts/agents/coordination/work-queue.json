@@ -1,10 +1,10 @@
 {
   "version": "v0.1.71",
-  "goal": "优化 AI 技能架构，接入按需技能上下文到补丁草案",
+  "goal": "优化 AI 技能架构，提取按需技能上下文格式化",
   "thread_count": 1,
   "lease_duration_seconds": 3600,
-  "created_at_unix_seconds": 1777913362,
-  "updated_at_unix_seconds": 1777913649,
+  "created_at_unix_seconds": 1777913734,
+  "updated_at_unix_seconds": 1777913840,
   "conflict_policy": "同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。",
   "prompt_policy": "每个线程只执行领取到的任务，必须遵守写入范围、依赖关系、验收标准和归档规则。",
   "tasks": [
@@ -25,10 +25,10 @@
       ],
       "status": "Completed",
       "claimed_by": "ai-1",
-      "claimed_at_unix_seconds": 1777913610,
-      "completed_at_unix_seconds": 1777913614,
-      "result": "已复核架构边界：补丁草案提示词复用应用层按需技能召回，AI Provider 不承载业务选择逻辑，CLI 只展示统计，技能正文仍受 limit 和 token 预算控制。",
-      "prompt": "你是 SelfForge 多 AI 协作线程 `ai-1`。\n\n全局目标：优化 AI 技能架构，接入按需技能上下文到补丁草案\n当前任务：coord-001-architecture - 拆解协作架构和提示词边界\n职责 Agent：architect\n任务说明：梳理目标、协作规则、提示词约束、冲突策略和后续扩展点。\n\n必须遵守：\n1. 只完成当前已领取任务，禁止重复实现其他任务。\n2. 只修改写入范围：Agents.md，workspaces/v0/artifacts/agents/coordination/。\n3. 依赖任务：无。\n4. 验收标准：提示词必须说明只处理已领取任务；冲突处理必须明确释放或阻断流程。\n5. 租约到期时间 unix:1777920810，无法继续时必须主动释放任务。\n6. 如发现写入范围冲突、依赖缺失或无法完成，执行 `agent-work-release coord-001-architecture --worker ai-1 --reason 原因`。\n7. 完成后执行必要测试，并执行 `agent-work-complete coord-001-architecture --worker ai-1 --summary 摘要`。\n\n当前仍可领取任务：无。\n冲突策略：同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。"
+      "claimed_at_unix_seconds": 1777913787,
+      "completed_at_unix_seconds": 1777913791,
+      "result": "已复核架构边界：技能上下文渲染归属于 agent skills 模块，AI 编排只消费统一格式化结果，后续新增 AI 链路可复用同一接口。",
+      "prompt": "你是 SelfForge 多 AI 协作线程 `ai-1`。\n\n全局目标：优化 AI 技能架构，提取按需技能上下文格式化\n当前任务：coord-001-architecture - 拆解协作架构和提示词边界\n职责 Agent：architect\n任务说明：梳理目标、协作规则、提示词约束、冲突策略和后续扩展点。\n\n必须遵守：\n1. 只完成当前已领取任务，禁止重复实现其他任务。\n2. 只修改写入范围：Agents.md，workspaces/v0/artifacts/agents/coordination/。\n3. 依赖任务：无。\n4. 验收标准：提示词必须说明只处理已领取任务；冲突处理必须明确释放或阻断流程。\n5. 租约到期时间 unix:1777920987，无法继续时必须主动释放任务。\n6. 如发现写入范围冲突、依赖缺失或无法完成，执行 `agent-work-release coord-001-architecture --worker ai-1 --reason 原因`。\n7. 完成后执行必要测试，并执行 `agent-work-complete coord-001-architecture --worker ai-1 --summary 摘要`。\n\n当前仍可领取任务：coord-003-cli。\n冲突策略：同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。"
     },
     {
       "id": "coord-002-application",
@@ -48,10 +48,10 @@
       ],
       "status": "Completed",
       "claimed_by": "ai-1",
-      "claimed_at_unix_seconds": 1777913367,
-      "completed_at_unix_seconds": 1777913516,
-      "result": "已将按需技能召回接入 AI 补丁草案预览：构建草案提示词前按目标召回预算内技能，并在提示词中复用按需技能上下文章节。",
-      "prompt": "你是 SelfForge 多 AI 协作线程 `ai-1`。\n\n全局目标：优化 AI 技能架构，接入按需技能上下文到补丁草案\n当前任务：coord-002-application - 实现应用层协作队列\n职责 Agent：builder\n任务说明：实现任务板持久化、领取、完成、释放和冲突检测。\n\n必须遵守：\n1. 只完成当前已领取任务，禁止重复实现其他任务。\n2. 只修改写入范围：src/app/agent/，src/app/minimal_loop.rs，src/app/mod.rs。\n3. 依赖任务：无。\n4. 验收标准：队列必须写入 major 工作区 artifacts/agents/coordination；领取必须防止重复任务和写入范围冲突。\n5. 租约到期时间 unix:1777920567，无法继续时必须主动释放任务。\n6. 如发现写入范围冲突、依赖缺失或无法完成，执行 `agent-work-release coord-002-application --worker ai-1 --reason 原因`。\n7. 完成后执行必要测试，并执行 `agent-work-complete coord-002-application --worker ai-1 --summary 摘要`。\n\n当前仍可领取任务：coord-001-architecture，coord-003-cli。\n冲突策略：同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。"
+      "claimed_at_unix_seconds": 1777913738,
+      "completed_at_unix_seconds": 1777913780,
+      "result": "已将按需技能上下文格式化提取到 src/app/agent/skills.rs，minimal_loop 复用应用层格式化接口，自我升级和补丁草案提示词保持一致。",
+      "prompt": "你是 SelfForge 多 AI 协作线程 `ai-1`。\n\n全局目标：优化 AI 技能架构，提取按需技能上下文格式化\n当前任务：coord-002-application - 实现应用层协作队列\n职责 Agent：builder\n任务说明：实现任务板持久化、领取、完成、释放和冲突检测。\n\n必须遵守：\n1. 只完成当前已领取任务，禁止重复实现其他任务。\n2. 只修改写入范围：src/app/agent/，src/app/minimal_loop.rs，src/app/mod.rs。\n3. 依赖任务：无。\n4. 验收标准：队列必须写入 major 工作区 artifacts/agents/coordination；领取必须防止重复任务和写入范围冲突。\n5. 租约到期时间 unix:1777920938，无法继续时必须主动释放任务。\n6. 如发现写入范围冲突、依赖缺失或无法完成，执行 `agent-work-release coord-002-application --worker ai-1 --reason 原因`。\n7. 完成后执行必要测试，并执行 `agent-work-complete coord-002-application --worker ai-1 --summary 摘要`。\n\n当前仍可领取任务：coord-001-architecture，coord-003-cli。\n冲突策略：同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。"
     },
     {
       "id": "coord-003-cli",
@@ -70,10 +70,10 @@
       ],
       "status": "Completed",
       "claimed_by": "ai-1",
-      "claimed_at_unix_seconds": 1777913521,
-      "completed_at_unix_seconds": 1777913556,
-      "result": "已让 agent-patch-draft --dry-run 输出技能索引、候选、选择、正文和 token 统计，并在 README 说明补丁草案会注入按需技能上下文。",
-      "prompt": "你是 SelfForge 多 AI 协作线程 `ai-1`。\n\n全局目标：优化 AI 技能架构，接入按需技能上下文到补丁草案\n当前任务：coord-003-cli - 实现协作命令入口\n职责 Agent：builder\n任务说明：提供初始化、状态查询、领取、完成和释放命令。\n\n必须遵守：\n1. 只完成当前已领取任务，禁止重复实现其他任务。\n2. 只修改写入范围：src/main.rs，README.md。\n3. 依赖任务：无。\n4. 验收标准：CLI 只能解析参数和展示应用层结果；领取命令必须输出当前任务提示词。\n5. 租约到期时间 unix:1777920721，无法继续时必须主动释放任务。\n6. 如发现写入范围冲突、依赖缺失或无法完成，执行 `agent-work-release coord-003-cli --worker ai-1 --reason 原因`。\n7. 完成后执行必要测试，并执行 `agent-work-complete coord-003-cli --worker ai-1 --summary 摘要`。\n\n当前仍可领取任务：coord-001-architecture。\n冲突策略：同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。"
+      "claimed_at_unix_seconds": 1777913795,
+      "completed_at_unix_seconds": 1777913802,
+      "result": "已复核 CLI 无需改动：现有 dry-run 统计仍消费应用层技能召回报告，不打印技能正文，符合展示边界。",
+      "prompt": "你是 SelfForge 多 AI 协作线程 `ai-1`。\n\n全局目标：优化 AI 技能架构，提取按需技能上下文格式化\n当前任务：coord-003-cli - 实现协作命令入口\n职责 Agent：builder\n任务说明：提供初始化、状态查询、领取、完成和释放命令。\n\n必须遵守：\n1. 只完成当前已领取任务，禁止重复实现其他任务。\n2. 只修改写入范围：src/main.rs，README.md。\n3. 依赖任务：无。\n4. 验收标准：CLI 只能解析参数和展示应用层结果；领取命令必须输出当前任务提示词。\n5. 租约到期时间 unix:1777920995，无法继续时必须主动释放任务。\n6. 如发现写入范围冲突、依赖缺失或无法完成，执行 `agent-work-release coord-003-cli --worker ai-1 --reason 原因`。\n7. 完成后执行必要测试，并执行 `agent-work-complete coord-003-cli --worker ai-1 --summary 摘要`。\n\n当前仍可领取任务：无。\n冲突策略：同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。"
     },
     {
       "id": "coord-004-tests",
@@ -94,10 +94,10 @@
       ],
       "status": "Completed",
       "claimed_by": "ai-1",
-      "claimed_at_unix_seconds": 1777913564,
-      "completed_at_unix_seconds": 1777913605,
-      "result": "已补充补丁草案技能上下文测试，验证预览会注入被召回的技能正文，AI 请求体包含技能上下文且不包含 .env 密钥；agent_skill 定向测试通过。",
-      "prompt": "你是 SelfForge 多 AI 协作线程 `ai-1`。\n\n全局目标：优化 AI 技能架构，接入按需技能上下文到补丁草案\n当前任务：coord-004-tests - 补充协作队列测试\n职责 Agent：verifier\n任务说明：覆盖单线程领取、多线程不重复领取、依赖阻断、冲突范围和错误完成。\n\n必须遵守：\n1. 只完成当前已领取任务，禁止重复实现其他任务。\n2. 只修改写入范围：src/lib.rs。\n3. 依赖任务：coord-002-application，coord-003-cli。\n4. 验收标准：必须包含单元、边界和错误测试；测试必须验证重复领取被阻止。\n5. 租约到期时间 unix:1777920764，无法继续时必须主动释放任务。\n6. 如发现写入范围冲突、依赖缺失或无法完成，执行 `agent-work-release coord-004-tests --worker ai-1 --reason 原因`。\n7. 完成后执行必要测试，并执行 `agent-work-complete coord-004-tests --worker ai-1 --summary 摘要`。\n\n当前仍可领取任务：coord-001-architecture。\n冲突策略：同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。"
+      "claimed_at_unix_seconds": 1777913805,
+      "completed_at_unix_seconds": 1777913810,
+      "result": "已复用现有定向测试完成验证：agent_skill、自我升级预览和补丁草案预览均通过，确认提取格式化接口未改变行为。",
+      "prompt": "你是 SelfForge 多 AI 协作线程 `ai-1`。\n\n全局目标：优化 AI 技能架构，提取按需技能上下文格式化\n当前任务：coord-004-tests - 补充协作队列测试\n职责 Agent：verifier\n任务说明：覆盖单线程领取、多线程不重复领取、依赖阻断、冲突范围和错误完成。\n\n必须遵守：\n1. 只完成当前已领取任务，禁止重复实现其他任务。\n2. 只修改写入范围：src/lib.rs。\n3. 依赖任务：coord-002-application，coord-003-cli。\n4. 验收标准：必须包含单元、边界和错误测试；测试必须验证重复领取被阻止。\n5. 租约到期时间 unix:1777921005，无法继续时必须主动释放任务。\n6. 如发现写入范围冲突、依赖缺失或无法完成，执行 `agent-work-release coord-004-tests --worker ai-1 --reason 原因`。\n7. 完成后执行必要测试，并执行 `agent-work-complete coord-004-tests --worker ai-1 --summary 摘要`。\n\n当前仍可领取任务：无。\n冲突策略：同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。"
     },
     {
       "id": "coord-005-review-archive",
@@ -123,10 +123,10 @@
       ],
       "status": "Completed",
       "claimed_by": "ai-1",
-      "claimed_at_unix_seconds": 1777913619,
-      "completed_at_unix_seconds": 1777913649,
-      "result": "已将补丁草案技能上下文接入阶段写入 v0 聚合归档，并记录提交信息规范修正、格式检查修复和定向验证结果。",
-      "prompt": "你是 SelfForge 多 AI 协作线程 `ai-1`。\n\n全局目标：优化 AI 技能架构，接入按需技能上下文到补丁草案\n当前任务：coord-005-review-archive - 审查并写入中文归档\n职责 Agent：archivist\n任务说明：审查协作队列规则，补充任务、记忆、版本和错误归档。\n\n必须遵守：\n1. 只完成当前已领取任务，禁止重复实现其他任务。\n2. 只修改写入范围：forge/tasks/v0.md，forge/memory/v0.md，forge/errors/v0.md，forge/versions/v0.md。\n3. 依赖任务：coord-001-architecture，coord-002-application，coord-003-cli，coord-004-tests。\n4. 验收标准：归档必须为中文；不得创建小版本独立归档文件。\n5. 租约到期时间 unix:1777920819，无法继续时必须主动释放任务。\n6. 如发现写入范围冲突、依赖缺失或无法完成，执行 `agent-work-release coord-005-review-archive --worker ai-1 --reason 原因`。\n7. 完成后执行必要测试，并执行 `agent-work-complete coord-005-review-archive --worker ai-1 --summary 摘要`。\n\n当前仍可领取任务：无。\n冲突策略：同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。"
+      "claimed_at_unix_seconds": 1777913817,
+      "completed_at_unix_seconds": 1777913840,
+      "result": "已将按需技能上下文格式化提取阶段写入 v0 聚合归档，记录无行为变更、统一格式化接口和定向验证结果。",
+      "prompt": "你是 SelfForge 多 AI 协作线程 `ai-1`。\n\n全局目标：优化 AI 技能架构，提取按需技能上下文格式化\n当前任务：coord-005-review-archive - 审查并写入中文归档\n职责 Agent：archivist\n任务说明：审查协作队列规则，补充任务、记忆、版本和错误归档。\n\n必须遵守：\n1. 只完成当前已领取任务，禁止重复实现其他任务。\n2. 只修改写入范围：forge/tasks/v0.md，forge/memory/v0.md，forge/errors/v0.md，forge/versions/v0.md。\n3. 依赖任务：coord-001-architecture，coord-002-application，coord-003-cli，coord-004-tests。\n4. 验收标准：归档必须为中文；不得创建小版本独立归档文件。\n5. 租约到期时间 unix:1777921017，无法继续时必须主动释放任务。\n6. 如发现写入范围冲突、依赖缺失或无法完成，执行 `agent-work-release coord-005-review-archive --worker ai-1 --reason 原因`。\n7. 完成后执行必要测试，并执行 `agent-work-complete coord-005-review-archive --worker ai-1 --summary 摘要`。\n\n当前仍可领取任务：无。\n冲突策略：同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。"
     }
   ],
   "events": [
@@ -734,6 +734,92 @@
       "worker_id": "ai-1",
       "task_id": "coord-005-review-archive",
       "message": "已将补丁草案技能上下文接入阶段写入 v0 聚合归档，并记录提交信息规范修正、格式检查修复和定向验证结果。"
+    },
+    {
+      "order": 213,
+      "timestamp_unix_seconds": 1777913734,
+      "action": "restart",
+      "message": "协作队列已从完成状态重开。上一目标：优化 AI 技能架构，接入按需技能上下文到补丁草案。新目标：优化 AI 技能架构，提取按需技能上下文格式化。"
+    },
+    {
+      "order": 214,
+      "timestamp_unix_seconds": 1777913738,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-002-application",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 215,
+      "timestamp_unix_seconds": 1777913780,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-002-application",
+      "message": "已将按需技能上下文格式化提取到 src/app/agent/skills.rs，minimal_loop 复用应用层格式化接口，自我升级和补丁草案提示词保持一致。"
+    },
+    {
+      "order": 216,
+      "timestamp_unix_seconds": 1777913787,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-001-architecture",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 217,
+      "timestamp_unix_seconds": 1777913791,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-001-architecture",
+      "message": "已复核架构边界：技能上下文渲染归属于 agent skills 模块，AI 编排只消费统一格式化结果，后续新增 AI 链路可复用同一接口。"
+    },
+    {
+      "order": 218,
+      "timestamp_unix_seconds": 1777913795,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-003-cli",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 219,
+      "timestamp_unix_seconds": 1777913802,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-003-cli",
+      "message": "已复核 CLI 无需改动：现有 dry-run 统计仍消费应用层技能召回报告，不打印技能正文，符合展示边界。"
+    },
+    {
+      "order": 220,
+      "timestamp_unix_seconds": 1777913805,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-004-tests",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 221,
+      "timestamp_unix_seconds": 1777913810,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-004-tests",
+      "message": "已复用现有定向测试完成验证：agent_skill、自我升级预览和补丁草案预览均通过，确认提取格式化接口未改变行为。"
+    },
+    {
+      "order": 222,
+      "timestamp_unix_seconds": 1777913817,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-005-review-archive",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 223,
+      "timestamp_unix_seconds": 1777913840,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-005-review-archive",
+      "message": "已将按需技能上下文格式化提取阶段写入 v0 聚合归档，记录无行为变更、统一格式化接口和定向验证结果。"
     }
   ]
 }
