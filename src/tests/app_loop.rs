@@ -237,7 +237,7 @@ fn branch_check_blocks_writing_on_master() {
     init_git_fixture(&root);
 
     let report = app
-        .branch_check(CURRENT_VERSION, None, None, "master")
+        .branch_check(CURRENT_VERSION, None, None, "master", false)
         .expect("branch check should read git state");
 
     assert_eq!(report.current_branch, "master");
@@ -277,6 +277,7 @@ fn branch_check_allows_claimed_task_with_only_queue_changes() {
             Some("ai-1"),
             Some("coord-002-application"),
             "master",
+            false,
         )
         .expect("branch check should inspect claimed task");
 
@@ -285,6 +286,40 @@ fn branch_check_allows_claimed_task_with_only_queue_changes() {
     assert_eq!(report.task_matches_branch, Some(true));
     assert!(report.unexpected_changes.is_empty());
     assert!(report.can_write);
+
+    cleanup(&root);
+}
+
+#[test]
+fn branch_check_suggests_branch_from_explicit_task() {
+    let root = temp_root("branch-check-suggest");
+    let app = SelfForgeApp::new(&root);
+
+    app.supervisor()
+        .initialize_current_version()
+        .expect("bootstrap should succeed before branch check");
+    init_git_fixture(&root);
+    app.init_agent_work_queue(CURRENT_VERSION, "验证分支建议", 3)
+        .expect("work queue should initialize");
+
+    let report = app
+        .branch_check(
+            CURRENT_VERSION,
+            Some("ai-1"),
+            Some("coord-002-application"),
+            "master",
+            true,
+        )
+        .expect("branch check should suggest branch");
+
+    assert_eq!(
+        report.suggested_branch.as_deref(),
+        Some("codex/coord-002-application")
+    );
+    assert_eq!(
+        report.suggested_branch_source.as_deref(),
+        Some("显式任务编号")
+    );
 
     cleanup(&root);
 }

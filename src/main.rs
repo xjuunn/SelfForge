@@ -448,6 +448,7 @@ fn branch_check(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Bo
             command.worker_id.as_deref(),
             command.task_id.as_deref(),
             &command.base_branch,
+            command.suggest_branch,
         )
         .map(format_branch_check_report),
     )
@@ -498,6 +499,13 @@ fn format_branch_check_report(report: BranchCheckReport) -> String {
             report.task_claimed_by.as_deref().unwrap_or("无"),
             option_bool_text(report.task_matches_worker),
             option_bool_text(report.task_matches_branch)
+        ));
+    }
+    if let Some(branch) = report.suggested_branch.as_ref() {
+        lines.push(format!(
+            "建议分支 {} 来源 {}",
+            branch,
+            report.suggested_branch_source.as_deref().unwrap_or("未知")
         ));
     }
     if !report.changed_paths.is_empty() {
@@ -5341,6 +5349,7 @@ struct BranchCheckArgs {
     worker_id: Option<String>,
     task_id: Option<String>,
     base_branch: String,
+    suggest_branch: bool,
 }
 
 struct AgentToolRunArgs {
@@ -5860,6 +5869,7 @@ fn parse_branch_check_args(arguments: Vec<String>) -> Result<BranchCheckArgs, Bo
     let mut worker_id = None;
     let mut task_id = None;
     let mut base_branch = "master".to_string();
+    let mut suggest_branch = false;
     let mut index = 0;
 
     while index < arguments.len() {
@@ -5900,6 +5910,10 @@ fn parse_branch_check_args(arguments: Vec<String>) -> Result<BranchCheckArgs, Bo
                 base_branch = value.clone();
                 index += 2;
             }
+            "--suggest" => {
+                suggest_branch = true;
+                index += 1;
+            }
             other => return Err(format!("未知 branch-check 参数: {other}").into()),
         }
     }
@@ -5909,6 +5923,7 @@ fn parse_branch_check_args(arguments: Vec<String>) -> Result<BranchCheckArgs, Bo
         worker_id,
         task_id,
         base_branch,
+        suggest_branch,
     })
 }
 
@@ -6779,7 +6794,7 @@ fn parse_agent_verify_args(arguments: Vec<String>) -> Result<AgentVerifyArgs, Bo
 fn help_text() -> &'static str {
     "SelfForge commands:
 init, validate, status, preflight
-branch-check [--current|--candidate|--version VERSION] [--worker ID] [--task TASK_ID] [--base BRANCH]
+branch-check [--current|--candidate|--version VERSION] [--worker ID] [--task TASK_ID] [--base BRANCH] [--suggest]
 memory-context [--current|--candidate|--version VERSION] [--limit N]
 memory-insights [--current|--candidate|--version VERSION] [--limit N]
 memory-compact [--current|--candidate|--version VERSION] [--keep N]
