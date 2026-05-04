@@ -7,35 +7,35 @@ use super::agent::{
     AgentStepExecutionReport, AgentStepExecutionRequest, AgentStepStatus,
     AgentToolConfigInitReport, AgentToolError, AgentToolInvocation, AgentToolInvocationInput,
     AgentToolInvocationReport, AgentToolReport, AgentWorkClaimReport, AgentWorkCoordinator,
-    AgentWorkError, AgentWorkQueueReport, AgentWorkReapReport, AiPatchApplicationFile,
-    AiPatchApplicationRecord, AiPatchApplicationStatus, AiPatchApplicationStore,
-    AiPatchApplicationStoreError, AiPatchApplicationSummary, AiPatchAuditFinding,
-    AiPatchAuditFindingKind, AiPatchAuditRecord, AiPatchAuditSeverity, AiPatchAuditStatus,
-    AiPatchAuditStore, AiPatchAuditStoreError, AiPatchAuditSummary, AiPatchDraftRecord,
-    AiPatchDraftStatus, AiPatchDraftStore, AiPatchDraftStoreError, AiPatchDraftSummary,
-    AiPatchPreviewChange, AiPatchPreviewRecord, AiPatchPreviewStatus, AiPatchPreviewStore,
-    AiPatchPreviewStoreError, AiPatchPreviewSummary, AiPatchSourceCandidateRecord,
-    AiPatchSourceCandidateStatus, AiPatchSourceCandidateStore, AiPatchSourceCandidateStoreError,
-    AiPatchSourceCandidateSummary, AiPatchSourceCycleFollowUpRecord,
-    AiPatchSourceCycleFollowUpStatus, AiPatchSourceCycleFollowUpStore,
-    AiPatchSourceCycleFollowUpStoreError, AiPatchSourceCycleFollowUpSummary,
-    AiPatchSourceCycleRecord, AiPatchSourceCycleResult, AiPatchSourceCycleStatus,
-    AiPatchSourceCycleStore, AiPatchSourceCycleStoreError, AiPatchSourceCycleSummary,
-    AiPatchSourceExecutionFile, AiPatchSourceExecutionRecord, AiPatchSourceExecutionStatus,
-    AiPatchSourceExecutionStore, AiPatchSourceExecutionStoreError, AiPatchSourceExecutionSummary,
-    AiPatchSourcePlanFile, AiPatchSourcePlanRecord, AiPatchSourcePlanStatus,
-    AiPatchSourcePlanStore, AiPatchSourcePlanStoreError, AiPatchSourcePlanSummary,
-    AiPatchSourcePromotionRecord, AiPatchSourcePromotionStatus, AiPatchSourcePromotionStore,
-    AiPatchSourcePromotionStoreError, AiPatchSourcePromotionSummary, AiPatchSourceTaskAuditFinding,
-    AiPatchSourceTaskAuditRecord, AiPatchSourceTaskAuditStatus, AiPatchSourceTaskAuditStore,
-    AiPatchSourceTaskAuditStoreError, AiPatchSourceTaskAuditSummary, AiPatchSourceTaskDraftRecord,
-    AiPatchSourceTaskDraftStatus, AiPatchSourceTaskDraftStore, AiPatchSourceTaskDraftStoreError,
-    AiPatchSourceTaskDraftSummary, AiPatchVerificationCommandRecord, AiPatchVerificationStatus,
-    AiSelfUpgradeAuditError, AiSelfUpgradeAuditRecord, AiSelfUpgradeAuditStatus,
-    AiSelfUpgradeAuditStore, AiSelfUpgradeAuditSummary, AiSelfUpgradeSummaryIndexEntry,
-    AiSelfUpgradeSummaryRecord, AiSelfUpgradeSummaryStatus, AiSelfUpgradeSummaryStore,
-    AiSelfUpgradeSummaryStoreError, apply_tools_to_plan, initialize_agent_tool_config,
-    load_agent_tool_report,
+    AgentWorkError, AgentWorkQueueReport, AgentWorkReapReport, AgentWorkTaskStatus,
+    AiPatchApplicationFile, AiPatchApplicationRecord, AiPatchApplicationStatus,
+    AiPatchApplicationStore, AiPatchApplicationStoreError, AiPatchApplicationSummary,
+    AiPatchAuditFinding, AiPatchAuditFindingKind, AiPatchAuditRecord, AiPatchAuditSeverity,
+    AiPatchAuditStatus, AiPatchAuditStore, AiPatchAuditStoreError, AiPatchAuditSummary,
+    AiPatchDraftRecord, AiPatchDraftStatus, AiPatchDraftStore, AiPatchDraftStoreError,
+    AiPatchDraftSummary, AiPatchPreviewChange, AiPatchPreviewRecord, AiPatchPreviewStatus,
+    AiPatchPreviewStore, AiPatchPreviewStoreError, AiPatchPreviewSummary,
+    AiPatchSourceCandidateRecord, AiPatchSourceCandidateStatus, AiPatchSourceCandidateStore,
+    AiPatchSourceCandidateStoreError, AiPatchSourceCandidateSummary,
+    AiPatchSourceCycleFollowUpRecord, AiPatchSourceCycleFollowUpStatus,
+    AiPatchSourceCycleFollowUpStore, AiPatchSourceCycleFollowUpStoreError,
+    AiPatchSourceCycleFollowUpSummary, AiPatchSourceCycleRecord, AiPatchSourceCycleResult,
+    AiPatchSourceCycleStatus, AiPatchSourceCycleStore, AiPatchSourceCycleStoreError,
+    AiPatchSourceCycleSummary, AiPatchSourceExecutionFile, AiPatchSourceExecutionRecord,
+    AiPatchSourceExecutionStatus, AiPatchSourceExecutionStore, AiPatchSourceExecutionStoreError,
+    AiPatchSourceExecutionSummary, AiPatchSourcePlanFile, AiPatchSourcePlanRecord,
+    AiPatchSourcePlanStatus, AiPatchSourcePlanStore, AiPatchSourcePlanStoreError,
+    AiPatchSourcePlanSummary, AiPatchSourcePromotionRecord, AiPatchSourcePromotionStatus,
+    AiPatchSourcePromotionStore, AiPatchSourcePromotionStoreError, AiPatchSourcePromotionSummary,
+    AiPatchSourceTaskAuditFinding, AiPatchSourceTaskAuditRecord, AiPatchSourceTaskAuditStatus,
+    AiPatchSourceTaskAuditStore, AiPatchSourceTaskAuditStoreError, AiPatchSourceTaskAuditSummary,
+    AiPatchSourceTaskDraftRecord, AiPatchSourceTaskDraftStatus, AiPatchSourceTaskDraftStore,
+    AiPatchSourceTaskDraftStoreError, AiPatchSourceTaskDraftSummary,
+    AiPatchVerificationCommandRecord, AiPatchVerificationStatus, AiSelfUpgradeAuditError,
+    AiSelfUpgradeAuditRecord, AiSelfUpgradeAuditStatus, AiSelfUpgradeAuditStore,
+    AiSelfUpgradeAuditSummary, AiSelfUpgradeSummaryIndexEntry, AiSelfUpgradeSummaryRecord,
+    AiSelfUpgradeSummaryStatus, AiSelfUpgradeSummaryStore, AiSelfUpgradeSummaryStoreError,
+    apply_tools_to_plan, initialize_agent_tool_config, load_agent_tool_report,
 };
 use super::ai_provider::{
     AiConfigError, AiConfigReport, AiExecutionError, AiExecutionReport, AiProviderRegistry,
@@ -103,6 +103,31 @@ pub struct PreflightReport {
     pub candidate_checked_paths: Vec<PathBuf>,
     pub open_errors: Vec<ArchivedErrorEntry>,
     pub can_advance: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BranchCheckReport {
+    pub version: String,
+    pub current_branch: String,
+    pub base_branch: String,
+    pub on_base_branch: bool,
+    pub base_resolved: bool,
+    pub behind_base: Option<usize>,
+    pub ahead_of_base: Option<usize>,
+    pub changed_paths: Vec<String>,
+    pub unexpected_changes: Vec<String>,
+    pub queue_exists: bool,
+    pub queue_path: Option<PathBuf>,
+    pub queue_goal: Option<String>,
+    pub worker_id: Option<String>,
+    pub task_id: Option<String>,
+    pub task_status: Option<String>,
+    pub task_claimed_by: Option<String>,
+    pub task_matches_worker: Option<bool>,
+    pub task_matches_branch: Option<bool>,
+    pub blockers: Vec<String>,
+    pub warnings: Vec<String>,
+    pub can_write: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -326,6 +351,19 @@ pub enum MinimalLoopError {
     ErrorArchive(ErrorArchiveError),
     Memory(MemoryContextError),
     OpenErrors { version: String, run_id: String },
+}
+
+#[derive(Debug)]
+pub enum BranchCheckError {
+    GitSpawn {
+        args: Vec<String>,
+        source: io::Error,
+    },
+    GitCommand {
+        args: Vec<String>,
+        stderr: String,
+    },
+    WorkQueue(AgentWorkError),
 }
 
 #[derive(Debug)]
@@ -2853,6 +2891,183 @@ impl SelfForgeApp {
         AgentWorkCoordinator::new(&self.root).status(version)
     }
 
+    pub fn branch_check(
+        &self,
+        version: &str,
+        worker_id: Option<&str>,
+        task_id: Option<&str>,
+        base_branch: &str,
+    ) -> Result<BranchCheckReport, BranchCheckError> {
+        let current_branch = git_required(&self.root, &["branch", "--show-current"])?;
+        let current_branch = if current_branch.trim().is_empty() {
+            git_required(&self.root, &["rev-parse", "--short", "HEAD"])?
+        } else {
+            current_branch
+        };
+        let current_branch = current_branch.trim().to_string();
+        let base_branch = normalize_branch_check_base(base_branch);
+        let changed_paths = git_status_paths(&self.root)?;
+
+        let queue_report = match AgentWorkCoordinator::new(&self.root).status(version) {
+            Ok(report) => Some(report),
+            Err(AgentWorkError::MissingQueue { .. }) => None,
+            Err(error) => return Err(BranchCheckError::WorkQueue(error)),
+        };
+
+        let allowed_queue_path = queue_report
+            .as_ref()
+            .map(|report| normalize_path_relative_to(&report.queue_path, &self.root));
+        let unexpected_changes = changed_paths
+            .iter()
+            .filter(|path| {
+                allowed_queue_path
+                    .as_deref()
+                    .map(|allowed| normalize_status_path(path) != allowed)
+                    .unwrap_or(true)
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+
+        let base_resolved = git_success(&self.root, &["rev-parse", "--verify", &base_branch])?;
+        let (behind_base, ahead_of_base) = if base_resolved {
+            parse_branch_distance(&git_required(
+                &self.root,
+                &[
+                    "rev-list",
+                    "--left-right",
+                    "--count",
+                    &format!("{base_branch}...HEAD"),
+                ],
+            )?)
+        } else {
+            (None, None)
+        };
+
+        let mut blockers = Vec::new();
+        let mut warnings = Vec::new();
+        let on_base_branch = current_branch == base_branch;
+        if on_base_branch {
+            blockers.push(format!("当前分支是基础分支 {base_branch}，禁止直接写入"));
+        }
+        if !base_resolved {
+            blockers.push(format!("基础分支 {base_branch} 无法解析"));
+        }
+        if let Some(behind) = behind_base {
+            if behind > 0 {
+                blockers.push(format!(
+                    "当前分支落后基础分支 {base_branch} {behind} 个提交"
+                ));
+            }
+        }
+        if !unexpected_changes.is_empty() {
+            blockers.push(format!(
+                "存在 {} 个非任务板未提交改动",
+                unexpected_changes.len()
+            ));
+        }
+        if queue_report.is_none() {
+            let message = format!("版本 {version} 没有协作任务板");
+            if task_id.is_some() || worker_id.is_some() {
+                blockers.push(message);
+            } else {
+                warnings.push(message);
+            }
+        }
+
+        let mut task_status = None;
+        let mut task_claimed_by = None;
+        let mut task_matches_worker = None;
+        let mut task_matches_branch = None;
+
+        if let Some(task_id) = task_id {
+            let Some(report) = queue_report.as_ref() else {
+                task_matches_worker = Some(false);
+                task_matches_branch = Some(false);
+                return Ok(BranchCheckReport {
+                    version: version.to_string(),
+                    current_branch,
+                    base_branch,
+                    on_base_branch,
+                    base_resolved,
+                    behind_base,
+                    ahead_of_base,
+                    changed_paths,
+                    unexpected_changes,
+                    queue_exists: false,
+                    queue_path: None,
+                    queue_goal: None,
+                    worker_id: worker_id.map(str::to_string),
+                    task_id: Some(task_id.to_string()),
+                    task_status,
+                    task_claimed_by,
+                    task_matches_worker,
+                    task_matches_branch,
+                    blockers,
+                    warnings,
+                    can_write: false,
+                });
+            };
+            if let Some(task) = report.queue.tasks.iter().find(|task| task.id == task_id) {
+                task_status = Some(task.status.to_string());
+                task_claimed_by = task.claimed_by.clone();
+                let branch_matches = current_branch.contains(task_id);
+                task_matches_branch = Some(branch_matches);
+                if !branch_matches {
+                    blockers.push(format!(
+                        "当前分支 {current_branch} 未包含任务编号 {task_id}"
+                    ));
+                }
+                if task.status != AgentWorkTaskStatus::Claimed {
+                    blockers.push(format!("任务 {task_id} 状态不是已领取"));
+                }
+                if let Some(worker_id) = worker_id {
+                    let matches_worker = task.claimed_by.as_deref() == Some(worker_id);
+                    task_matches_worker = Some(matches_worker);
+                    if !matches_worker {
+                        blockers.push(format!("任务 {task_id} 未被工作线程 {worker_id} 领取"));
+                    }
+                } else {
+                    warnings.push("未指定 --worker，无法校验任务持有线程".to_string());
+                }
+            } else {
+                task_matches_worker = Some(false);
+                task_matches_branch = Some(false);
+                blockers.push(format!("协作任务板中不存在任务 {task_id}"));
+            }
+        } else if worker_id.is_some() {
+            warnings.push("已指定 --worker 但未指定 --task，无法校验具体任务持有关系".to_string());
+        }
+
+        let can_write = blockers.is_empty();
+        Ok(BranchCheckReport {
+            version: version.to_string(),
+            current_branch,
+            base_branch,
+            on_base_branch,
+            base_resolved,
+            behind_base,
+            ahead_of_base,
+            changed_paths,
+            unexpected_changes,
+            queue_exists: queue_report.is_some(),
+            queue_path: queue_report
+                .as_ref()
+                .map(|report| report.queue_path.clone()),
+            queue_goal: queue_report
+                .as_ref()
+                .map(|report| report.queue.goal.clone()),
+            worker_id: worker_id.map(str::to_string),
+            task_id: task_id.map(str::to_string),
+            task_status,
+            task_claimed_by,
+            task_matches_worker,
+            task_matches_branch,
+            blockers,
+            warnings,
+            can_write,
+        })
+    }
+
     pub fn claim_agent_work(
         &self,
         version: &str,
@@ -5045,6 +5260,82 @@ fn command_output_preview(bytes: &[u8]) -> String {
     trimmed.chars().take(LIMIT).collect::<String>() + "..."
 }
 
+fn normalize_branch_check_base(base_branch: &str) -> String {
+    let trimmed = base_branch.trim();
+    if trimmed.is_empty() {
+        "master".to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+fn git_required(root: &Path, args: &[&str]) -> Result<String, BranchCheckError> {
+    let output = git_output(root, args)?;
+    if output.status.success() {
+        return Ok(String::from_utf8_lossy(&output.stdout).to_string());
+    }
+
+    Err(BranchCheckError::GitCommand {
+        args: args.iter().map(|arg| (*arg).to_string()).collect(),
+        stderr: String::from_utf8_lossy(&output.stderr).trim().to_string(),
+    })
+}
+
+fn git_success(root: &Path, args: &[&str]) -> Result<bool, BranchCheckError> {
+    Ok(git_output(root, args)?.status.success())
+}
+
+fn git_output(root: &Path, args: &[&str]) -> Result<std::process::Output, BranchCheckError> {
+    Command::new("git")
+        .args(args)
+        .current_dir(root)
+        .stdin(Stdio::null())
+        .output()
+        .map_err(|source| BranchCheckError::GitSpawn {
+            args: args.iter().map(|arg| (*arg).to_string()).collect(),
+            source,
+        })
+}
+
+fn git_status_paths(root: &Path) -> Result<Vec<String>, BranchCheckError> {
+    let output = git_required(root, &["status", "--porcelain", "--untracked-files=all"])?;
+    Ok(output
+        .lines()
+        .filter_map(|line| {
+            if line.chars().count() < 4 {
+                return None;
+            }
+            Some(line.chars().skip(3).collect::<String>().trim().to_string())
+        })
+        .collect())
+}
+
+fn normalize_git_path(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
+
+fn normalize_path_relative_to(path: &Path, root: &Path) -> String {
+    path.strip_prefix(root)
+        .map(normalize_git_path)
+        .unwrap_or_else(|_| normalize_git_path(path))
+}
+
+fn normalize_status_path(path: &str) -> String {
+    path.trim().replace('\\', "/")
+}
+
+fn parse_branch_distance(output: &str) -> (Option<usize>, Option<usize>) {
+    let parts = output.split_whitespace().collect::<Vec<_>>();
+    if parts.len() != 2 {
+        return (None, None);
+    }
+
+    (
+        parts[0].parse::<usize>().ok(),
+        parts[1].parse::<usize>().ok(),
+    )
+}
+
 fn current_unix_seconds() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -6370,6 +6661,40 @@ impl Error for MinimalLoopError {
             MinimalLoopError::ErrorArchive(error) => Some(error),
             MinimalLoopError::Memory(error) => Some(error),
             MinimalLoopError::OpenErrors { .. } => None,
+        }
+    }
+}
+
+impl fmt::Display for BranchCheckError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            BranchCheckError::GitSpawn { args, source } => {
+                write!(
+                    formatter,
+                    "执行 Git 命令失败 git {}：{}",
+                    args.join(" "),
+                    source
+                )
+            }
+            BranchCheckError::GitCommand { args, stderr } => {
+                write!(
+                    formatter,
+                    "Git 命令返回失败 git {}：{}",
+                    args.join(" "),
+                    stderr
+                )
+            }
+            BranchCheckError::WorkQueue(error) => write!(formatter, "读取协作任务板失败：{error}"),
+        }
+    }
+}
+
+impl Error for BranchCheckError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            BranchCheckError::GitSpawn { source, .. } => Some(source),
+            BranchCheckError::GitCommand { .. } => None,
+            BranchCheckError::WorkQueue(error) => Some(error),
         }
     }
 }

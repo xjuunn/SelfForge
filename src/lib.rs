@@ -76,11 +76,12 @@ pub use app::{
     AiSelfUpgradeAuditSummary, AiSelfUpgradeError, AiSelfUpgradePreview, AiSelfUpgradeReport,
     AiSelfUpgradeSummaryError, AiSelfUpgradeSummaryIndexEntry, AiSelfUpgradeSummaryRecord,
     AiSelfUpgradeSummaryReport, AiSelfUpgradeSummaryStatus, AiSelfUpgradeSummaryStore,
-    AiSelfUpgradeSummaryStoreError, AiTextResponse, ArchivedErrorEntry, ErrorArchive,
-    ErrorArchiveError, ErrorArchiveReport, ErrorListQuery, ErrorResolutionReport,
-    MemoryCompactionError, MemoryCompactionReport, MemoryContextEntry, MemoryContextError,
-    MemoryContextReport, MemoryInsight, MemoryInsightReport, MinimalLoopError, MinimalLoopOutcome,
-    MinimalLoopReport, PreflightReport, SelfForgeApp, normalize_ai_self_upgrade_goal,
+    AiSelfUpgradeSummaryStoreError, AiTextResponse, ArchivedErrorEntry, BranchCheckError,
+    BranchCheckReport, ErrorArchive, ErrorArchiveError, ErrorArchiveReport, ErrorListQuery,
+    ErrorResolutionReport, MemoryCompactionError, MemoryCompactionReport, MemoryContextEntry,
+    MemoryContextError, MemoryContextReport, MemoryInsight, MemoryInsightReport, MinimalLoopError,
+    MinimalLoopOutcome, MinimalLoopReport, PreflightReport, SelfForgeApp,
+    normalize_ai_self_upgrade_goal,
 };
 
 #[cfg(test)]

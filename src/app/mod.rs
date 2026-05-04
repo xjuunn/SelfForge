@@ -69,6 +69,7 @@ pub use minimal_loop::{
     AiPatchSourceTaskAuditReport, AiPatchSourceTaskDraftError, AiPatchSourceTaskDraftReport,
     AiPatchVerificationCommandSpec, AiPatchVerificationError, AiPatchVerificationReport,
     AiSelfUpgradeError, AiSelfUpgradePreview, AiSelfUpgradeReport, AiSelfUpgradeSummaryError,
-    AiSelfUpgradeSummaryReport, MinimalLoopError, MinimalLoopOutcome, MinimalLoopReport,
-    PreflightReport, SelfForgeApp, normalize_ai_self_upgrade_goal,
+    AiSelfUpgradeSummaryReport, BranchCheckError, BranchCheckReport, MinimalLoopError,
+    MinimalLoopOutcome, MinimalLoopReport, PreflightReport, SelfForgeApp,
+    normalize_ai_self_upgrade_goal,
 };
