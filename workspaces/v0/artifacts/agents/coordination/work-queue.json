@@ -4,7 +4,7 @@
   "thread_count": 3,
   "lease_duration_seconds": 3600,
   "created_at_unix_seconds": 1777889312,
-  "updated_at_unix_seconds": 1777900995,
+  "updated_at_unix_seconds": 1777902797,
   "conflict_policy": "同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。",
   "prompt_policy": "每个线程只执行领取到的任务，必须遵守写入范围、依赖关系、验收标准和归档规则。",
   "tasks": [
@@ -513,58 +513,82 @@
       "completed_at_unix_seconds": 1777900990,
       "result": "已完成 v0.1.67 最终收束准备：提升版本、同步测试期望、补充 v0 聚合归档，并通过格式化、完整测试、差异检查、validate、preflight 和开放错误查询。",
       "prompt": "已压缩：任务 coord-018-finalize-v067 已完成。完成摘要：已完成 v0.1.67 最终收束准备：提升版本、同步测试期望、补充 v0 聚合归档，并通过格式化、完整测试、差异检查、validate、preflight 和开放错误查询。。执行边界保留在 title、description、write_scope、acceptance 和 result 字段中。"
+    },
+    {
+      "id": "coord-019-status-branch-suggestions",
+      "title": "在任务板状态中显示建议分支名",
+      "description": "让 agent-work-status 对待领取或已领取任务显示基于任务编号的 codex/ 建议分支名，便于后续 AI 在创建分支前读取同一事实源。",
+      "preferred_agent_id": "builder",
+      "priority": 25,
+      "depends_on": [
+        "coord-018-finalize-v067"
+      ],
+      "write_scope": [
+        "src/main.rs",
+        "src/tests/agent_core.rs",
+        "README.md",
+        "forge/architecture/agent-rules/git-pr.md",
+        "forge/tasks/v0.md",
+        "forge/memory/v0.md",
+        "forge/errors/v0.md",
+        "forge/versions/v0.md",
+        "workspaces/v0/artifacts/agents/coordination/"
+      ],
+      "acceptance": [
+        "agent-work-status 必须对 Pending 和 Claimed 任务显示建议分支名。",
+        "建议分支名必须来自结构化任务编号，格式为 codex/<task-id-slug>。",
+        "已完成和已阻断任务不需要显示建议分支名。",
+        "命令保持只读，不创建分支，不修改任务板。",
+        "必须补充测试、README 和 v0 聚合归档。"
+      ],
+      "status": "Completed",
+      "claimed_by": "ai-1",
+      "claimed_at_unix_seconds": 1777901387,
+      "completed_at_unix_seconds": 1777901610,
+      "result": "已让 agent-work-status 对待领取和已领取任务显示基于任务编号的 codex/ 建议分支名，保持只读，并补充 CLI 单元测试、README、Git/PR 规则和 v0 聚合归档。",
+      "prompt": "已压缩：任务 coord-019-status-branch-suggestions 已完成。完成摘要：已让 agent-work-status 对待领取和已领取任务显示基于任务编号的 codex/ 建议分支名，保持只读，并补充 CLI 单元测试、README、Git/PR 规则和 v0 聚合归档。。执行边界保留在 title、description、write_scope、acceptance 和 result 字段中。"
+    },
+    {
+      "id": "coord-020-finalize-v068",
+      "title": "最终收束并提升 v0.1.68",
+      "description": "将任务板状态建议分支名功能收束为 v0.1.68，更新版本、测试期望、归档，统一 push 并创建 Pull Request。",
+      "preferred_agent_id": "archivist",
+      "priority": 26,
+      "depends_on": [
+        "coord-019-status-branch-suggestions"
+      ],
+      "write_scope": [
+        "Cargo.toml",
+        "Cargo.lock",
+        "README.md",
+        "src/lib.rs",
+        "state/state.json",
+        "src/tests/app_loop.rs",
+        "src/tests/layout_version.rs",
+        "src/tests/agent_core.rs",
+        "src/tests/patch_draft_flow.rs",
+        "forge/tasks/v0.md",
+        "forge/memory/v0.md",
+        "forge/errors/v0.md",
+        "forge/versions/v0.md",
+        "workspaces/v0/artifacts/agents/coordination/"
+      ],
+      "acceptance": [
+        "版本只在最终 PR 收束阶段从 v0.1.67 提升到 v0.1.68。",
+        "最终提交信息和 PR 标题必须携带 v0.1.68。",
+        "PR 正文必须关联 Refs #1 和 https://github.com/xjuunn/SelfForge/issues/1。",
+        "完成前必须运行格式化、完整测试、validate、preflight、开放错误检查和收束检查。",
+        "统一 push 一次并创建 Pull Request。"
+      ],
+      "status": "Completed",
+      "claimed_by": "ai-1",
+      "claimed_at_unix_seconds": 1777901634,
+      "completed_at_unix_seconds": 1777902794,
+      "result": "已完成 v0.1.68 最终收束准备：提升版本、同步测试期望、补充 v0 聚合归档，并通过 cargo fmt --check、cargo test、git diff --check、validate、preflight 和开放错误查询。",
+      "prompt": "已压缩：任务 coord-020-finalize-v068 已完成。完成摘要：已完成 v0.1.68 最终收束准备：提升版本、同步测试期望、补充 v0 聚合归档，并通过 cargo fmt --check、cargo test、git diff --check、validate、preflight 和开放错误查询。。执行边界保留在 title、description、write_scope、acceptance 和 result 字段中。"
     }
   ],
   "events": [
-    {
-      "order": 118,
-      "timestamp_unix_seconds": 1777895315,
-      "action": "retarget",
-      "message": "协作队列已复用到版本 v0.1.66。"
-    },
-    {
-      "order": 119,
-      "timestamp_unix_seconds": 1777924224,
-      "action": "retarget",
-      "task_id": "coord-014-finalize-pr",
-      "message": "最终收束验证发现测试夹具版本期望需要随 v0.1.66 同步更新，已将相关测试文件纳入当前任务写入范围。"
-    },
-    {
-      "order": 120,
-      "timestamp_unix_seconds": 1777895531,
-      "action": "complete",
-      "worker_id": "ai-1",
-      "task_id": "coord-014-finalize-pr",
-      "message": "已完成 v0.1.66 最终收束：版本提升、测试夹具同步、v0 聚合归档、完整本地验证，准备统一 push 并创建 PR。"
-    },
-    {
-      "order": 121,
-      "timestamp_unix_seconds": 1777895539,
-      "action": "compact",
-      "message": "协作任务板已压缩：压缩已完成任务提示词 1 个，移除旧事件 6 条，压缩前事件 26 条。"
-    },
-    {
-      "order": 122,
-      "timestamp_unix_seconds": 1777924669,
-      "action": "retarget",
-      "message": "协作队列追加终态任务板重开修复任务，处理 Completed 和 Blocked 混合终态无法重开的问题。"
-    },
-    {
-      "order": 123,
-      "timestamp_unix_seconds": 1777895872,
-      "action": "claim",
-      "worker_id": "ai-1",
-      "task_id": "coord-015-terminal-queue-reset",
-      "message": "任务已被工作线程领取。"
-    },
-    {
-      "order": 124,
-      "timestamp_unix_seconds": 1777896100,
-      "action": "complete",
-      "worker_id": "ai-1",
-      "task_id": "coord-015-terminal-queue-reset",
-      "message": "已修复终态任务板重开判断：Completed 和 Blocked 混合终态可通过 --reset-completed 重开，Pending 或 Claimed 活跃任务仍拒绝重开，并补充测试、文档和归档。"
-    },
     {
       "order": 125,
       "timestamp_unix_seconds": 1777896106,
@@ -662,6 +686,58 @@
       "timestamp_unix_seconds": 1777900995,
       "action": "compact",
       "message": "协作任务板已压缩：压缩已完成任务提示词 1 个，移除旧事件 5 条，压缩前事件 25 条。"
+    },
+    {
+      "order": 139,
+      "timestamp_unix_seconds": 1777901382,
+      "action": "retarget",
+      "task_id": "coord-019-status-branch-suggestions",
+      "message": "协作队列追加任务板状态建议分支名显示任务。"
+    },
+    {
+      "order": 140,
+      "timestamp_unix_seconds": 1777901387,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-019-status-branch-suggestions",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 141,
+      "timestamp_unix_seconds": 1777901610,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-019-status-branch-suggestions",
+      "message": "已让 agent-work-status 对待领取和已领取任务显示基于任务编号的 codex/ 建议分支名，保持只读，并补充 CLI 单元测试、README、Git/PR 规则和 v0 聚合归档。"
+    },
+    {
+      "order": 142,
+      "timestamp_unix_seconds": 1777901629,
+      "action": "retarget",
+      "task_id": "coord-020-finalize-v068",
+      "message": "协作队列追加 v0.1.68 最终收束、统一 push 和 PR 创建任务。"
+    },
+    {
+      "order": 143,
+      "timestamp_unix_seconds": 1777901634,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-020-finalize-v068",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 144,
+      "timestamp_unix_seconds": 1777902794,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-020-finalize-v068",
+      "message": "已完成 v0.1.68 最终收束准备：提升版本、同步测试期望、补充 v0 聚合归档，并通过 cargo fmt --check、cargo test、git diff --check、validate、preflight 和开放错误查询。"
+    },
+    {
+      "order": 145,
+      "timestamp_unix_seconds": 1777902797,
+      "action": "compact",
+      "message": "协作任务板已压缩：压缩已完成任务提示词 2 个，移除旧事件 7 条，压缩前事件 27 条。"
     }
   ]
 }

@@ -1020,6 +1020,9 @@ fn append_agent_work_queue_lines(lines: &mut Vec<String>, report: &AgentWorkQueu
             task.id,
             format_agent_work_lease(task)
         ));
+        if let Some(branch) = agent_work_status_branch_suggestion(&task.id, task.status) {
+            lines.push(format!("任务 {} 建议分支 {}", task.id, branch));
+        }
     }
 }
 
@@ -1051,6 +1054,39 @@ fn format_agent_work_lease(task: &self_forge::AgentWorkTask) -> String {
             }
         }
         None => "无".to_string(),
+    }
+}
+
+fn agent_work_status_branch_suggestion(
+    task_id: &str,
+    status: AgentWorkTaskStatus,
+) -> Option<String> {
+    if !matches!(
+        status,
+        AgentWorkTaskStatus::Pending | AgentWorkTaskStatus::Claimed
+    ) {
+        return None;
+    }
+    Some(branch_name_for_task_id(task_id))
+}
+
+fn branch_name_for_task_id(task_id: &str) -> String {
+    let mut slug = String::new();
+    let mut last_dash = false;
+    for ch in task_id.chars().flat_map(|ch| ch.to_lowercase()) {
+        if ch.is_ascii_alphanumeric() {
+            slug.push(ch);
+            last_dash = false;
+        } else if !last_dash {
+            slug.push('-');
+            last_dash = true;
+        }
+    }
+    let slug = slug.trim_matches('-');
+    if slug.is_empty() {
+        "codex/task".to_string()
+    } else {
+        format!("codex/{slug}")
     }
 }
 
@@ -7079,4 +7115,75 @@ where
     E: Error + 'static,
 {
     result.map_err(|error| Box::new(error) as Box<dyn Error>)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use self_forge::{AgentWorkQueue, AgentWorkTask};
+
+    #[test]
+    fn agent_work_status_suggests_branches_for_active_tasks_only() {
+        let report = AgentWorkQueueReport {
+            version: "v0.1.67".to_string(),
+            queue_path: std::path::PathBuf::from("work-queue.json"),
+            created: false,
+            queue: AgentWorkQueue {
+                version: "v0.1.67".to_string(),
+                goal: "验证建议分支".to_string(),
+                thread_count: 1,
+                lease_duration_seconds: 3600,
+                created_at_unix_seconds: 1,
+                updated_at_unix_seconds: 1,
+                conflict_policy: "无冲突".to_string(),
+                prompt_policy: "无".to_string(),
+                tasks: vec![
+                    test_work_task("coord-020-new-task", AgentWorkTaskStatus::Pending),
+                    test_work_task("coord-021-claimed-task", AgentWorkTaskStatus::Claimed),
+                    test_work_task("coord-022-done-task", AgentWorkTaskStatus::Completed),
+                    test_work_task("coord-023-blocked-task", AgentWorkTaskStatus::Blocked),
+                ],
+                events: Vec::new(),
+            },
+        };
+        let mut lines = Vec::new();
+
+        append_agent_work_queue_lines(&mut lines, &report);
+        let output = lines.join("\n");
+
+        assert!(output.contains("任务 coord-020-new-task 建议分支 codex/coord-020-new-task"));
+        assert!(
+            output.contains("任务 coord-021-claimed-task 建议分支 codex/coord-021-claimed-task")
+        );
+        assert!(!output.contains("任务 coord-022-done-task 建议分支"));
+        assert!(!output.contains("任务 coord-023-blocked-task 建议分支"));
+    }
+
+    #[test]
+    fn branch_name_for_task_id_sanitizes_non_ascii_text() {
+        assert_eq!(
+            branch_name_for_task_id("任务/coord 024:Status"),
+            "codex/coord-024-status"
+        );
+    }
+
+    fn test_work_task(id: &str, status: AgentWorkTaskStatus) -> AgentWorkTask {
+        AgentWorkTask {
+            id: id.to_string(),
+            title: id.to_string(),
+            description: "测试任务".to_string(),
+            preferred_agent_id: "builder".to_string(),
+            priority: 1,
+            depends_on: Vec::new(),
+            write_scope: Vec::new(),
+            acceptance: Vec::new(),
+            status,
+            claimed_by: (status == AgentWorkTaskStatus::Claimed).then(|| "ai-1".to_string()),
+            claimed_at_unix_seconds: None,
+            lease_expires_at_unix_seconds: None,
+            completed_at_unix_seconds: None,
+            result: None,
+            prompt: "测试提示".to_string(),
+        }
+    }
 }
