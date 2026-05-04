@@ -4,7 +4,7 @@
   "thread_count": 3,
   "lease_duration_seconds": 3600,
   "created_at_unix_seconds": 1777630213,
-  "updated_at_unix_seconds": 1777648992,
+  "updated_at_unix_seconds": 1777884651,
   "conflict_policy": "同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。",
   "prompt_policy": "每个线程只执行领取到的任务，必须遵守写入范围、依赖关系、验收标准和归档规则。",
   "tasks": [
@@ -43,9 +43,12 @@
         "队列必须写入 major 工作区 artifacts/agents/coordination。",
         "领取必须防止重复任务和写入范围冲突。"
       ],
-      "status": "Pending",
-      "result": "真实租约过期验证",
-      "prompt": "你是 SelfForge 多 AI 协作任务的候选执行者。\n\n全局目标：多 AI 协作修改代码\n任务编号：coord-002-application\n任务标题：实现应用层协作队列\n职责 Agent：builder\n\n任务描述：实现任务板持久化、领取、完成、释放和冲突检测。\n\n写入范围：src/app/agent/，src/app/minimal_loop.rs，src/app/mod.rs\n\n验收标准：队列必须写入 major 工作区 artifacts/agents/coordination；领取必须防止重复任务和写入范围冲突\n\n协作规则：先领取任务，再修改代码；只处理领取到的任务；不得修改其他任务的写入范围；发现冲突时释放任务并记录原因。"
+      "status": "Completed",
+      "claimed_by": "ai-1",
+      "claimed_at_unix_seconds": 1777884459,
+      "completed_at_unix_seconds": 1777884651,
+      "result": "已将协作队列模型、报告和错误类型拆分到独立 model 子模块，并通过完整测试验证。",
+      "prompt": "你是 SelfForge 多 AI 协作线程 `ai-1`。\n\n全局目标：多 AI 协作修改代码\n当前任务：coord-002-application - 实现应用层协作队列\n职责 Agent：builder\n任务说明：实现任务板持久化、领取、完成、释放和冲突检测。\n\n必须遵守：\n1. 只完成当前已领取任务，禁止重复实现其他任务。\n2. 只修改写入范围：src/app/agent/，src/app/minimal_loop.rs，src/app/mod.rs。\n3. 依赖任务：无。\n4. 验收标准：队列必须写入 major 工作区 artifacts/agents/coordination；领取必须防止重复任务和写入范围冲突。\n5. 租约到期时间 unix:1777891659，无法继续时必须主动释放任务。\n6. 如发现写入范围冲突、依赖缺失或无法完成，执行 `agent-work-release coord-002-application --worker ai-1 --reason 原因`。\n7. 完成后执行必要测试，并执行 `agent-work-complete coord-002-application --worker ai-1 --summary 摘要`。\n\n当前仍可领取任务：coord-001-architecture，coord-003-cli。\n冲突策略：同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。"
     },
     {
       "id": "coord-003-cli",
@@ -295,6 +298,22 @@
       "timestamp_unix_seconds": 1777648992,
       "action": "retarget",
       "message": "协作队列已复用到版本 v0.1.65。"
+    },
+    {
+      "order": 30,
+      "timestamp_unix_seconds": 1777884459,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-002-application",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 31,
+      "timestamp_unix_seconds": 1777884651,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-002-application",
+      "message": "已将协作队列模型、报告和错误类型拆分到独立 model 子模块，并通过完整测试验证。"
     }
   ]
 }
