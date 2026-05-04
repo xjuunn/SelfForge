@@ -94,3 +94,11 @@ agent-work-block TASK_ID --reason TEXT
 4. 会话必须保存计划上下文和事件时间线。
 5. 步进执行使用 `agent-step SESSION_ID`，多步执行使用 `agent-steps SESSION_ID`。
 6. 真实程序验证优先使用 `agent-verify` 或 `agent-run`。
+
+# 自我进化循环
+
+1. 一键自我进化使用 `agent-self-loop`，默认必须有最大轮次和最大连续失败限制。
+2. 循环记录写入 `workspaces/vMAJOR/artifacts/agents/self-evolution-loops/`，禁止只保存在进程内存。
+3. 循环必须复用 `agent-self-upgrade`、`preflight`、记忆经验、错误归档、Runtime 和版本状态机。
+4. 进程崩溃后使用 `agent-self-loop --resume` 恢复最近未完成循环；恢复时必须把上次运行中的步骤标记为失败。
+5. 禁止声称绝对不会崩溃；工程目标是失败可记录、崩溃可恢复、循环可停止。

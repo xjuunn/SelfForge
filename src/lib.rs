@@ -81,8 +81,10 @@ pub use app::{
     BranchCheckReport, ErrorArchive, ErrorArchiveError, ErrorArchiveReport, ErrorListQuery,
     ErrorResolutionReport, MemoryCompactionError, MemoryCompactionReport, MemoryContextEntry,
     MemoryContextError, MemoryContextReport, MemoryInsight, MemoryInsightReport, MinimalLoopError,
-    MinimalLoopOutcome, MinimalLoopReport, PreflightReport, SelfForgeApp,
-    normalize_ai_self_upgrade_goal,
+    MinimalLoopOutcome, MinimalLoopReport, PreflightReport, SelfEvolutionLoopError,
+    SelfEvolutionLoopRecord, SelfEvolutionLoopReport, SelfEvolutionLoopRequest,
+    SelfEvolutionLoopStatus, SelfEvolutionLoopStepRecord, SelfEvolutionLoopStepStatus,
+    SelfForgeApp, normalize_ai_self_upgrade_goal,
 };
 
 #[cfg(test)]

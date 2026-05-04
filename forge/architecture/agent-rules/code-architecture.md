@@ -12,5 +12,6 @@
 
 1. 应用用例进入 `src/app/`。
 2. CLI 展示辅助进入 `src/cli/`。
-3. Runtime、Supervisor、State、Version 保持各自职责。
-4. 结构化数据优先使用类型和解析器，禁止脆弱字符串拼接替代领域模型。
+3. 长循环和自主编排必须进入应用层独立模块，CLI 只保留参数解析和输出格式化。
+4. Runtime、Supervisor、State、Version 保持各自职责。
+5. 结构化数据优先使用类型和解析器，禁止脆弱字符串拼接替代领域模型。

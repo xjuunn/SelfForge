@@ -52,6 +52,8 @@ cargo run -- agent-patch-source-cycle-summary CYCLE_RECORD_ID
 cargo run -- agent-patch-source-task-draft SUMMARY_RECORD_ID
 cargo run -- agent-patch-source-task-audit TASK_DRAFT_ID
 cargo run -- agent-self-upgrade "目标提示"
+cargo run -- agent-self-loop --max-cycles 1 --max-failures 1 "目标提示"
+cargo run -- agent-self-loop --resume
 cargo run -- advance "目标"
 cargo run -- cycle
 cargo run -- errors --current --open

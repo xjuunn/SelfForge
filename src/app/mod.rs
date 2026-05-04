@@ -3,6 +3,7 @@ mod ai_provider;
 mod error_archive;
 mod memory;
 mod minimal_loop;
+mod self_evolution_loop;
 
 pub use agent::{
     AgentCapability, AgentDefinition, AgentError, AgentPlan, AgentPlanStep, AgentRegistry,
@@ -72,4 +73,9 @@ pub use minimal_loop::{
     AiSelfUpgradeReport, AiSelfUpgradeSummaryError, AiSelfUpgradeSummaryReport, BranchCheckError,
     BranchCheckReport, MinimalLoopError, MinimalLoopOutcome, MinimalLoopReport, PreflightReport,
     SelfForgeApp, normalize_ai_self_upgrade_goal,
+};
+pub use self_evolution_loop::{
+    SelfEvolutionLoopError, SelfEvolutionLoopRecord, SelfEvolutionLoopReport,
+    SelfEvolutionLoopRequest, SelfEvolutionLoopStatus, SelfEvolutionLoopStepRecord,
+    SelfEvolutionLoopStepStatus,
 };

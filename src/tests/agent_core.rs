@@ -855,6 +855,46 @@ fn agent_work_reset_completed_allows_blocked_terminal_tasks() {
 }
 
 #[test]
+fn self_evolution_loop_records_failed_cycle_without_crashing() {
+    let root = temp_root("self-loop-failed-cycle");
+    let app = SelfForgeApp::new(&root);
+    app.supervisor()
+        .initialize_current_version()
+        .expect("bootstrap should succeed before self loop");
+
+    let report = app
+        .run_self_evolution_loop_with_executor(
+            SelfEvolutionLoopRequest {
+                hint: "保持小步进化".to_string(),
+                max_cycles: 2,
+                max_failures: 1,
+                timeout_ms: 1000,
+                resume: false,
+            },
+            |_app, _hint, _timeout_ms| {
+                Err(AiSelfUpgradeError::EmptyGoal {
+                    response_preview: "空响应".to_string(),
+                })
+            },
+        )
+        .expect("self loop should record controlled failures instead of crashing");
+
+    assert_eq!(report.record.status, SelfEvolutionLoopStatus::Stopped);
+    assert_eq!(report.record.completed_cycles, 0);
+    assert_eq!(report.record.failed_cycles, 1);
+    assert_eq!(report.record.consecutive_failures, 1);
+    assert_eq!(report.record.steps.len(), 1);
+    assert_eq!(
+        report.record.steps[0].status,
+        SelfEvolutionLoopStepStatus::Failed
+    );
+    assert!(report.record.file.exists());
+    assert!(report.index_file.exists());
+
+    cleanup(&root);
+}
+
+#[test]
 fn agent_work_reset_completed_rejects_active_tasks() {
     let root = temp_root("agent-work-reset-active");
     let app = SelfForgeApp::new(&root);
