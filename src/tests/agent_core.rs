@@ -2667,7 +2667,7 @@ fn agent_advance_prepares_candidate_and_completes_session() {
     assert_eq!(report.minimal_loop.stable_version, CURRENT_VERSION);
     assert_eq!(
         report.minimal_loop.candidate_version.as_deref(),
-        Some("v0.1.72")
+        Some("v0.1.73")
     );
     assert_eq!(report.session.status, AgentSessionStatus::Completed);
     assert!(
@@ -2680,7 +2680,7 @@ fn agent_advance_prepares_candidate_and_completes_session() {
 
     let state = ForgeState::load(&root).expect("state should remain readable");
     assert_eq!(state.current_version, CURRENT_VERSION);
-    assert_eq!(state.candidate_version.as_deref(), Some("v0.1.72"));
+    assert_eq!(state.candidate_version.as_deref(), Some("v0.1.73"));
     let sessions = app
         .agent_sessions(CURRENT_VERSION, 10)
         .expect("completed agent session should be listed");
@@ -2711,16 +2711,16 @@ fn agent_advance_promotes_existing_candidate_and_prepares_next() {
         MinimalLoopOutcome::PromotedAndPrepared
     );
     assert_eq!(report.minimal_loop.starting_version, CURRENT_VERSION);
-    assert_eq!(report.minimal_loop.stable_version, "v0.1.72");
+    assert_eq!(report.minimal_loop.stable_version, "v0.1.73");
     assert_eq!(
         report.minimal_loop.candidate_version.as_deref(),
-        Some("v0.1.73")
+        Some("v0.1.74")
     );
     assert_eq!(report.session.status, AgentSessionStatus::Completed);
 
     let state = ForgeState::load(&root).expect("state should remain readable");
-    assert_eq!(state.current_version, "v0.1.72");
-    assert_eq!(state.candidate_version.as_deref(), Some("v0.1.73"));
+    assert_eq!(state.current_version, "v0.1.73");
+    assert_eq!(state.candidate_version.as_deref(), Some("v0.1.74"));
 
     cleanup(&root);
 }
@@ -2802,12 +2802,12 @@ fn agent_evolve_prepares_candidate_runs_cycle_and_completes_session() {
 
     assert_eq!(
         report.prepared_candidate_version.as_deref(),
-        Some("v0.1.72")
+        Some("v0.1.73")
     );
     assert_eq!(report.cycle.previous_version, CURRENT_VERSION);
-    assert_eq!(report.cycle.candidate_version, "v0.1.72");
+    assert_eq!(report.cycle.candidate_version, "v0.1.73");
     assert_eq!(report.cycle.result, CycleResult::Promoted);
-    assert_eq!(report.cycle.state.current_version, "v0.1.72");
+    assert_eq!(report.cycle.state.current_version, "v0.1.73");
     assert_eq!(report.cycle.state.candidate_version, None);
     assert!(report.memory_compaction.is_some());
     assert_eq!(report.session.status, AgentSessionStatus::Completed);
@@ -2838,7 +2838,7 @@ fn agent_evolve_prepares_candidate_runs_cycle_and_completes_session() {
     );
 
     let state = ForgeState::load(&root).expect("state should remain readable");
-    assert_eq!(state.current_version, "v0.1.72");
+    assert_eq!(state.current_version, "v0.1.73");
     assert_eq!(state.candidate_version, None);
     let sessions = app
         .agent_sessions(CURRENT_VERSION, 10)
@@ -2862,10 +2862,10 @@ fn agent_session_list_all_major_finds_evolve_session_after_promotion() {
         .agent_evolve("提升后仍可审计 Agent 会话")
         .expect("agent evolve should promote a candidate");
 
-    assert_eq!(report.cycle.state.current_version, "v0.1.72");
+    assert_eq!(report.cycle.state.current_version, "v0.1.73");
 
     let promoted_version_only = app
-        .agent_sessions("v0.1.72", 10)
+        .agent_sessions("v0.1.73", 10)
         .expect("promoted version scoped session list should be readable");
     assert!(
         promoted_version_only.is_empty(),
@@ -2873,7 +2873,7 @@ fn agent_session_list_all_major_finds_evolve_session_after_promotion() {
     );
 
     let all = app
-        .agent_sessions_all("v0.1.72", 10)
+        .agent_sessions_all("v0.1.73", 10)
         .expect("all major session list should find previous patch session");
     assert_eq!(all.len(), 1);
     assert_eq!(all[0].id, report.session.id);
@@ -2901,9 +2901,9 @@ fn agent_evolve_cycles_existing_candidate_without_preparing_another() {
 
     assert_eq!(report.prepared_candidate_version, None);
     assert_eq!(report.cycle.previous_version, CURRENT_VERSION);
-    assert_eq!(report.cycle.candidate_version, "v0.1.72");
+    assert_eq!(report.cycle.candidate_version, "v0.1.73");
     assert_eq!(report.cycle.result, CycleResult::Promoted);
-    assert_eq!(report.cycle.state.current_version, "v0.1.72");
+    assert_eq!(report.cycle.state.current_version, "v0.1.73");
     assert_eq!(report.cycle.state.candidate_version, None);
     assert_eq!(report.session.status, AgentSessionStatus::Completed);
 
