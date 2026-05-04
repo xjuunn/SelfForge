@@ -360,6 +360,19 @@ fn builtin_tools() -> Vec<AgentToolDefinition> {
             vec!["architect", "archivist"],
         ),
         AgentToolDefinition::builtin(
+            "code.list",
+            "项目文件列表",
+            "列出项目根目录内的文件，跳过 target 和 .git，并返回有限结果。",
+            "code",
+            vec![
+                AgentCapability::Architecture,
+                AgentCapability::Implementation,
+                AgentCapability::Review,
+                AgentCapability::Testing,
+            ],
+            vec!["architect", "builder", "verifier", "reviewer"],
+        ),
+        AgentToolDefinition::builtin(
             "code.search",
             "项目代码搜索",
             "在项目根目录内搜索文本，跳过 target 和 .git，并返回有限匹配。",

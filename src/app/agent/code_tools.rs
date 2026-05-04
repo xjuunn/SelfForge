@@ -33,6 +33,20 @@ pub struct AgentCodeSearchMatch {
     pub preview: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentCodeListReport {
+    pub path: String,
+    pub file_count: usize,
+    pub truncated: bool,
+    pub files: Vec<AgentCodeListEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentCodeListEntry {
+    pub path: String,
+    pub bytes: u64,
+}
+
 #[derive(Debug)]
 pub enum AgentCodeToolError {
     EmptyQuery,
@@ -57,6 +71,9 @@ pub fn read_project_code_file(
     let root = root.as_ref();
     let relative = path.as_ref();
     let resolved = resolve_project_path(root, relative)?;
+    if is_sensitive_local_env_file(&resolved) {
+        return Err(AgentCodeToolError::InvalidPath { path: resolved });
+    }
     let max_bytes = bounded_read_bytes(max_bytes);
     let (content, bytes_read, truncated) = read_text_prefix(&resolved, max_bytes)?;
 
@@ -102,6 +119,55 @@ pub fn search_project_code(
     })
 }
 
+pub fn list_project_code_files(
+    root: impl AsRef<Path>,
+    path: impl AsRef<str>,
+    limit: usize,
+) -> Result<AgentCodeListReport, AgentCodeToolError> {
+    let root = root.as_ref();
+    let requested = path.as_ref();
+    let resolved = resolve_project_path(root, requested)?;
+    let limit = bounded_search_limit(limit);
+    let mut files = Vec::new();
+    let mut total_file_count = 0;
+    let mut truncated = false;
+
+    if resolved.is_file() {
+        if is_sensitive_local_env_file(&resolved) {
+            return Err(AgentCodeToolError::InvalidPath { path: resolved });
+        }
+        let metadata = fs::metadata(&resolved).map_err(|source| AgentCodeToolError::Io {
+            path: resolved.clone(),
+            source,
+        })?;
+        total_file_count = 1;
+        files.push(AgentCodeListEntry {
+            path: relative_path(root, &resolved),
+            bytes: metadata.len(),
+        });
+    } else {
+        collect_files(root, &resolved, &mut |path, metadata| {
+            total_file_count += 1;
+            if files.len() < limit {
+                files.push(AgentCodeListEntry {
+                    path: relative_path(root, path),
+                    bytes: metadata.len(),
+                });
+            } else {
+                truncated = true;
+            }
+            Ok(())
+        })?;
+    }
+
+    Ok(AgentCodeListReport {
+        path: relative_path(root, &resolved),
+        file_count: total_file_count,
+        truncated,
+        files,
+    })
+}
+
 fn search_directory(
     root: &Path,
     directory: &Path,
@@ -115,6 +181,22 @@ fn search_directory(
         return Ok(());
     }
 
+    collect_files(root, directory, &mut |path, _metadata| {
+        if matches.len() < limit {
+            *scanned_file_count += 1;
+            search_file(root, &path, query, limit, matched_files, matches);
+        }
+        Ok(())
+    })?;
+
+    Ok(())
+}
+
+fn collect_files(
+    root: &Path,
+    directory: &Path,
+    visitor: &mut dyn FnMut(&Path, &fs::Metadata) -> Result<(), AgentCodeToolError>,
+) -> Result<(), AgentCodeToolError> {
     let mut entries = fs::read_dir(directory)
         .map_err(|source| AgentCodeToolError::Io {
             path: directory.to_path_buf(),
@@ -128,9 +210,6 @@ fn search_directory(
     entries.sort_by_key(|entry| entry.path());
 
     for entry in entries {
-        if matches.len() >= limit {
-            break;
-        }
         let path = entry.path();
         let file_type = entry.file_type().map_err(|source| AgentCodeToolError::Io {
             path: path.clone(),
@@ -140,18 +219,18 @@ fn search_directory(
             if should_skip_directory(&path) {
                 continue;
             }
-            search_directory(
-                root,
-                &path,
-                query,
-                limit,
-                scanned_file_count,
-                matched_files,
-                matches,
-            )?;
+            collect_files(root, &path, visitor)?;
         } else if file_type.is_file() {
-            *scanned_file_count += 1;
-            search_file(root, &path, query, limit, matched_files, matches);
+            let metadata = entry.metadata().map_err(|source| AgentCodeToolError::Io {
+                path: path.clone(),
+                source,
+            })?;
+            if path.starts_with(root) {
+                if should_skip_file(&path) {
+                    continue;
+                }
+                visitor(&path, &metadata)?;
+            }
         }
     }
 
@@ -245,6 +324,16 @@ fn should_skip_directory(path: &Path) -> bool {
     path.file_name()
         .and_then(|name| name.to_str())
         .is_some_and(|name| matches!(name, ".git" | "target"))
+}
+
+fn should_skip_file(path: &Path) -> bool {
+    is_sensitive_local_env_file(path)
+}
+
+fn is_sensitive_local_env_file(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name == ".env" || (name.starts_with(".env.") && name != ".env.example"))
 }
 
 fn bounded_read_bytes(value: usize) -> usize {

@@ -22,8 +22,9 @@ mod tools;
 mod types;
 
 pub use code_tools::{
-    AgentCodeReadReport, AgentCodeSearchMatch, AgentCodeSearchReport, AgentCodeToolError,
-    read_project_code_file, search_project_code,
+    AgentCodeListEntry, AgentCodeListReport, AgentCodeReadReport, AgentCodeSearchMatch,
+    AgentCodeSearchReport, AgentCodeToolError, list_project_code_files, read_project_code_file,
+    search_project_code,
 };
 pub use coordination::{
     AgentWorkClaimReport, AgentWorkCompactionReport, AgentWorkCoordinator, AgentWorkError,

@@ -37,8 +37,9 @@ use super::agent::{
     AiSelfUpgradeAuditStore, AiSelfUpgradeAuditSummary, AiSelfUpgradeSummaryIndexEntry,
     AiSelfUpgradeSummaryRecord, AiSelfUpgradeSummaryStatus, AiSelfUpgradeSummaryStore,
     AiSelfUpgradeSummaryStoreError, apply_tools_to_plan, format_agent_skill_context,
-    initialize_agent_skill_index, initialize_agent_tool_config, load_agent_skill_index,
-    load_agent_tool_report, read_project_code_file, search_project_code, select_agent_skills,
+    initialize_agent_skill_index, initialize_agent_tool_config, list_project_code_files,
+    load_agent_skill_index, load_agent_tool_report, read_project_code_file, search_project_code,
+    select_agent_skills,
 };
 use super::ai_provider::{
     AiConfigError, AiConfigReport, AiExecutionError, AiExecutionReport, AiProviderRegistry,
@@ -3519,6 +3520,33 @@ impl SelfForgeApp {
                     expected: "CodeSearch".to_string(),
                 }),
             },
+            "code.list" => match input {
+                AgentToolInvocationInput::CodeList { path, limit } => {
+                    let report = list_project_code_files(&self.root, &path, limit)?;
+                    Ok(AgentToolInvocationReport {
+                        agent_id,
+                        tool_id,
+                        version,
+                        summary: format!(
+                            "项目文件列表完成，路径 {}，文件 {} 个，返回 {} 个，截断 {}。",
+                            report.path,
+                            report.file_count,
+                            report.files.len(),
+                            report.truncated
+                        ),
+                        details: report
+                            .files
+                            .iter()
+                            .map(|entry| format!("{} 字节 {}", entry.path, entry.bytes))
+                            .collect(),
+                        run: None,
+                    })
+                }
+                _ => Err(AgentToolInvocationError::UnsupportedInput {
+                    tool_id,
+                    expected: "CodeList".to_string(),
+                }),
+            },
             "code.read" => match input {
                 AgentToolInvocationInput::CodeRead { path, max_bytes } => {
                     let report = read_project_code_file(&self.root, &path, max_bytes)?;
@@ -4477,6 +4505,26 @@ impl SelfForgeApp {
                 };
                 AgentToolInvocationInput::CodeSearch {
                     query: prompt.clone(),
+                    limit: request.limit,
+                }
+            }
+            "code.list" => {
+                let explicit_tool = request.tool_id.as_deref() == Some(tool_id);
+                let Some(path) = request.prompt.clone().or_else(|| {
+                    if explicit_tool {
+                        Some(".".to_string())
+                    } else {
+                        None
+                    }
+                }) else {
+                    return Err(AgentStepExecutionError::InputRequired {
+                        step_order: step.order,
+                        tool_id: tool_id.to_string(),
+                        input: "prompt".to_string(),
+                    });
+                };
+                AgentToolInvocationInput::CodeList {
+                    path,
                     limit: request.limit,
                 }
             }

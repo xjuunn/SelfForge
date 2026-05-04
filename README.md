@@ -27,6 +27,7 @@ cargo run -- ai-config
 cargo run -- ai-request --dry-run "提示词"
 cargo run -- agents
 cargo run -- agent-tools
+cargo run -- agent-tool-run code.list --agent builder --limit 5 --prompt "src/app"
 cargo run -- agent-tool-run code.search --agent builder --limit 3 --prompt "AgentToolInvocation"
 cargo run -- agent-tool-run code.read --agent builder --max-bytes 1200 --prompt "src/app/agent/tools.rs"
 cargo run -- agent-skills --current
@@ -50,7 +51,7 @@ Agent 技能索引写入 `workspaces/v0/artifacts/agents/skills/skill-index.json
 
 # 编码智能体工具
 
-编码智能体常用只读工具通过 `agent-tool-run` 调用。`code.search` 在项目根目录内搜索文本，跳过 `.git` 和 `target`，并按 `--limit` 返回有限匹配；`code.read` 读取项目内文件的受控文本前缀，拒绝绝对路径和 `..` 越界路径，可用 `--max-bytes` 控制读取上限。写入类能力仍应通过协作任务板、补丁草案、审计和验证流程受控执行。
+编码智能体常用只读工具通过 `agent-tool-run` 调用。`code.list` 列出项目根目录内的文件，跳过 `.git` 和 `target`，并按 `--limit` 返回有限结果；`code.search` 在项目根目录内搜索文本，跳过 `.git` 和 `target`，并按 `--limit` 返回有限匹配；`code.read` 读取项目内文件的受控文本前缀，拒绝绝对路径和 `..` 越界路径，可用 `--max-bytes` 控制读取上限。写入类能力仍应通过协作任务板、补丁草案、审计和验证流程受控执行。
 
 # AI 配置
 

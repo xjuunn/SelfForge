@@ -42,6 +42,10 @@ pub enum AgentToolInvocationInput {
         path: String,
         max_bytes: usize,
     },
+    CodeList {
+        path: String,
+        limit: usize,
+    },
     ForgeArchiveStatus,
 }
 

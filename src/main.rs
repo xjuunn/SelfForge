@@ -6513,6 +6513,13 @@ fn parse_agent_tool_run_args(
                 limit: command.limit,
             }
         }
+        "code.list" => {
+            let path = command.prompt.unwrap_or_else(|| ".".to_string());
+            AgentToolInvocationInput::CodeList {
+                path,
+                limit: command.limit,
+            }
+        }
         "code.read" => {
             let path = command
                 .prompt
