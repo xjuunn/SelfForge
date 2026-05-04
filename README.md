@@ -44,7 +44,7 @@ cargo run -- agent-self-loops --current --limit 10
 
 # AI 技能加载
 
-Agent 技能索引写入 `workspaces/v0/artifacts/agents/skills/skill-index.json`。`agent-skills` 只读取技能元数据，不读取技能正文；`agent-skill-select` 根据目标、标签、触发词和能力召回少量技能，并受 `--limit` 与 `--token-budget` 限制；`agent-skill-context` 可预览会注入 AI 提示词的按需技能上下文。技能召回会先轻量预处理目标和能力条件，再对技能元数据评分，避免几百个技能场景下重复处理同一查询；技能正文仍只在入选且预算允许时读取，并且只读取受控前缀，避免大技能文件被整文件载入。这样即使技能数量达到几百个，默认上下文也只携带轻量索引和少量相关技能正文。`agent-self-upgrade --dry-run` 和 `agent-patch-draft --dry-run` 会展示技能索引、候选、选择、正文和 token 统计；实际自我升级和补丁草案提示词会包含按需技能上下文，无索引时保持只使用当前状态和近期记忆。
+Agent 技能索引写入 `workspaces/v0/artifacts/agents/skills/skill-index.json`。`agent-skills` 只读取技能元数据，不读取技能正文；`agent-skill-select` 根据目标、标签、触发词和能力召回少量技能，并受 `--limit` 与 `--token-budget` 限制；`agent-skill-context` 可预览会注入 AI 提示词的按需技能上下文。技能召回会先轻量预处理目标、能力条件和入选前的技能元数据，再对技能元数据评分，避免几百个技能场景下重复处理同一查询和技能字段；技能正文仍只在入选且预算允许时读取，并且只读取受控前缀，避免大技能文件被整文件载入。这样即使技能数量达到几百个，默认上下文也只携带轻量索引和少量相关技能正文。`agent-self-upgrade --dry-run` 和 `agent-patch-draft --dry-run` 会展示技能索引、候选、选择、正文和 token 统计；实际自我升级和补丁草案提示词会包含按需技能上下文，无索引时保持只使用当前状态和近期记忆。
 
 # AI 配置
 

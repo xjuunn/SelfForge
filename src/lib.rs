@@ -325,6 +325,44 @@ mod agent_skill_scaling_tests {
     }
 
     #[test]
+    fn agent_skill_select_matches_prepared_metadata_fields() {
+        let root = temp_root("skill-select-prepared-fields");
+        let app = bootstrap_app(&root);
+        write_skill_index(
+            &app,
+            &root,
+            vec![AgentSkillMetadata {
+                id: "prepared".to_string(),
+                name: "架构 技能".to_string(),
+                summary: "包含 预算 说明。".to_string(),
+                tags: vec!["Token".to_string()],
+                triggers: vec!["Lazy Load".to_string()],
+                capabilities: vec!["Documentation".to_string()],
+                content_path: None,
+                priority: 10,
+                estimated_tokens: 20,
+                enabled: true,
+            }],
+        );
+
+        let mut request =
+            AgentSkillSelectionRequest::new(CURRENT_VERSION, "需要 token documentation 预算 架构");
+        request.limit = 1;
+        request.token_budget = 100;
+        request.required_capabilities = vec!["documentation".to_string()];
+        let report = app.select_agent_skills(request).expect("技能召回应成功");
+
+        assert_eq!(report.selected_skill_count, 1);
+        assert_eq!(report.skills[0].metadata.id, "prepared");
+        assert!(report.skills[0].reason.contains("名称匹配"));
+        assert!(report.skills[0].reason.contains("标签匹配"));
+        assert!(report.skills[0].reason.contains("能力匹配"));
+        assert!(report.skills[0].reason.contains("摘要匹配"));
+
+        fs::remove_dir_all(root).expect("测试目录应可清理");
+    }
+
+    #[test]
     fn agent_skill_select_scans_past_over_budget_candidates() {
         let root = temp_root("skill-select-scan-budget");
         let app = bootstrap_app(&root);

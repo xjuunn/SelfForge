@@ -97,6 +97,22 @@ struct AgentSkillSearchQuery {
     required_capabilities: Vec<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PreparedAgentSkill<'a> {
+    metadata: &'a AgentSkillMetadata,
+    name: PreparedSkillText,
+    summary: PreparedSkillText,
+    tags: Vec<PreparedSkillText>,
+    triggers: Vec<PreparedSkillText>,
+    capabilities: Vec<PreparedSkillText>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PreparedSkillText {
+    value: String,
+    terms: Vec<String>,
+}
+
 #[derive(Debug)]
 pub enum AgentSkillError {
     Version(VersionError),
@@ -224,8 +240,9 @@ pub fn select_agent_skills(
         .skills
         .iter()
         .filter(|skill| skill.enabled)
+        .map(PreparedAgentSkill::new)
         .filter(|skill| capability_filter_matches(skill, &query.required_capabilities))
-        .filter_map(|skill| score_skill(skill, &query))
+        .filter_map(|skill| score_skill(&skill, &query))
         .collect::<Vec<_>>();
 
     candidates.sort_by_key(|skill| (Reverse(skill.score), Reverse(skill.metadata.priority)));
@@ -334,52 +351,54 @@ fn validate_skill_index(root: &Path, index: &AgentSkillIndex) -> Result<(), Agen
     Ok(())
 }
 
-fn score_skill(skill: &AgentSkillMetadata, query: &AgentSkillSearchQuery) -> Option<ScoredSkill> {
+fn score_skill(
+    skill: &PreparedAgentSkill<'_>,
+    query: &AgentSkillSearchQuery,
+) -> Option<ScoredSkill> {
     let mut score = 0;
     let mut reasons = Vec::new();
 
-    if query.contains_term(&skill.name) {
+    if query.contains_prepared(&skill.name) {
         score += 8;
         reasons.push("名称匹配");
     }
     for trigger in &skill.triggers {
-        if query.contains_term(trigger) {
+        if query.contains_prepared(trigger) {
             score += 6;
             reasons.push("触发词匹配");
         }
     }
     for tag in &skill.tags {
-        if query.contains_term(tag) {
+        if query.contains_prepared(tag) {
             score += 3;
             reasons.push("标签匹配");
         }
     }
     for capability in &skill.capabilities {
-        if query.contains_term(capability) {
+        if query.contains_prepared(capability) {
             score += 2;
             reasons.push("能力匹配");
         }
     }
-    if query.contains_term(&skill.summary) {
+    if query.contains_prepared(&skill.summary) {
         score += 1;
         reasons.push("摘要匹配");
     }
 
     (score > 0).then(|| ScoredSkill {
-        metadata: skill.clone(),
+        metadata: skill.metadata.clone(),
         score,
         reason: unique_reasons(reasons).join("、"),
     })
 }
 
-fn capability_filter_matches(skill: &AgentSkillMetadata, required: &[String]) -> bool {
+fn capability_filter_matches(skill: &PreparedAgentSkill<'_>, required: &[String]) -> bool {
     required.is_empty()
         || required.iter().all(|required| {
             skill
                 .capabilities
                 .iter()
-                .map(|capability| normalize_search_text(capability))
-                .any(|capability| capability == *required)
+                .any(|capability| capability.value == *required)
         })
 }
 
@@ -393,15 +412,50 @@ impl AgentSkillSearchQuery {
         }
     }
 
-    fn contains_term(&self, term: &str) -> bool {
-        let term = normalize_search_text(term);
-        if term.is_empty() {
+    fn contains_prepared(&self, term: &PreparedSkillText) -> bool {
+        if term.value.is_empty() {
             return false;
         }
-        self.goal.contains(&term)
-            || split_search_terms(&term)
+        self.goal.contains(&term.value)
+            || term
+                .terms
                 .iter()
                 .any(|part| self.goal_terms.iter().any(|goal| goal.contains(part)))
+    }
+}
+
+impl<'a> PreparedAgentSkill<'a> {
+    fn new(metadata: &'a AgentSkillMetadata) -> Self {
+        Self {
+            metadata,
+            name: PreparedSkillText::new(&metadata.name),
+            summary: PreparedSkillText::new(&metadata.summary),
+            tags: metadata
+                .tags
+                .iter()
+                .map(|value| PreparedSkillText::new(value))
+                .collect(),
+            triggers: metadata
+                .triggers
+                .iter()
+                .map(|value| PreparedSkillText::new(value))
+                .collect(),
+            capabilities: metadata
+                .capabilities
+                .iter()
+                .map(|value| PreparedSkillText::new(value))
+                .collect(),
+        }
+    }
+}
+
+impl PreparedSkillText {
+    fn new(value: &str) -> Self {
+        let value = normalize_search_text(value);
+        Self {
+            terms: split_search_terms(&value),
+            value,
+        }
     }
 }
 
