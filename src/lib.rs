@@ -88,7 +88,7 @@ pub use app::{
     SelfEvolutionLoopGitPrRequest, SelfEvolutionLoopRecord, SelfEvolutionLoopReport,
     SelfEvolutionLoopRequest, SelfEvolutionLoopStatus, SelfEvolutionLoopStepRecord,
     SelfEvolutionLoopStepStatus, SelfEvolutionLoopSummary, SelfForgeApp,
-    normalize_ai_self_upgrade_goal,
+    format_agent_skill_context, normalize_ai_self_upgrade_goal,
 };
 
 #[cfg(test)]
@@ -414,6 +414,48 @@ mod agent_skill_scaling_tests {
         );
 
         fs::remove_dir_all(root).expect("测试目录应可清理");
+    }
+
+    #[test]
+    fn agent_skill_context_formatter_truncates_loaded_content() {
+        let metadata = AgentSkillMetadata {
+            id: "long-context".to_string(),
+            name: "长正文技能".to_string(),
+            summary: "验证技能上下文格式化和正文截断。".to_string(),
+            tags: vec!["上下文".to_string()],
+            triggers: vec!["长正文".to_string()],
+            capabilities: vec!["format".to_string()],
+            content_path: Some("skills/long.md".to_string()),
+            priority: 0,
+            estimated_tokens: 1_300,
+            enabled: true,
+        };
+        let report = AgentSkillSelectionReport {
+            version: CURRENT_VERSION.to_string(),
+            goal: "预览长正文技能".to_string(),
+            index_skill_count: 1,
+            candidate_skill_count: 1,
+            selected_skill_count: 1,
+            loaded_skill_count: 1,
+            skipped_for_budget: 0,
+            estimated_context_tokens: 1_300,
+            skills: vec![AgentSkillSelection {
+                metadata,
+                score: 10,
+                reason: "测试匹配".to_string(),
+                content: Some("长".repeat(1_500)),
+                estimated_tokens: 1_300,
+            }],
+        };
+
+        let context = format_agent_skill_context(&report);
+
+        assert!(context.contains("技能索引 1 个"));
+        assert!(context.contains("长正文技能"));
+        assert!(context.contains("摘要：验证技能上下文格式化和正文截断。"));
+        assert!(context.contains("正文："));
+        assert!(context.contains("..."));
+        assert!(context.chars().count() < 1_400);
     }
 }
 

@@ -9,7 +9,7 @@ use cli::self_evolution_loop::{
     format_agent_self_loop_report, parse_agent_self_loop_args, parse_agent_self_loop_record_args,
     parse_agent_self_loops_args,
 };
-use self_forge::app::AgentSkillSelectionRequest;
+use self_forge::app::{AgentSkillSelectionRequest, format_agent_skill_context};
 use self_forge::{
     AgentStepExecutionRequest, AgentToolInvocation, AgentToolInvocationInput,
     AgentWorkFinalizeCheckReport, AgentWorkQueueReport, BranchCheckReport, CURRENT_VERSION,
@@ -70,6 +70,7 @@ fn main() {
         "agent-tools" => agent_tools(&app, args.collect()),
         "agent-skills" => agent_skills(&app, args.collect()),
         "agent-skill-select" => agent_skill_select(&app, args.collect()),
+        "agent-skill-context" => agent_skill_context(&app, args.collect()),
         "agent-work-init" => agent_work_init(&app, args.collect()),
         "agent-work-status" => agent_work_status(&app, args.collect()),
         "agent-work-claim" => agent_work_claim(&app, args.collect()),
@@ -854,6 +855,27 @@ fn agent_skill_select(
             skill.metadata.name
         ));
     }
+    Ok(lines.join("\n"))
+}
+
+fn agent_skill_context(
+    app: &SelfForgeApp,
+    arguments: Vec<String>,
+) -> Result<String, Box<dyn Error>> {
+    let request = parse_agent_skill_select_args(arguments)?;
+    let report = app.select_agent_skills(request)?;
+    let mut lines = vec![format!(
+        "SelfForge Agent 技能上下文 {} 目标 {} 索引技能 {} 候选 {} 选择 {} 已加载正文 {} 跳过预算 {} 上下文 token {}",
+        report.version,
+        report.goal,
+        report.index_skill_count,
+        report.candidate_skill_count,
+        report.selected_skill_count,
+        report.loaded_skill_count,
+        report.skipped_for_budget,
+        report.estimated_context_tokens
+    )];
+    lines.push(format_agent_skill_context(&report));
     Ok(lines.join("\n"))
 }
 
@@ -7166,6 +7188,7 @@ ai-config, ai-request [--dry-run] [--timeout-ms N] [prompt]
 agents, agent-tools [--current|--candidate|--version VERSION] [--init]
 agent-skills [--current|--candidate|--version VERSION] [--init]
 agent-skill-select [--current|--candidate|--version VERSION] [--limit N] [--token-budget N] [--capability TEXT] [goal]
+agent-skill-context [--current|--candidate|--version VERSION] [--limit N] [--token-budget N] [--capability TEXT] [goal]
 agent-work-init [--current|--candidate|--version VERSION] [--threads N] [--reset-completed] [goal]
 agent-work-status [--current|--candidate|--version VERSION] [--active-only]
 agent-work-finalize-check [--current|--candidate|--version VERSION]
