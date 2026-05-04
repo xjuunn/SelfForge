@@ -1,10 +1,10 @@
 {
   "version": "v0.1.65",
-  "goal": "改为企业级 PR 合并流程",
+  "goal": "为 Pull Request 增加必跑 CI 验证",
   "thread_count": 3,
   "lease_duration_seconds": 3600,
   "created_at_unix_seconds": 1777889312,
-  "updated_at_unix_seconds": 1777889743,
+  "updated_at_unix_seconds": 1777890390,
   "conflict_policy": "同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。",
   "prompt_policy": "每个线程只执行领取到的任务，必须遵守写入范围、依赖关系、验收标准和归档规则。",
   "tasks": [
@@ -29,6 +29,29 @@
       "completed_at_unix_seconds": 1777889743,
       "result": "已将 Agents.md 中直接合并 master 的流程改为企业级 Pull Request 闸门流程，并同步任务板目标为 PR 合并规范。",
       "prompt": "你是 SelfForge 多 AI 协作线程 `ai-1`。\n\n全局目标：改为企业级 PR 合并流程\n当前任务：coord-001-architecture - 拆解协作架构和提示词边界\n职责 Agent：architect\n任务说明：梳理目标、协作规则、提示词约束、冲突策略和后续扩展点。\n\n必须遵守：\n1. 只完成当前已领取任务，禁止重复实现其他任务。\n2. 只修改写入范围：Agents.md，workspaces/v0/artifacts/agents/coordination/。\n3. 依赖任务：无。\n4. 验收标准：提示词必须说明只处理已领取任务；冲突处理必须明确释放或阻断流程。\n5. 租约到期时间 unix:1777893187，无法继续时必须主动释放任务。\n6. 如发现写入范围冲突、依赖缺失或无法完成，执行 `agent-work-release coord-001-architecture --worker ai-1 --reason 原因`。\n7. 完成后执行必要测试，并执行 `agent-work-complete coord-001-architecture --worker ai-1 --summary 摘要`。\n\n当前仍可领取任务：coord-002-application，coord-003-cli。\n冲突策略：同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。"
+    },
+    {
+      "id": "coord-006-ci-pr-checks",
+      "title": "增加 PR 必跑 CI 验证",
+      "description": "创建 GitHub Actions 工作流，让 Pull Request 自动执行格式化、测试、布局验证、预检和开放错误检查。",
+      "preferred_agent_id": "verifier",
+      "priority": 15,
+      "depends_on": [],
+      "write_scope": [
+        ".github/workflows/",
+        "workspaces/v0/artifacts/agents/coordination/"
+      ],
+      "acceptance": [
+        "PR 工作流必须至少执行 cargo fmt --check、cargo test、cargo run -- validate 和 cargo run -- preflight。",
+        "工作流必须可在 pull_request、master push 和手动触发时运行。",
+        "任务分支必须通过 PR 流程进入 master。"
+      ],
+      "status": "Completed",
+      "claimed_by": "ai-1",
+      "claimed_at_unix_seconds": 1777890330,
+      "completed_at_unix_seconds": 1777890390,
+      "result": "已新增 GitHub Actions PR 验证工作流，覆盖 cargo fmt --check、cargo test、cargo run -- validate、cargo run -- preflight 和开放错误检查，并在本地完成验证。",
+      "prompt": "你是 SelfForge 多 AI 协作线程 `ai-1`。\n\n全局目标：为 Pull Request 增加必跑 CI 验证\n当前任务：coord-006-ci-pr-checks - 增加 PR 必跑 CI 验证\n职责 Agent：verifier\n任务说明：创建 GitHub Actions 工作流，让 Pull Request 自动执行格式化、测试、布局验证、预检和开放错误检查。\n\n必须遵守：\n1. 只完成当前已领取任务，禁止重复实现其他任务。\n2. 只修改写入范围：.github/workflows/，workspaces/v0/artifacts/agents/coordination/。\n3. 依赖任务：无。\n4. 验收标准：PR 工作流必须至少执行 cargo fmt --check、cargo test、cargo run -- validate 和 cargo run -- preflight；工作流必须可在 pull_request、master push 和手动触发时运行；任务分支必须通过 PR 流程进入 master。\n5. 租约到期时间 unix:1777893930，无法继续时必须主动释放任务。\n6. 如发现写入范围冲突、依赖缺失或无法完成，执行 `agent-work-release coord-006-ci-pr-checks --worker ai-1 --reason 原因`。\n7. 完成后执行必要测试，并执行 `agent-work-complete coord-006-ci-pr-checks --worker ai-1 --summary 摘要`。\n\n当前仍可领取任务：coord-002-application，coord-003-cli。\n冲突策略：同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。"
     },
     {
       "id": "coord-002-application",
@@ -729,6 +752,28 @@
       "worker_id": "ai-1",
       "task_id": "coord-001-architecture",
       "message": "已将 Agents.md 中直接合并 master 的流程改为企业级 Pull Request 闸门流程，并同步任务板目标为 PR 合并规范。"
+    },
+    {
+      "order": 85,
+      "timestamp_unix_seconds": 1777919099,
+      "action": "retarget",
+      "message": "协作队列追加 PR 必跑 CI 验证任务，写入范围限定为 .github/workflows/ 和协作任务板。"
+    },
+    {
+      "order": 86,
+      "timestamp_unix_seconds": 1777890330,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-006-ci-pr-checks",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 87,
+      "timestamp_unix_seconds": 1777890390,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-006-ci-pr-checks",
+      "message": "已新增 GitHub Actions PR 验证工作流，覆盖 cargo fmt --check、cargo test、cargo run -- validate、cargo run -- preflight 和开放错误检查，并在本地完成验证。"
     }
   ]
 }
