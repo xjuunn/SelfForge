@@ -4,7 +4,7 @@
   "thread_count": 3,
   "lease_duration_seconds": 3600,
   "created_at_unix_seconds": 1777630213,
-  "updated_at_unix_seconds": 1777884984,
+  "updated_at_unix_seconds": 1777885234,
   "conflict_policy": "同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。",
   "prompt_policy": "每个线程只执行领取到的任务，必须遵守写入范围、依赖关系、验收标准和归档规则。",
   "tasks": [
@@ -68,8 +68,12 @@
         "CLI 只能解析参数和展示应用层结果。",
         "领取命令必须输出当前任务提示词。"
       ],
-      "status": "Pending",
-      "prompt": "你是 SelfForge 多 AI 协作任务的候选执行者。\n\n全局目标：多 AI 协作修改代码\n任务编号：coord-003-cli\n任务标题：实现协作命令入口\n职责 Agent：builder\n\n任务描述：提供初始化、状态查询、领取、完成和释放命令。\n\n写入范围：src/main.rs，README.md\n\n验收标准：CLI 只能解析参数和展示应用层结果；领取命令必须输出当前任务提示词\n\n协作规则：先领取任务，再修改代码；只处理领取到的任务；不得修改其他任务的写入范围；发现冲突时释放任务并记录原因。"
+      "status": "Completed",
+      "claimed_by": "ai-1",
+      "claimed_at_unix_seconds": 1777885080,
+      "completed_at_unix_seconds": 1777885126,
+      "result": "已补齐 README 中协作 CLI 初始化、状态、领取、完成、释放和租约清理命令，并验证协作状态输出。",
+      "prompt": "你是 SelfForge 多 AI 协作线程 `ai-1`。\n\n全局目标：多 AI 协作修改代码\n当前任务：coord-003-cli - 实现协作命令入口\n职责 Agent：builder\n任务说明：提供初始化、状态查询、领取、完成和释放命令。\n\n必须遵守：\n1. 只完成当前已领取任务，禁止重复实现其他任务。\n2. 只修改写入范围：src/main.rs，README.md。\n3. 依赖任务：无。\n4. 验收标准：CLI 只能解析参数和展示应用层结果；领取命令必须输出当前任务提示词。\n5. 租约到期时间 unix:1777892280，无法继续时必须主动释放任务。\n6. 如发现写入范围冲突、依赖缺失或无法完成，执行 `agent-work-release coord-003-cli --worker ai-1 --reason 原因`。\n7. 完成后执行必要测试，并执行 `agent-work-complete coord-003-cli --worker ai-1 --summary 摘要`。\n\n当前仍可领取任务：无。\n冲突策略：同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。"
     },
     {
       "id": "coord-004-tests",
@@ -88,8 +92,12 @@
         "必须包含单元、边界和错误测试。",
         "测试必须验证重复领取被阻止。"
       ],
-      "status": "Pending",
-      "prompt": "你是 SelfForge 多 AI 协作任务的候选执行者。\n\n全局目标：多 AI 协作修改代码\n任务编号：coord-004-tests\n任务标题：补充协作队列测试\n职责 Agent：verifier\n\n任务描述：覆盖单线程领取、多线程不重复领取、依赖阻断、冲突范围和错误完成。\n\n写入范围：src/lib.rs\n\n验收标准：必须包含单元、边界和错误测试；测试必须验证重复领取被阻止\n\n协作规则：先领取任务，再修改代码；只处理领取到的任务；不得修改其他任务的写入范围；发现冲突时释放任务并记录原因。"
+      "status": "Completed",
+      "claimed_by": "ai-1",
+      "claimed_at_unix_seconds": 1777885141,
+      "completed_at_unix_seconds": 1777885171,
+      "result": "已复核现有协作队列测试覆盖单线程领取、多线程不重复领取、依赖阻断、写入范围冲突、错误完成、释放和租约清理，并通过定向和完整测试。",
+      "prompt": "你是 SelfForge 多 AI 协作线程 `ai-1`。\n\n全局目标：多 AI 协作修改代码\n当前任务：coord-004-tests - 补充协作队列测试\n职责 Agent：verifier\n任务说明：覆盖单线程领取、多线程不重复领取、依赖阻断、冲突范围和错误完成。\n\n必须遵守：\n1. 只完成当前已领取任务，禁止重复实现其他任务。\n2. 只修改写入范围：src/lib.rs。\n3. 依赖任务：coord-002-application，coord-003-cli。\n4. 验收标准：必须包含单元、边界和错误测试；测试必须验证重复领取被阻止。\n5. 租约到期时间 unix:1777892341，无法继续时必须主动释放任务。\n6. 如发现写入范围冲突、依赖缺失或无法完成，执行 `agent-work-release coord-004-tests --worker ai-1 --reason 原因`。\n7. 完成后执行必要测试，并执行 `agent-work-complete coord-004-tests --worker ai-1 --summary 摘要`。\n\n当前仍可领取任务：无。\n冲突策略：同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。"
     },
     {
       "id": "coord-005-review-archive",
@@ -113,8 +121,12 @@
         "归档必须为中文。",
         "不得创建小版本独立归档文件。"
       ],
-      "status": "Pending",
-      "prompt": "你是 SelfForge 多 AI 协作任务的候选执行者。\n\n全局目标：多 AI 协作修改代码\n任务编号：coord-005-review-archive\n任务标题：审查并写入中文归档\n职责 Agent：archivist\n\n任务描述：审查协作队列规则，补充任务、记忆、版本和错误归档。\n\n写入范围：forge/tasks/v0.md，forge/memory/v0.md，forge/errors/v0.md，forge/versions/v0.md\n\n验收标准：归档必须为中文；不得创建小版本独立归档文件\n\n协作规则：先领取任务，再修改代码；只处理领取到的任务；不得修改其他任务的写入范围；发现冲突时释放任务并记录原因。"
+      "status": "Completed",
+      "claimed_by": "ai-1",
+      "claimed_at_unix_seconds": 1777885178,
+      "completed_at_unix_seconds": 1777885234,
+      "result": "已完成协作 CLI 收口归档，记录 README 命令补齐、协作队列测试复核和全部剩余任务完成情况。",
+      "prompt": "你是 SelfForge 多 AI 协作线程 `ai-1`。\n\n全局目标：多 AI 协作修改代码\n当前任务：coord-005-review-archive - 审查并写入中文归档\n职责 Agent：archivist\n任务说明：审查协作队列规则，补充任务、记忆、版本和错误归档。\n\n必须遵守：\n1. 只完成当前已领取任务，禁止重复实现其他任务。\n2. 只修改写入范围：forge/tasks/v0.md，forge/memory/v0.md，forge/errors/v0.md，forge/versions/v0.md。\n3. 依赖任务：coord-001-architecture，coord-002-application，coord-003-cli，coord-004-tests。\n4. 验收标准：归档必须为中文；不得创建小版本独立归档文件。\n5. 租约到期时间 unix:1777892378，无法继续时必须主动释放任务。\n6. 如发现写入范围冲突、依赖缺失或无法完成，执行 `agent-work-release coord-005-review-archive --worker ai-1 --reason 原因`。\n7. 完成后执行必要测试，并执行 `agent-work-complete coord-005-review-archive --worker ai-1 --summary 摘要`。\n\n当前仍可领取任务：无。\n冲突策略：同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。"
     }
   ],
   "events": [
@@ -333,6 +345,54 @@
       "worker_id": "ai-1",
       "task_id": "coord-001-architecture",
       "message": "已在 Agents.md 中强制提交标题使用 type(scope): v版本 中文描述格式，并保留版本号和中文描述要求。"
+    },
+    {
+      "order": 34,
+      "timestamp_unix_seconds": 1777885080,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-003-cli",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 35,
+      "timestamp_unix_seconds": 1777885126,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-003-cli",
+      "message": "已补齐 README 中协作 CLI 初始化、状态、领取、完成、释放和租约清理命令，并验证协作状态输出。"
+    },
+    {
+      "order": 36,
+      "timestamp_unix_seconds": 1777885141,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-004-tests",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 37,
+      "timestamp_unix_seconds": 1777885171,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-004-tests",
+      "message": "已复核现有协作队列测试覆盖单线程领取、多线程不重复领取、依赖阻断、写入范围冲突、错误完成、释放和租约清理，并通过定向和完整测试。"
+    },
+    {
+      "order": 38,
+      "timestamp_unix_seconds": 1777885178,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-005-review-archive",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 39,
+      "timestamp_unix_seconds": 1777885234,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-005-review-archive",
+      "message": "已完成协作 CLI 收口归档，记录 README 命令补齐、协作队列测试复核和全部剩余任务完成情况。"
     }
   ]
 }
