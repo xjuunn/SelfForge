@@ -6,7 +6,8 @@ mod minimal_loop;
 mod self_evolution_loop;
 
 pub use agent::{
-    AgentCapability, AgentDefinition, AgentError, AgentPlan, AgentPlanStep, AgentRegistry,
+    AgentCapability, AgentCodeReadReport, AgentCodeSearchMatch, AgentCodeSearchReport,
+    AgentCodeToolError, AgentDefinition, AgentError, AgentPlan, AgentPlanStep, AgentRegistry,
     AgentRunReference, AgentSession, AgentSessionError, AgentSessionEvent, AgentSessionEventKind,
     AgentSessionMemoryInsight, AgentSessionPlanContext, AgentSessionStatus, AgentSessionStep,
     AgentSessionStore, AgentSessionSummary, AgentSessionWorkQueueContext, AgentSkillError,
@@ -44,7 +45,7 @@ pub use agent::{
     AiSelfUpgradeAuditRecord, AiSelfUpgradeAuditStatus, AiSelfUpgradeAuditStore,
     AiSelfUpgradeAuditSummary, AiSelfUpgradeSummaryIndexEntry, AiSelfUpgradeSummaryRecord,
     AiSelfUpgradeSummaryStatus, AiSelfUpgradeSummaryStore, AiSelfUpgradeSummaryStoreError,
-    format_agent_skill_context,
+    format_agent_skill_context, read_project_code_file, search_project_code,
 };
 pub use ai_provider::{
     AiConfigError, AiConfigReport, AiExecutionError, AiExecutionReport, AiProviderRegistry,

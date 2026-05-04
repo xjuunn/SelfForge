@@ -1,3 +1,4 @@
+mod code_tools;
 mod coordination;
 mod patch_application;
 mod patch_audit;
@@ -20,6 +21,10 @@ mod tool_invocation;
 mod tools;
 mod types;
 
+pub use code_tools::{
+    AgentCodeReadReport, AgentCodeSearchMatch, AgentCodeSearchReport, AgentCodeToolError,
+    read_project_code_file, search_project_code,
+};
 pub use coordination::{
     AgentWorkClaimReport, AgentWorkCompactionReport, AgentWorkCoordinator, AgentWorkError,
     AgentWorkEvent, AgentWorkQueue, AgentWorkQueueReport, AgentWorkReapReport, AgentWorkTask,

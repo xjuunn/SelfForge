@@ -26,7 +26,8 @@ pub use version::{
 pub const CURRENT_VERSION: &str = "v0.1.71";
 
 pub use app::{
-    AgentCapability, AgentDefinition, AgentError, AgentEvolutionError, AgentEvolutionReport,
+    AgentCapability, AgentCodeReadReport, AgentCodeSearchMatch, AgentCodeSearchReport,
+    AgentCodeToolError, AgentDefinition, AgentError, AgentEvolutionError, AgentEvolutionReport,
     AgentPlan, AgentPlanReport, AgentPlanReportError, AgentPlanStep, AgentRegistry, AgentRunError,
     AgentRunReference, AgentRunReport, AgentSession, AgentSessionError, AgentSessionEvent,
     AgentSessionEventKind, AgentSessionMemoryInsight, AgentSessionPlanContext, AgentSessionStatus,
@@ -88,7 +89,8 @@ pub use app::{
     SelfEvolutionLoopGitPrRequest, SelfEvolutionLoopRecord, SelfEvolutionLoopReport,
     SelfEvolutionLoopRequest, SelfEvolutionLoopStatus, SelfEvolutionLoopStepRecord,
     SelfEvolutionLoopStepStatus, SelfEvolutionLoopSummary, SelfForgeApp,
-    format_agent_skill_context, normalize_ai_self_upgrade_goal,
+    format_agent_skill_context, normalize_ai_self_upgrade_goal, read_project_code_file,
+    search_project_code,
 };
 
 #[cfg(test)]
@@ -591,6 +593,114 @@ mod agent_skill_scaling_tests {
         assert!(context.contains("正文："));
         assert!(context.contains("..."));
         assert!(context.chars().count() < 1_400);
+    }
+}
+
+#[cfg(test)]
+mod agent_code_tool_tests {
+    use super::*;
+    use std::fs;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_root(name: &str) -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("测试时间应可用")
+            .as_nanos();
+        std::env::temp_dir().join(format!("selfforge-{name}-{unique}"))
+    }
+
+    fn bootstrap_app(root: &PathBuf) -> SelfForgeApp {
+        let app = SelfForgeApp::new(root);
+        app.supervisor()
+            .initialize_current_version()
+            .expect("测试应先初始化当前版本");
+        app
+    }
+
+    #[test]
+    fn agent_tools_assign_common_code_tools_to_coding_agents() {
+        let root = temp_root("code-tool-assignments");
+        let app = bootstrap_app(&root);
+
+        let report = app.agent_tools(CURRENT_VERSION).expect("工具报告应可读取");
+        let builder = report.tool_ids_for_agent("builder");
+        let verifier = report.tool_ids_for_agent("verifier");
+        let reviewer = report.tool_ids_for_agent("reviewer");
+
+        assert!(builder.contains(&"code.search".to_string()));
+        assert!(builder.contains(&"code.read".to_string()));
+        assert!(verifier.contains(&"code.read".to_string()));
+        assert!(reviewer.contains(&"code.search".to_string()));
+        assert!(reviewer.contains(&"code.read".to_string()));
+
+        fs::remove_dir_all(root).expect("测试目录应可清理");
+    }
+
+    #[test]
+    fn agent_tool_invocation_searches_and_reads_project_code() {
+        let root = temp_root("code-tool-search-read");
+        let app = bootstrap_app(&root);
+        fs::create_dir_all(root.join("src").join("app")).expect("测试应可创建代码目录");
+        fs::write(
+            root.join("src").join("app").join("demo.rs"),
+            "fn main() {\n    let marker = \"SelfForgeNeedle\";\n}\n",
+        )
+        .expect("测试应可写入代码文件");
+
+        let search = app
+            .invoke_agent_tool(AgentToolInvocation {
+                agent_id: "builder".to_string(),
+                tool_id: "code.search".to_string(),
+                version: CURRENT_VERSION.to_string(),
+                input: AgentToolInvocationInput::CodeSearch {
+                    query: "selfforgeneedle".to_string(),
+                    limit: 5,
+                },
+            })
+            .expect("代码搜索工具应可调用");
+        assert!(search.summary.contains("匹配 1 条"));
+        assert!(search.details[0].contains("src/app/demo.rs:2"));
+
+        let read = app
+            .invoke_agent_tool(AgentToolInvocation {
+                agent_id: "builder".to_string(),
+                tool_id: "code.read".to_string(),
+                version: CURRENT_VERSION.to_string(),
+                input: AgentToolInvocationInput::CodeRead {
+                    path: "src/app/demo.rs".to_string(),
+                    max_bytes: 24,
+                },
+            })
+            .expect("代码读取工具应可调用");
+        assert!(read.summary.contains("src/app/demo.rs"));
+        assert!(read.summary.contains("截断 true"));
+        assert!(read.details[0].contains("fn main"));
+
+        fs::remove_dir_all(root).expect("测试目录应可清理");
+    }
+
+    #[test]
+    fn agent_tool_invocation_rejects_code_read_workspace_escape() {
+        let root = temp_root("code-tool-path-escape");
+        let app = bootstrap_app(&root);
+
+        let error = app
+            .invoke_agent_tool(AgentToolInvocation {
+                agent_id: "builder".to_string(),
+                tool_id: "code.read".to_string(),
+                version: CURRENT_VERSION.to_string(),
+                input: AgentToolInvocationInput::CodeRead {
+                    path: "../secret.rs".to_string(),
+                    max_bytes: 0,
+                },
+            })
+            .expect_err("越界代码读取必须被拒绝");
+
+        assert!(error.to_string().contains("不允许越过项目根目录"));
+
+        fs::remove_dir_all(root).expect("测试目录应可清理");
     }
 }
 

@@ -360,6 +360,27 @@ fn builtin_tools() -> Vec<AgentToolDefinition> {
             vec!["architect", "archivist"],
         ),
         AgentToolDefinition::builtin(
+            "code.search",
+            "项目代码搜索",
+            "在项目根目录内搜索文本，跳过 target 和 .git，并返回有限匹配。",
+            "code",
+            vec![AgentCapability::Implementation, AgentCapability::Review],
+            vec!["builder", "reviewer"],
+        ),
+        AgentToolDefinition::builtin(
+            "code.read",
+            "项目文件读取",
+            "读取项目根目录内的受控文本前缀，拒绝绝对路径和越界路径。",
+            "code",
+            vec![
+                AgentCapability::Architecture,
+                AgentCapability::Implementation,
+                AgentCapability::Review,
+                AgentCapability::Testing,
+            ],
+            vec!["architect", "builder", "verifier", "reviewer"],
+        ),
+        AgentToolDefinition::builtin(
             "forge.archive",
             "Forge 归档",
             "将任务、记忆、错误和版本记录写入 major 聚合文件。",

@@ -5543,6 +5543,7 @@ struct AgentToolRunArgs {
     step_order: usize,
     target_version: String,
     timeout_ms: u64,
+    max_bytes: usize,
     prompt: Option<String>,
     command_start: Option<usize>,
     arguments: Vec<String>,
@@ -6503,6 +6504,24 @@ fn parse_agent_tool_run_args(
             let prompt = command.prompt.ok_or("ai.request 需要 --prompt")?;
             AgentToolInvocationInput::AiRequestPreview { prompt }
         }
+        "code.search" => {
+            let query = command
+                .prompt
+                .ok_or("code.search 需要 --prompt 指定搜索关键词")?;
+            AgentToolInvocationInput::CodeSearch {
+                query,
+                limit: command.limit,
+            }
+        }
+        "code.read" => {
+            let path = command
+                .prompt
+                .ok_or("code.read 需要 --prompt 指定项目内文件路径")?;
+            AgentToolInvocationInput::CodeRead {
+                path,
+                max_bytes: command.max_bytes,
+            }
+        }
         "forge.archive" => AgentToolInvocationInput::ForgeArchiveStatus,
         _ => AgentToolInvocationInput::Empty,
     };
@@ -6529,6 +6548,7 @@ fn parse_agent_tool_run_command(
     let mut session_id = None;
     let mut step_order = 4;
     let mut timeout_ms = 30_000;
+    let mut max_bytes = 0;
     let mut prompt = None;
     let mut command_start = None;
     let mut index = 0;
@@ -6615,6 +6635,13 @@ fn parse_agent_tool_run_command(
                 timeout_ms = value.parse::<u64>()?;
                 index += 2;
             }
+            "--max-bytes" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--max-bytes 需要字节数".into());
+                };
+                max_bytes = value.parse::<usize>()?;
+                index += 2;
+            }
             "--prompt" => {
                 let Some(value) = arguments.get(index + 1) else {
                     return Err("--prompt 需要提示词".into());
@@ -6648,6 +6675,7 @@ fn parse_agent_tool_run_command(
         step_order,
         target_version,
         timeout_ms,
+        max_bytes,
         prompt,
         command_start,
         arguments,
@@ -7196,7 +7224,7 @@ agent-work-claim [--current|--candidate|--version VERSION] [--worker ID] [--agen
 agent-work-complete [--current|--candidate|--version VERSION] TASK_ID [--worker ID] [--summary TEXT]
 agent-work-release [--current|--candidate|--version VERSION] TASK_ID [--worker ID] [--reason TEXT]
 agent-work-reap [--current|--candidate|--version VERSION] [--reason TEXT]
-agent-tool-run TOOL_ID --agent AGENT_ID [--current|--candidate|--version VERSION] [--limit N] [--all] [--session SESSION_ID] [--session-version VERSION] [--step N] [--target-version VERSION] [--timeout-ms N] [--prompt TEXT] [-- PROGRAM ARGS...]
+agent-tool-run TOOL_ID --agent AGENT_ID [--current|--candidate|--version VERSION] [--limit N] [--all] [--session SESSION_ID] [--session-version VERSION] [--step N] [--target-version VERSION] [--timeout-ms N] [--max-bytes N] [--prompt TEXT] [-- PROGRAM ARGS...]
 agent-step [--session-version VERSION] [--target-version VERSION] [--tool TOOL_ID] [--limit N] [--timeout-ms N] [--prompt TEXT] SESSION_ID [-- PROGRAM ARGS...]
 agent-steps [--session-version VERSION] [--target-version VERSION] [--limit N] [--timeout-ms N] [--max-steps N] SESSION_ID
 agent-plan [--current|--candidate|--version VERSION] [--limit N] [goal]

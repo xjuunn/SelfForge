@@ -1,44 +1,44 @@
 mod patch_scope;
 
 use super::agent::{
-    AgentDefinition, AgentError, AgentPlan, AgentRegistry, AgentRunReference, AgentSession,
-    AgentSessionError, AgentSessionMemoryInsight, AgentSessionPlanContext, AgentSessionStatus,
-    AgentSessionStep, AgentSessionStore, AgentSessionSummary, AgentSessionWorkQueueContext,
-    AgentSkillError, AgentSkillIndexReport, AgentSkillSelectionReport, AgentSkillSelectionRequest,
-    AgentStepExecutionReport, AgentStepExecutionRequest, AgentStepStatus,
-    AgentToolConfigInitReport, AgentToolError, AgentToolInvocation, AgentToolInvocationInput,
-    AgentToolInvocationReport, AgentToolReport, AgentWorkClaimReport, AgentWorkCompactionReport,
-    AgentWorkCoordinator, AgentWorkError, AgentWorkQueueReport, AgentWorkReapReport,
-    AgentWorkTaskStatus, AiPatchApplicationFile, AiPatchApplicationRecord,
-    AiPatchApplicationStatus, AiPatchApplicationStore, AiPatchApplicationStoreError,
-    AiPatchApplicationSummary, AiPatchAuditFinding, AiPatchAuditFindingKind, AiPatchAuditRecord,
-    AiPatchAuditSeverity, AiPatchAuditStatus, AiPatchAuditStore, AiPatchAuditStoreError,
-    AiPatchAuditSummary, AiPatchDraftRecord, AiPatchDraftStatus, AiPatchDraftStore,
-    AiPatchDraftStoreError, AiPatchDraftSummary, AiPatchPreviewChange, AiPatchPreviewRecord,
-    AiPatchPreviewStatus, AiPatchPreviewStore, AiPatchPreviewStoreError, AiPatchPreviewSummary,
-    AiPatchSourceCandidateRecord, AiPatchSourceCandidateStatus, AiPatchSourceCandidateStore,
-    AiPatchSourceCandidateStoreError, AiPatchSourceCandidateSummary,
-    AiPatchSourceCycleFollowUpRecord, AiPatchSourceCycleFollowUpStatus,
-    AiPatchSourceCycleFollowUpStore, AiPatchSourceCycleFollowUpStoreError,
-    AiPatchSourceCycleFollowUpSummary, AiPatchSourceCycleRecord, AiPatchSourceCycleResult,
-    AiPatchSourceCycleStatus, AiPatchSourceCycleStore, AiPatchSourceCycleStoreError,
-    AiPatchSourceCycleSummary, AiPatchSourceExecutionFile, AiPatchSourceExecutionRecord,
-    AiPatchSourceExecutionStatus, AiPatchSourceExecutionStore, AiPatchSourceExecutionStoreError,
-    AiPatchSourceExecutionSummary, AiPatchSourcePlanFile, AiPatchSourcePlanRecord,
-    AiPatchSourcePlanStatus, AiPatchSourcePlanStore, AiPatchSourcePlanStoreError,
-    AiPatchSourcePlanSummary, AiPatchSourcePromotionRecord, AiPatchSourcePromotionStatus,
-    AiPatchSourcePromotionStore, AiPatchSourcePromotionStoreError, AiPatchSourcePromotionSummary,
-    AiPatchSourceTaskAuditFinding, AiPatchSourceTaskAuditRecord, AiPatchSourceTaskAuditStatus,
-    AiPatchSourceTaskAuditStore, AiPatchSourceTaskAuditStoreError, AiPatchSourceTaskAuditSummary,
-    AiPatchSourceTaskDraftRecord, AiPatchSourceTaskDraftStatus, AiPatchSourceTaskDraftStore,
-    AiPatchSourceTaskDraftStoreError, AiPatchSourceTaskDraftSummary,
-    AiPatchVerificationCommandRecord, AiPatchVerificationStatus, AiSelfUpgradeAuditError,
-    AiSelfUpgradeAuditRecord, AiSelfUpgradeAuditStatus, AiSelfUpgradeAuditStore,
-    AiSelfUpgradeAuditSummary, AiSelfUpgradeSummaryIndexEntry, AiSelfUpgradeSummaryRecord,
-    AiSelfUpgradeSummaryStatus, AiSelfUpgradeSummaryStore, AiSelfUpgradeSummaryStoreError,
-    apply_tools_to_plan, format_agent_skill_context, initialize_agent_skill_index,
-    initialize_agent_tool_config, load_agent_skill_index, load_agent_tool_report,
-    select_agent_skills,
+    AgentCodeToolError, AgentDefinition, AgentError, AgentPlan, AgentRegistry, AgentRunReference,
+    AgentSession, AgentSessionError, AgentSessionMemoryInsight, AgentSessionPlanContext,
+    AgentSessionStatus, AgentSessionStep, AgentSessionStore, AgentSessionSummary,
+    AgentSessionWorkQueueContext, AgentSkillError, AgentSkillIndexReport,
+    AgentSkillSelectionReport, AgentSkillSelectionRequest, AgentStepExecutionReport,
+    AgentStepExecutionRequest, AgentStepStatus, AgentToolConfigInitReport, AgentToolError,
+    AgentToolInvocation, AgentToolInvocationInput, AgentToolInvocationReport, AgentToolReport,
+    AgentWorkClaimReport, AgentWorkCompactionReport, AgentWorkCoordinator, AgentWorkError,
+    AgentWorkQueueReport, AgentWorkReapReport, AgentWorkTaskStatus, AiPatchApplicationFile,
+    AiPatchApplicationRecord, AiPatchApplicationStatus, AiPatchApplicationStore,
+    AiPatchApplicationStoreError, AiPatchApplicationSummary, AiPatchAuditFinding,
+    AiPatchAuditFindingKind, AiPatchAuditRecord, AiPatchAuditSeverity, AiPatchAuditStatus,
+    AiPatchAuditStore, AiPatchAuditStoreError, AiPatchAuditSummary, AiPatchDraftRecord,
+    AiPatchDraftStatus, AiPatchDraftStore, AiPatchDraftStoreError, AiPatchDraftSummary,
+    AiPatchPreviewChange, AiPatchPreviewRecord, AiPatchPreviewStatus, AiPatchPreviewStore,
+    AiPatchPreviewStoreError, AiPatchPreviewSummary, AiPatchSourceCandidateRecord,
+    AiPatchSourceCandidateStatus, AiPatchSourceCandidateStore, AiPatchSourceCandidateStoreError,
+    AiPatchSourceCandidateSummary, AiPatchSourceCycleFollowUpRecord,
+    AiPatchSourceCycleFollowUpStatus, AiPatchSourceCycleFollowUpStore,
+    AiPatchSourceCycleFollowUpStoreError, AiPatchSourceCycleFollowUpSummary,
+    AiPatchSourceCycleRecord, AiPatchSourceCycleResult, AiPatchSourceCycleStatus,
+    AiPatchSourceCycleStore, AiPatchSourceCycleStoreError, AiPatchSourceCycleSummary,
+    AiPatchSourceExecutionFile, AiPatchSourceExecutionRecord, AiPatchSourceExecutionStatus,
+    AiPatchSourceExecutionStore, AiPatchSourceExecutionStoreError, AiPatchSourceExecutionSummary,
+    AiPatchSourcePlanFile, AiPatchSourcePlanRecord, AiPatchSourcePlanStatus,
+    AiPatchSourcePlanStore, AiPatchSourcePlanStoreError, AiPatchSourcePlanSummary,
+    AiPatchSourcePromotionRecord, AiPatchSourcePromotionStatus, AiPatchSourcePromotionStore,
+    AiPatchSourcePromotionStoreError, AiPatchSourcePromotionSummary, AiPatchSourceTaskAuditFinding,
+    AiPatchSourceTaskAuditRecord, AiPatchSourceTaskAuditStatus, AiPatchSourceTaskAuditStore,
+    AiPatchSourceTaskAuditStoreError, AiPatchSourceTaskAuditSummary, AiPatchSourceTaskDraftRecord,
+    AiPatchSourceTaskDraftStatus, AiPatchSourceTaskDraftStore, AiPatchSourceTaskDraftStoreError,
+    AiPatchSourceTaskDraftSummary, AiPatchVerificationCommandRecord, AiPatchVerificationStatus,
+    AiSelfUpgradeAuditError, AiSelfUpgradeAuditRecord, AiSelfUpgradeAuditStatus,
+    AiSelfUpgradeAuditStore, AiSelfUpgradeAuditSummary, AiSelfUpgradeSummaryIndexEntry,
+    AiSelfUpgradeSummaryRecord, AiSelfUpgradeSummaryStatus, AiSelfUpgradeSummaryStore,
+    AiSelfUpgradeSummaryStoreError, apply_tools_to_plan, format_agent_skill_context,
+    initialize_agent_skill_index, initialize_agent_tool_config, load_agent_skill_index,
+    load_agent_tool_report, read_project_code_file, search_project_code, select_agent_skills,
 };
 use super::ai_provider::{
     AiConfigError, AiConfigReport, AiExecutionError, AiExecutionReport, AiProviderRegistry,
@@ -586,6 +586,7 @@ pub enum AgentRunError {
 #[derive(Debug)]
 pub enum AgentToolInvocationError {
     Tools(AgentToolError),
+    Code(AgentCodeToolError),
     Memory(MemoryContextError),
     Session(AgentSessionError),
     Run(AgentRunError),
@@ -3492,6 +3493,52 @@ impl SelfForgeApp {
                     expected: "AiRequestPreview".to_string(),
                 }),
             },
+            "code.search" => match input {
+                AgentToolInvocationInput::CodeSearch { query, limit } => {
+                    let report = search_project_code(&self.root, &query, limit)?;
+                    Ok(AgentToolInvocationReport {
+                        agent_id,
+                        tool_id,
+                        version,
+                        summary: format!(
+                            "代码搜索完成，扫描文件 {} 个，命中文件 {} 个，匹配 {} 条。",
+                            report.scanned_file_count,
+                            report.matched_file_count,
+                            report.matches.len()
+                        ),
+                        details: report
+                            .matches
+                            .iter()
+                            .map(|entry| format!("{}:{} {}", entry.path, entry.line, entry.preview))
+                            .collect(),
+                        run: None,
+                    })
+                }
+                _ => Err(AgentToolInvocationError::UnsupportedInput {
+                    tool_id,
+                    expected: "CodeSearch".to_string(),
+                }),
+            },
+            "code.read" => match input {
+                AgentToolInvocationInput::CodeRead { path, max_bytes } => {
+                    let report = read_project_code_file(&self.root, &path, max_bytes)?;
+                    Ok(AgentToolInvocationReport {
+                        agent_id,
+                        tool_id,
+                        version,
+                        summary: format!(
+                            "已读取代码文件 {}，字节 {}，截断 {}。",
+                            report.path, report.bytes_read, report.truncated
+                        ),
+                        details: vec![report.content],
+                        run: None,
+                    })
+                }
+                _ => Err(AgentToolInvocationError::UnsupportedInput {
+                    tool_id,
+                    expected: "CodeRead".to_string(),
+                }),
+            },
             "forge.archive" => match input {
                 AgentToolInvocationInput::ForgeArchiveStatus | AgentToolInvocationInput::Empty => {
                     let archive_file = version_major_file_name(&version)?;
@@ -4420,6 +4467,32 @@ impl SelfForgeApp {
                 limit: request.limit,
                 all_major: true,
             },
+            "code.search" => {
+                let Some(prompt) = &request.prompt else {
+                    return Err(AgentStepExecutionError::InputRequired {
+                        step_order: step.order,
+                        tool_id: tool_id.to_string(),
+                        input: "prompt".to_string(),
+                    });
+                };
+                AgentToolInvocationInput::CodeSearch {
+                    query: prompt.clone(),
+                    limit: request.limit,
+                }
+            }
+            "code.read" => {
+                let Some(prompt) = &request.prompt else {
+                    return Err(AgentStepExecutionError::InputRequired {
+                        step_order: step.order,
+                        tool_id: tool_id.to_string(),
+                        input: "prompt".to_string(),
+                    });
+                };
+                AgentToolInvocationInput::CodeRead {
+                    path: prompt.clone(),
+                    max_bytes: 0,
+                }
+            }
             "forge.archive" => AgentToolInvocationInput::ForgeArchiveStatus,
             "runtime.run" => {
                 let Some(program) = &request.program else {
@@ -7639,6 +7712,7 @@ impl fmt::Display for AgentToolInvocationError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             AgentToolInvocationError::Tools(error) => write!(formatter, "{error}"),
+            AgentToolInvocationError::Code(error) => write!(formatter, "{error}"),
             AgentToolInvocationError::Memory(error) => write!(formatter, "{error}"),
             AgentToolInvocationError::Session(error) => write!(formatter, "{error}"),
             AgentToolInvocationError::Run(error) => write!(formatter, "{error}"),
@@ -7663,6 +7737,7 @@ impl Error for AgentToolInvocationError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             AgentToolInvocationError::Tools(error) => Some(error),
+            AgentToolInvocationError::Code(error) => Some(error),
             AgentToolInvocationError::Memory(error) => Some(error),
             AgentToolInvocationError::Session(error) => Some(error),
             AgentToolInvocationError::Run(error) => Some(error),
@@ -7679,6 +7754,12 @@ impl Error for AgentToolInvocationError {
 impl From<AgentToolError> for AgentToolInvocationError {
     fn from(error: AgentToolError) -> Self {
         AgentToolInvocationError::Tools(error)
+    }
+}
+
+impl From<AgentCodeToolError> for AgentToolInvocationError {
+    fn from(error: AgentCodeToolError) -> Self {
+        AgentToolInvocationError::Code(error)
     }
 }
 
