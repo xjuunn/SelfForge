@@ -1,4 +1,4 @@
-use super::*;
+﻿use super::*;
 
 #[test]
 fn ai_patch_draft_preview_builds_controlled_prompt_from_memory() {
@@ -814,7 +814,7 @@ fn ai_patch_apply_writes_candidate_mirror_and_record() {
     assert!(!report.record.validation_checked_paths.is_empty());
 
     let state = ForgeState::load(&root).expect("state should be readable after apply");
-    assert_eq!(state.candidate_version.as_deref(), Some("v0.1.70"));
+    assert_eq!(state.candidate_version.as_deref(), Some("v0.1.71"));
     assert_eq!(state.status, "candidate_prepared");
     let records = app
         .ai_patch_application_records(CURRENT_VERSION, 10)
@@ -960,9 +960,9 @@ fn ai_patch_apply_reuses_existing_candidate() {
 
     assert_eq!(report.record.status, AiPatchApplicationStatus::Applied);
     assert!(report.prepared_candidate_version.is_none());
-    assert_eq!(report.record.candidate_version, "v0.1.70");
+    assert_eq!(report.record.candidate_version, "v0.1.71");
     let state = ForgeState::load(&root).expect("state should remain readable");
-    assert_eq!(state.candidate_version.as_deref(), Some("v0.1.70"));
+    assert_eq!(state.candidate_version.as_deref(), Some("v0.1.71"));
     assert_eq!(state.status, "candidate_prepared");
 
     cleanup(&root);

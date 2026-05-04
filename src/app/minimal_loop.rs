@@ -637,6 +637,10 @@ impl SelfForgeApp {
         &self.supervisor
     }
 
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
     pub fn preflight(&self) -> Result<PreflightReport, MinimalLoopError> {
         let state = ForgeState::load(&self.root)?;
         let current_validation = self.supervisor.verify_version(&state.current_version)?;

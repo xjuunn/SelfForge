@@ -21,6 +21,8 @@
 8. 统一 push 前必须完成最终验证、更新任务板状态，并确认未完成任务列表为空或只剩用户接受的后续任务。
 9. 远端只接收任务组收束后的统一推送，减少 GitHub Actions 消耗。
 10. 任务组边界必须在 PR 正文写清楚，避免把无关目标塞进同一个 PR。
+11. `agent-self-loop --commit-each-cycle` 只能创建本地提交，不得触发远端 push。
+12. `agent-self-loop --finalize-pr --confirm-finalize` 才允许统一 push、创建 PR、等待 required checks、合并并删除远程任务分支。
 
 # 无关任务切换规则
 
@@ -49,6 +51,7 @@
 5. PR 保持小而聚焦，一个 PR 只处理一个相关任务组。
 6. PR 创建后才消耗远端 CI；PR 前的阶段性验证优先在本地完成。
 7. 合并必须通过仓库平台执行，禁止本地 `git merge` 后直接推送 `master`。
+8. 自主 PR 收束必须把循环编号、任务编号、分支名、验证结果、风险、回滚方案和 `Refs #1` 写入 PR 正文。
 
 # Issue 关联规则
 

@@ -4,6 +4,11 @@ use cli::agent_work_status::{
     append_agent_work_queue_lines, format_agent_work_lease, format_agent_work_status_report,
     join_or_none, parse_agent_work_status_args,
 };
+use cli::self_evolution_loop::{
+    format_agent_self_loop_preview, format_agent_self_loop_record, format_agent_self_loop_records,
+    format_agent_self_loop_report, parse_agent_self_loop_args, parse_agent_self_loop_record_args,
+    parse_agent_self_loops_args,
+};
 use self_forge::{
     AgentStepExecutionRequest, AgentToolInvocation, AgentToolInvocationInput,
     AgentWorkFinalizeCheckReport, AgentWorkQueueReport, BranchCheckReport, CURRENT_VERSION,
@@ -136,6 +141,9 @@ fn main() {
         "agent-patch-applications" => agent_patch_applications(&app, args.collect()),
         "agent-patch-application-record" => agent_patch_application_record(&app, args.collect()),
         "agent-self-upgrade" => agent_self_upgrade(&app, args.collect()),
+        "agent-self-loop" => agent_self_loop(&app, args.collect()),
+        "agent-self-loops" => agent_self_loops(&app, args.collect()),
+        "agent-self-loop-record" => agent_self_loop_record(&app, args.collect()),
         "agent-self-upgrades" => agent_self_upgrades(&app, args.collect()),
         "agent-self-upgrade-record" => agent_self_upgrade_record(&app, args.collect()),
         "agent-self-upgrade-report" => agent_self_upgrade_report(&app, args.collect()),
@@ -1501,6 +1509,38 @@ fn agent_self_upgrade(
             report.summary.markdown_file.display()
         )
     }))
+}
+
+fn agent_self_loop(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Box<dyn Error>> {
+    let command = parse_agent_self_loop_args(arguments, DEFAULT_AI_TIMEOUT_MS)?;
+    if command.dry_run {
+        return Ok(format_agent_self_loop_preview(&command));
+    }
+    boxed(
+        app.run_self_evolution_loop(command.request)
+            .map(format_agent_self_loop_report),
+    )
+}
+
+fn agent_self_loops(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Box<dyn Error>> {
+    let state = ForgeState::load(env::current_dir()?)?;
+    let command = parse_agent_self_loops_args(arguments, &state.current_version)?;
+    boxed(
+        app.self_evolution_loop_records(&command.version, command.limit)
+            .map(|records| format_agent_self_loop_records(&command.version, records)),
+    )
+}
+
+fn agent_self_loop_record(
+    app: &SelfForgeApp,
+    arguments: Vec<String>,
+) -> Result<String, Box<dyn Error>> {
+    let state = ForgeState::load(env::current_dir()?)?;
+    let command = parse_agent_self_loop_record_args(arguments, &state.current_version)?;
+    boxed(
+        app.self_evolution_loop_record(&command.version, &command.id)
+            .map(format_agent_self_loop_record),
+    )
 }
 
 fn agent_patch_draft(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Box<dyn Error>> {
@@ -6949,6 +6989,9 @@ agent-session [--current|--candidate|--version VERSION] SESSION_ID
 agent-run [--session-version VERSION] [--current|--candidate|--version VERSION] [--step N] [--timeout-ms N] SESSION_ID -- PROGRAM [ARGS...]
 agent-verify [--current|--candidate|--version VERSION] [--timeout-ms N] [goal] -- PROGRAM [ARGS...]
 agent-advance [goal], agent-evolve [goal]
+agent-self-loop [--dry-run] [--resume] [--max-cycles N] [--max-failures N] [--timeout-ms N] [--commit-each-cycle] [--finalize-pr --confirm-finalize] [--branch BRANCH] [--task TASK_ID] [--worker ID] [hint]
+agent-self-loops [--current|--version VERSION] [--limit N]
+agent-self-loop-record [--current|--version VERSION] RECORD_ID
 agent-patch-draft [--dry-run] [--timeout-ms N] [--from-task-audit TASK_AUDIT_ID] [goal]
 agent-patch-drafts [--current|--candidate|--version VERSION] [--limit N]
 agent-patch-draft-record [--current|--candidate|--version VERSION] RECORD_ID

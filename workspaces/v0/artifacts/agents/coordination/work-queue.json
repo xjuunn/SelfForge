@@ -1,10 +1,10 @@
 {
   "version": "v0.1.69",
-  "goal": "为任务板状态添加活跃任务过滤",
+  "goal": "实现一键可恢复自我进化循环",
   "thread_count": 3,
   "lease_duration_seconds": 3600,
   "created_at_unix_seconds": 1777889312,
-  "updated_at_unix_seconds": 1777904507,
+  "updated_at_unix_seconds": 1777910053,
   "conflict_policy": "同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。",
   "prompt_policy": "每个线程只执行领取到的任务，必须遵守写入范围、依赖关系、验收标准和归档规则。",
   "tasks": [
@@ -662,6 +662,149 @@
       "completed_at_unix_seconds": 1777904500,
       "result": "已完成 v0.1.69 最终收束准备：提升版本、同步测试期望、补充最终归档，并通过 cargo fmt --check、cargo test、git diff --check、validate、preflight 和开放错误查询。",
       "prompt": "已压缩：任务 coord-022-finalize-v069 已完成。完成摘要：已完成 v0.1.69 最终收束准备：提升版本、同步测试期望、补充最终归档，并通过 cargo fmt --check、cargo test、git diff --check、validate、preflight 和开放错误查询。。执行边界保留在 title、description、write_scope、acceptance 和 result 字段中。"
+    },
+    {
+      "id": "coord-023-autonomous-loop-phase1",
+      "title": "实现自我进化循环第一阶段",
+      "description": "新增一键自我进化循环的可恢复应用层骨架和 CLI 入口，复用现有 preflight、memory-insights、agent-self-upgrade 和审计链路，提供最大轮次和失败限制，避免无限失控。",
+      "preferred_agent_id": "builder",
+      "priority": 29,
+      "depends_on": [
+        "coord-022-finalize-v069"
+      ],
+      "write_scope": [
+        "src/app/",
+        "src/lib.rs",
+        "src/main.rs",
+        "src/tests/agent_core.rs",
+        "README.md",
+        "forge/architecture/agent-rules/agent-coordination.md",
+        "forge/architecture/agent-rules/code-architecture.md",
+        "forge/tasks/v0.md",
+        "forge/memory/v0.md",
+        "forge/errors/v0.md",
+        "forge/versions/v0.md",
+        "workspaces/v0/artifacts/agents/coordination/",
+        "src/cli/"
+      ],
+      "acceptance": [
+        "新增一键自我进化循环入口，默认不无限运行。",
+        "循环状态必须持久化到 workspaces/vMAJOR/artifacts/agents/self-evolution-loops/。",
+        "失败必须记录并受最大连续失败次数限制。",
+        "崩溃后可通过同一命令恢复最近未完成循环。",
+        "复用现有自我升级能力，禁止绕过 preflight、记忆、错误、Runtime 和版本流程。",
+        "本阶段不提升版本、不 push。"
+      ],
+      "status": "Completed",
+      "claimed_by": "ai-1",
+      "claimed_at_unix_seconds": 1777904832,
+      "completed_at_unix_seconds": 1777905418,
+      "result": "已完成自我进化循环第一阶段：新增 agent-self-loop、应用层持久化循环记录、失败限制、panic 捕获、--resume 恢复入口、CLI dry-run 和定向测试；完整验证已通过。后续仍需接入 Git/PR/合并/删除分支全流程。",
+      "prompt": "你是 SelfForge 多 AI 协作线程 `ai-1`。\n\n全局目标：实现一键可恢复自我进化循环\n当前任务：coord-023-autonomous-loop-phase1 - 实现自我进化循环第一阶段\n职责 Agent：builder\n任务说明：新增一键自我进化循环的可恢复应用层骨架和 CLI 入口，复用现有 preflight、memory-insights、agent-self-upgrade 和审计链路，提供最大轮次和失败限制，避免无限失控。\n\n必须遵守：\n1. 只完成当前已领取任务，禁止重复实现其他任务。\n2. 只修改写入范围：src/app/，src/lib.rs，src/main.rs，src/tests/agent_core.rs，README.md，forge/architecture/agent-rules/agent-coordination.md，forge/architecture/agent-rules/code-architecture.md，forge/tasks/v0.md，forge/memory/v0.md，forge/errors/v0.md，forge/versions/v0.md，workspaces/v0/artifacts/agents/coordination/。\n3. 依赖任务：coord-022-finalize-v069。\n4. 验收标准：新增一键自我进化循环入口，默认不无限运行；循环状态必须持久化到 workspaces/vMAJOR/artifacts/agents/self-evolution-loops/；失败必须记录并受最大连续失败次数限制；崩溃后可通过同一命令恢复最近未完成循环；复用现有自我升级能力，禁止绕过 preflight、记忆、错误、Runtime 和版本流程；本阶段不提升版本、不 push。\n5. 租约到期时间 unix:1777908432，无法继续时必须主动释放任务。\n6. 如发现写入范围冲突、依赖缺失或无法完成，执行 `agent-work-release coord-023-autonomous-loop-phase1 --worker ai-1 --reason 原因`。\n7. 完成后执行必要测试，并执行 `agent-work-complete coord-023-autonomous-loop-phase1 --worker ai-1 --summary 摘要`。\n\n当前仍可领取任务：无。\n冲突策略：同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。"
+    },
+    {
+      "id": "coord-024-autonomous-loop-git-pr",
+      "title": "接入 Git 和 Pull Request 自主收束",
+      "description": "让自我进化循环在每轮成功后能按规则创建任务分支、本地提交、最终统一 push、创建 PR、等待检查、合并并删除远程分支。",
+      "preferred_agent_id": "builder",
+      "priority": 30,
+      "depends_on": [
+        "coord-023-autonomous-loop-phase1"
+      ],
+      "write_scope": [
+        "src/app/",
+        "src/cli/",
+        "src/main.rs",
+        "src/lib.rs",
+        "src/tests/agent_core.rs",
+        "README.md",
+        "forge/architecture/agent-rules/git-pr.md",
+        "forge/architecture/agent-rules/agent-coordination.md",
+        "workspaces/v0/artifacts/agents/coordination/"
+      ],
+      "acceptance": [
+        "循环必须复用分支和 PR 规则。",
+        "每轮远程 push 只能发生在最终 PR 收束时。",
+        "PR 必须关联 Issue #1。",
+        "合并后必须删除远程任务分支。"
+      ],
+      "status": "Completed",
+      "claimed_by": "ai-1",
+      "claimed_at_unix_seconds": 1777907011,
+      "completed_at_unix_seconds": 1777908518,
+      "result": "已接入自我进化循环 Git/PR 自主收束：新增应用层 Git/PR 事件记录、每轮本地提交、显式确认后的统一 push、PR 创建、required checks 等待、合并与远程任务分支删除流程；CLI 增加 --commit-each-cycle、--finalize-pr、--confirm-finalize、分支、任务、worker 和超时参数；README 与规则补充无人值守收束边界。已通过 cargo fmt --check、cargo test、cargo run -- validate、cargo run -- preflight、cargo run -- errors --current --open。当前任务组沿用 codex/coord-023-autonomous-evolution-loop 分支，未 push、未创建 PR。",
+      "prompt": "你是 SelfForge 多 AI 协作线程 `ai-1`。\n\n全局目标：实现一键可恢复自我进化循环\n当前任务：coord-024-autonomous-loop-git-pr - 接入 Git 和 Pull Request 自主收束\n职责 Agent：builder\n任务说明：让自我进化循环在每轮成功后能按规则创建任务分支、本地提交、最终统一 push、创建 PR、等待检查、合并并删除远程分支。\n\n必须遵守：\n1. 只完成当前已领取任务，禁止重复实现其他任务。\n2. 只修改写入范围：src/app/，src/cli/，src/main.rs，src/lib.rs，src/tests/agent_core.rs，README.md，forge/architecture/agent-rules/git-pr.md，forge/architecture/agent-rules/agent-coordination.md，workspaces/v0/artifacts/agents/coordination/。\n3. 依赖任务：coord-023-autonomous-loop-phase1。\n4. 验收标准：循环必须复用分支和 PR 规则；每轮远程 push 只能发生在最终 PR 收束时；PR 必须关联 Issue #1；合并后必须删除远程任务分支。\n5. 租约到期时间 unix:1777910611，无法继续时必须主动释放任务。\n6. 如发现写入范围冲突、依赖缺失或无法完成，执行 `agent-work-release coord-024-autonomous-loop-git-pr --worker ai-1 --reason 原因`。\n7. 完成后执行必要测试，并执行 `agent-work-complete coord-024-autonomous-loop-git-pr --worker ai-1 --summary 摘要`。\n\n当前仍可领取任务：coord-025-autonomous-loop-records。\n冲突策略：同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。"
+    },
+    {
+      "id": "coord-025-autonomous-loop-records",
+      "title": "补充循环记录查询和恢复测试",
+      "description": "增加自我进化循环记录列表、单条查询、恢复中断步骤测试和文档说明。",
+      "preferred_agent_id": "verifier",
+      "priority": 31,
+      "depends_on": [
+        "coord-023-autonomous-loop-phase1"
+      ],
+      "write_scope": [
+        "src/app/",
+        "src/cli/",
+        "src/main.rs",
+        "src/lib.rs",
+        "src/tests/agent_core.rs",
+        "README.md",
+        "forge/architecture/agent-rules/agent-coordination.md",
+        "workspaces/v0/artifacts/agents/coordination/"
+      ],
+      "acceptance": [
+        "可以查询循环记录列表。",
+        "可以读取单条循环记录。",
+        "恢复中断运行步骤有定向测试。",
+        "文档说明恢复语义。"
+      ],
+      "status": "Completed",
+      "claimed_by": "ai-1",
+      "claimed_at_unix_seconds": 1777908534,
+      "completed_at_unix_seconds": 1777909092,
+      "result": "已补充自我进化循环记录查询与恢复测试：新增 self_evolution_loop_records 和 self_evolution_loop_record 应用层接口，CLI 增加 agent-self-loops 与 agent-self-loop-record；循环列表从记录文件读取最新状态，避免 index.jsonl 追加重复展示；补充记录列表/单条读取测试、恢复中断运行步骤测试和 CLI 参数解析测试；README 与协作规则补充查询与恢复语义。已通过 cargo fmt --check、cargo test、cargo run -- validate、cargo run -- preflight、cargo run -- errors --current --open。未 push、未创建 PR。",
+      "prompt": "你是 SelfForge 多 AI 协作线程 `ai-1`。\n\n全局目标：实现一键可恢复自我进化循环\n当前任务：coord-025-autonomous-loop-records - 补充循环记录查询和恢复测试\n职责 Agent：verifier\n任务说明：增加自我进化循环记录列表、单条查询、恢复中断步骤测试和文档说明。\n\n必须遵守：\n1. 只完成当前已领取任务，禁止重复实现其他任务。\n2. 只修改写入范围：src/app/，src/cli/，src/main.rs，src/lib.rs，src/tests/agent_core.rs，README.md，forge/architecture/agent-rules/agent-coordination.md，workspaces/v0/artifacts/agents/coordination/。\n3. 依赖任务：coord-023-autonomous-loop-phase1。\n4. 验收标准：可以查询循环记录列表；可以读取单条循环记录；恢复中断运行步骤有定向测试；文档说明恢复语义。\n5. 租约到期时间 unix:1777912134，无法继续时必须主动释放任务。\n6. 如发现写入范围冲突、依赖缺失或无法完成，执行 `agent-work-release coord-025-autonomous-loop-records --worker ai-1 --reason 原因`。\n7. 完成后执行必要测试，并执行 `agent-work-complete coord-025-autonomous-loop-records --worker ai-1 --summary 摘要`。\n\n当前仍可领取任务：无。\n冲突策略：同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。"
+    },
+    {
+      "id": "coord-026-autonomous-loop-finalize",
+      "title": "最终收束自主进化循环版本",
+      "description": "在 Git/PR 自主收束和查询恢复测试完成后提升小版本、补齐归档、完整验证、统一 push 和 PR。",
+      "preferred_agent_id": "archivist",
+      "priority": 32,
+      "depends_on": [
+        "coord-024-autonomous-loop-git-pr",
+        "coord-025-autonomous-loop-records"
+      ],
+      "write_scope": [
+        "Cargo.toml",
+        "Cargo.lock",
+        "README.md",
+        "src/lib.rs",
+        "state/state.json",
+        "src/tests/app_loop.rs",
+        "src/tests/layout_version.rs",
+        "src/tests/agent_core.rs",
+        "src/tests/patch_draft_flow.rs",
+        "forge/tasks/v0.md",
+        "forge/memory/v0.md",
+        "forge/errors/v0.md",
+        "forge/versions/v0.md",
+        "workspaces/v0/artifacts/agents/coordination/"
+      ],
+      "acceptance": [
+        "提升下一个 patch 版本。",
+        "完整验证通过。",
+        "PR 关联 Issue #1。",
+        "合并后删除远程分支。"
+      ],
+      "status": "Completed",
+      "claimed_by": "ai-1",
+      "claimed_at_unix_seconds": 1777909577,
+      "completed_at_unix_seconds": 1777910053,
+      "result": "已完成自我进化循环最终收束：版本从 v0.1.69 提升到 v0.1.70；同步 Cargo.toml、Cargo.lock、README、src/lib.rs、state/state.json 和测试版本期望；追加 forge/tasks、forge/memory、forge/errors、forge/versions 的 v0 聚合归档；完整验证通过。验证包括 cargo fmt --check、cargo test、cargo run -- validate、cargo run -- preflight、cargo run -- errors --current --open。首次 preflight 发现 state/state.json 被机械改写为带 BOM 的 JSON，已改回无 BOM UTF-8 并重跑通过。准备统一 push 和创建关联 Issue #1 的 PR。",
+      "prompt": "你是 SelfForge 多 AI 协作线程 `ai-1`。\n\n全局目标：实现一键可恢复自我进化循环\n当前任务：coord-026-autonomous-loop-finalize - 最终收束自主进化循环版本\n职责 Agent：archivist\n任务说明：在 Git/PR 自主收束和查询恢复测试完成后提升小版本、补齐归档、完整验证、统一 push 和 PR。\n\n必须遵守：\n1. 只完成当前已领取任务，禁止重复实现其他任务。\n2. 只修改写入范围：Cargo.toml，Cargo.lock，README.md，src/lib.rs，state/state.json，src/tests/app_loop.rs，src/tests/layout_version.rs，src/tests/agent_core.rs，src/tests/patch_draft_flow.rs，forge/tasks/v0.md，forge/memory/v0.md，forge/errors/v0.md，forge/versions/v0.md，workspaces/v0/artifacts/agents/coordination/。\n3. 依赖任务：coord-024-autonomous-loop-git-pr，coord-025-autonomous-loop-records。\n4. 验收标准：提升下一个 patch 版本；完整验证通过；PR 关联 Issue #1；合并后删除远程分支。\n5. 租约到期时间 unix:1777913177，无法继续时必须主动释放任务。\n6. 如发现写入范围冲突、依赖缺失或无法完成，执行 `agent-work-release coord-026-autonomous-loop-finalize --worker ai-1 --reason 原因`。\n7. 完成后执行必要测试，并执行 `agent-work-complete coord-026-autonomous-loop-finalize --worker ai-1 --summary 摘要`。\n\n当前仍可领取任务：无。\n冲突策略：同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。"
     }
   ],
   "events": [
@@ -817,6 +960,114 @@
       "timestamp_unix_seconds": 1777904507,
       "action": "compact",
       "message": "协作任务板已压缩：压缩已完成任务提示词 2 个，移除旧事件 9 条，压缩前事件 29 条。"
+    },
+    {
+      "order": 155,
+      "timestamp_unix_seconds": 1777904827,
+      "action": "retarget",
+      "task_id": "coord-023-autonomous-loop-phase1",
+      "message": "协作队列追加一键可恢复自我进化循环第一阶段任务。"
+    },
+    {
+      "order": 156,
+      "timestamp_unix_seconds": 1777904832,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-023-autonomous-loop-phase1",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 157,
+      "timestamp_unix_seconds": 1777905418,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-023-autonomous-loop-phase1",
+      "message": "已完成自我进化循环第一阶段：新增 agent-self-loop、应用层持久化循环记录、失败限制、panic 捕获、--resume 恢复入口、CLI dry-run 和定向测试；完整验证已通过。后续仍需接入 Git/PR/合并/删除分支全流程。"
+    },
+    {
+      "order": 158,
+      "timestamp_unix_seconds": 1777905452,
+      "action": "retarget",
+      "task_id": "coord-024-autonomous-loop-git-pr",
+      "message": "协作队列追加后续任务：接入 Git 和 Pull Request 自主收束。"
+    },
+    {
+      "order": 159,
+      "timestamp_unix_seconds": 1777905452,
+      "action": "retarget",
+      "task_id": "coord-025-autonomous-loop-records",
+      "message": "协作队列追加后续任务：补充循环记录查询和恢复测试。"
+    },
+    {
+      "order": 160,
+      "timestamp_unix_seconds": 1777905452,
+      "action": "retarget",
+      "task_id": "coord-026-autonomous-loop-finalize",
+      "message": "协作队列追加后续任务：最终收束自主进化循环版本。"
+    },
+    {
+      "order": 161,
+      "timestamp_unix_seconds": 1777907011,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-024-autonomous-loop-git-pr",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 162,
+      "timestamp_unix_seconds": 1777908518,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-024-autonomous-loop-git-pr",
+      "message": "已接入自我进化循环 Git/PR 自主收束：新增应用层 Git/PR 事件记录、每轮本地提交、显式确认后的统一 push、PR 创建、required checks 等待、合并与远程任务分支删除流程；CLI 增加 --commit-each-cycle、--finalize-pr、--confirm-finalize、分支、任务、worker 和超时参数；README 与规则补充无人值守收束边界。已通过 cargo fmt --check、cargo test、cargo run -- validate、cargo run -- preflight、cargo run -- errors --current --open。当前任务组沿用 codex/coord-023-autonomous-evolution-loop 分支，未 push、未创建 PR。"
+    },
+    {
+      "order": 163,
+      "timestamp_unix_seconds": 1777908534,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-025-autonomous-loop-records",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 164,
+      "timestamp_unix_seconds": 1777909092,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-025-autonomous-loop-records",
+      "message": "已补充自我进化循环记录查询与恢复测试：新增 self_evolution_loop_records 和 self_evolution_loop_record 应用层接口，CLI 增加 agent-self-loops 与 agent-self-loop-record；循环列表从记录文件读取最新状态，避免 index.jsonl 追加重复展示；补充记录列表/单条读取测试、恢复中断运行步骤测试和 CLI 参数解析测试；README 与协作规则补充查询与恢复语义。已通过 cargo fmt --check、cargo test、cargo run -- validate、cargo run -- preflight、cargo run -- errors --current --open。未 push、未创建 PR。"
+    },
+    {
+      "order": 165,
+      "timestamp_unix_seconds": 1777909148,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-026-autonomous-loop-finalize",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 166,
+      "timestamp_unix_seconds": 1777909185,
+      "action": "release",
+      "worker_id": "ai-1",
+      "task_id": "coord-026-autonomous-loop-finalize",
+      "message": "等待用户明确确认当前自我进化循环任务组已完全完成，才能按规则提升 patch 版本、统一 push 并创建 PR；在确认前禁止继续执行最终收束。"
+    },
+    {
+      "order": 167,
+      "timestamp_unix_seconds": 1777909577,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-026-autonomous-loop-finalize",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 168,
+      "timestamp_unix_seconds": 1777910053,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-026-autonomous-loop-finalize",
+      "message": "已完成自我进化循环最终收束：版本从 v0.1.69 提升到 v0.1.70；同步 Cargo.toml、Cargo.lock、README、src/lib.rs、state/state.json 和测试版本期望；追加 forge/tasks、forge/memory、forge/errors、forge/versions 的 v0 聚合归档；完整验证通过。验证包括 cargo fmt --check、cargo test、cargo run -- validate、cargo run -- preflight、cargo run -- errors --current --open。首次 preflight 发现 state/state.json 被机械改写为带 BOM 的 JSON，已改回无 BOM UTF-8 并重跑通过。准备统一 push 和创建关联 Issue #1 的 PR。"
     }
   ]
 }
