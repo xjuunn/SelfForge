@@ -33,6 +33,16 @@ impl AgentWorkCoordinator {
         goal: &str,
         thread_count: usize,
     ) -> Result<AgentWorkQueueReport, AgentWorkError> {
+        self.initialize_with_reset_completed(version, goal, thread_count, false)
+    }
+
+    pub fn initialize_with_reset_completed(
+        &self,
+        version: &str,
+        goal: &str,
+        thread_count: usize,
+        reset_completed: bool,
+    ) -> Result<AgentWorkQueueReport, AgentWorkError> {
         if thread_count == 0 {
             return Err(AgentWorkError::InvalidThreadCount);
         }
@@ -41,6 +51,41 @@ impl AgentWorkCoordinator {
         self.with_lock(&version, |layout| {
             if layout.queue_path.exists() {
                 let mut queue = read_queue(&layout.queue_path)?;
+                if reset_completed {
+                    if !queue.tasks.is_empty()
+                        && queue
+                            .tasks
+                            .iter()
+                            .all(|task| task.status == AgentWorkTaskStatus::Completed)
+                    {
+                        let previous_goal = queue.goal.clone();
+                        let previous_events = queue.events;
+                        let mut restarted = create_queue(&version, &goal, thread_count);
+                        restarted.events = previous_events;
+                        restarted.updated_at_unix_seconds = current_unix_seconds();
+                        push_event(
+                            &mut restarted,
+                            "restart",
+                            None,
+                            None,
+                            format!(
+                                "协作队列已从完成状态重开。上一目标：{previous_goal}。新目标：{goal}。"
+                            ),
+                        );
+                        write_queue(&layout.queue_path, &restarted)?;
+                        return Ok(AgentWorkQueueReport {
+                            version: version.clone(),
+                            queue_path: layout.queue_path.clone(),
+                            created: true,
+                            queue: restarted,
+                        });
+                    }
+
+                    return Err(AgentWorkError::QueueNotCompleted {
+                        version: version.clone(),
+                    });
+                }
+
                 if queue.version != version {
                     queue.version = version.clone();
                     queue.updated_at_unix_seconds = current_unix_seconds();

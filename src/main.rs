@@ -681,23 +681,36 @@ fn agent_tools(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Box
 fn agent_work_init(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Box<dyn Error>> {
     let command = parse_agent_work_init_args(arguments)?;
     boxed(
-        app.init_agent_work_queue(&command.version, &command.goal, command.thread_count)
-            .map(|report| {
-                let action = if report.created {
-                    "已创建"
-                } else {
-                    "已存在"
-                };
-                let mut lines = vec![format!(
-                    "SelfForge 多 AI 协作任务板 {} 版本 {} 线程 {} 文件 {}",
-                    action,
-                    report.version,
-                    report.queue.thread_count,
-                    report.queue_path.display()
-                )];
-                append_agent_work_queue_lines(&mut lines, &report);
-                lines.join("\n")
-            }),
+        app.init_agent_work_queue_with_reset_completed(
+            &command.version,
+            &command.goal,
+            command.thread_count,
+            command.reset_completed,
+        )
+        .map(|report| {
+            let restarted = report
+                .queue
+                .events
+                .last()
+                .map(|event| event.action == "restart")
+                .unwrap_or(false);
+            let action = if restarted {
+                "已重开"
+            } else if report.created {
+                "已创建"
+            } else {
+                "已存在"
+            };
+            let mut lines = vec![format!(
+                "SelfForge 多 AI 协作任务板 {} 版本 {} 线程 {} 文件 {}",
+                action,
+                report.version,
+                report.queue.thread_count,
+                report.queue_path.display()
+            )];
+            append_agent_work_queue_lines(&mut lines, &report);
+            lines.join("\n")
+        }),
     )
 }
 
@@ -5209,6 +5222,7 @@ struct AgentWorkInitArgs {
     version: String,
     goal: String,
     thread_count: usize,
+    reset_completed: bool,
 }
 
 struct AgentWorkVersionArgs {
@@ -5653,6 +5667,7 @@ fn parse_agent_work_init_args(arguments: Vec<String>) -> Result<AgentWorkInitArg
     let state = ForgeState::load(env::current_dir()?)?;
     let mut version = state.current_version.clone();
     let mut thread_count = 1;
+    let mut reset_completed = false;
     let mut goal_parts = Vec::new();
     let mut index = 0;
 
@@ -5680,6 +5695,10 @@ fn parse_agent_work_init_args(arguments: Vec<String>) -> Result<AgentWorkInitArg
                 thread_count = value.parse::<usize>()?;
                 index += 2;
             }
+            "--reset-completed" => {
+                reset_completed = true;
+                index += 1;
+            }
             "--" => {
                 goal_parts.extend(arguments[index + 1..].iter().cloned());
                 break;
@@ -5704,6 +5723,7 @@ fn parse_agent_work_init_args(arguments: Vec<String>) -> Result<AgentWorkInitArg
         version,
         goal,
         thread_count,
+        reset_completed,
     })
 }
 
@@ -6611,7 +6631,7 @@ memory-insights [--current|--candidate|--version VERSION] [--limit N]
 memory-compact [--current|--candidate|--version VERSION] [--keep N]
 ai-config, ai-request [--dry-run] [--timeout-ms N] [prompt]
 agents, agent-tools [--current|--candidate|--version VERSION] [--init]
-agent-work-init [--current|--candidate|--version VERSION] [--threads N] [goal]
+agent-work-init [--current|--candidate|--version VERSION] [--threads N] [--reset-completed] [goal]
 agent-work-status [--current|--candidate|--version VERSION]
 agent-work-claim [--current|--candidate|--version VERSION] [--worker ID] [--agent AGENT_ID] [--lease-seconds N]
 agent-work-complete [--current|--candidate|--version VERSION] TASK_ID [--worker ID] [--summary TEXT]

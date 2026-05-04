@@ -2834,6 +2834,21 @@ impl SelfForgeApp {
         AgentWorkCoordinator::new(&self.root).initialize(version, goal, thread_count)
     }
 
+    pub fn init_agent_work_queue_with_reset_completed(
+        &self,
+        version: &str,
+        goal: &str,
+        thread_count: usize,
+        reset_completed: bool,
+    ) -> Result<AgentWorkQueueReport, AgentWorkError> {
+        AgentWorkCoordinator::new(&self.root).initialize_with_reset_completed(
+            version,
+            goal,
+            thread_count,
+            reset_completed,
+        )
+    }
+
     pub fn agent_work_status(&self, version: &str) -> Result<AgentWorkQueueReport, AgentWorkError> {
         AgentWorkCoordinator::new(&self.root).status(version)
     }

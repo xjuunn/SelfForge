@@ -130,6 +130,9 @@ pub enum AgentWorkError {
     NoAvailableTask {
         version: String,
     },
+    QueueNotCompleted {
+        version: String,
+    },
     LockBusy {
         path: PathBuf,
     },
@@ -196,6 +199,9 @@ impl fmt::Display for AgentWorkError {
             AgentWorkError::NoAvailableTask { version } => {
                 write!(formatter, "版本 {version} 当前没有可领取任务")
             }
+            AgentWorkError::QueueNotCompleted { version } => {
+                write!(formatter, "版本 {version} 的协作队列尚未全部完成，禁止重开")
+            }
             AgentWorkError::LockBusy { path } => {
                 write!(formatter, "协作队列锁繁忙：{}", path.display())
             }
@@ -236,6 +242,7 @@ impl Error for AgentWorkError {
             | AgentWorkError::TaskNotFound { .. }
             | AgentWorkError::TaskNotClaimedByWorker { .. }
             | AgentWorkError::NoAvailableTask { .. }
+            | AgentWorkError::QueueNotCompleted { .. }
             | AgentWorkError::LockBusy { .. } => None,
         }
     }
