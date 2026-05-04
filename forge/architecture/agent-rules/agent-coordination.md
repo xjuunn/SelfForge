@@ -13,6 +13,7 @@ workspaces/vMAJOR/artifacts/agents/coordination/work-queue.json
 ```txt
 agent-work-init
 agent-work-status
+agent-work-status --active-only
 agent-work-finalize-check
 agent-work-claim --worker ID --agent AGENT_ID
 agent-work-complete TASK_ID --worker ID --summary TEXT
@@ -23,6 +24,13 @@ agent-work-block TASK_ID --reason TEXT
 ```
 
 # 任务板重开
+
+# 任务板状态过滤
+
+1. 默认 `agent-work-status` 必须保持完整输出，便于审计所有终态和活跃任务。
+2. 长队列查看活跃任务时使用 `agent-work-status --active-only`。
+3. `--active-only` 只能过滤展示任务明细，任务总数和各状态统计必须保持基于完整队列。
+4. 状态查询保持只读，禁止创建分支、领取任务或修改队列。
 
 1. 新一轮相关任务组开始前，优先复用当前 major 的同一个 `work-queue.json`。
 2. 当旧队列没有待领取和已领取任务，且任务状态只包含已完成或已阻断时，可以使用 `agent-work-init --reset-completed` 重开下一轮协作。
