@@ -352,6 +352,31 @@ fn builtin_tools() -> Vec<AgentToolDefinition> {
             vec!["builder", "verifier"],
         ),
         AgentToolDefinition::builtin(
+            "command.run",
+            "命令执行",
+            "无需 Agent 会话，直接通过 Runtime 在目标 workspace 中执行明确程序并记录运行证据。",
+            "runtime",
+            vec![
+                AgentCapability::Implementation,
+                AgentCapability::Runtime,
+                AgentCapability::Testing,
+            ],
+            vec!["builder", "verifier"],
+        ),
+        AgentToolDefinition::builtin(
+            "command.history",
+            "命令历史",
+            "只读查询 Runtime 最近运行记录，支持失败和超时过滤，不读取输出正文。",
+            "runtime",
+            vec![
+                AgentCapability::Implementation,
+                AgentCapability::Runtime,
+                AgentCapability::Review,
+                AgentCapability::Testing,
+            ],
+            vec!["builder", "verifier", "reviewer"],
+        ),
+        AgentToolDefinition::builtin(
             "agent.session",
             "会话审计",
             "读取和记录 Agent 会话、事件时间线和计划上下文。",
@@ -383,6 +408,19 @@ fn builtin_tools() -> Vec<AgentToolDefinition> {
                 AgentCapability::Testing,
             ],
             vec!["builder", "verifier", "reviewer"],
+        ),
+        AgentToolDefinition::builtin(
+            "code.outline",
+            "代码结构提纲",
+            "读取项目内单个代码文件的结构提纲，返回符号类型、名称、行号和预览。",
+            "code",
+            vec![
+                AgentCapability::Architecture,
+                AgentCapability::Implementation,
+                AgentCapability::Review,
+                AgentCapability::Testing,
+            ],
+            vec!["architect", "builder", "verifier", "reviewer"],
         ),
         AgentToolDefinition::builtin(
             "code.search",

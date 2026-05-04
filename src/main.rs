@@ -1610,10 +1610,56 @@ fn agent_self_loop(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String,
     if command.dry_run {
         return Ok(format_agent_self_loop_preview(&command));
     }
-    boxed(
-        app.run_self_evolution_loop(command.request)
-            .map(format_agent_self_loop_report),
-    )
+    println!("SelfForge AI 过程 启动真实编码自我进化循环，阶段输出会实时显示。");
+    boxed(app.run_self_evolution_loop(command.request).map(|report| {
+        let mut output = format_agent_self_loop_report(report.clone());
+        append_agent_self_loop_coding_details(&mut output, &report);
+        output
+    }))
+}
+
+fn append_agent_self_loop_coding_details(
+    output: &mut String,
+    report: &self_forge::SelfEvolutionLoopReport,
+) {
+    for step in &report.record.steps {
+        if !step.phase_events.is_empty() {
+            output.push_str(&format!("\n轮次 {} AI 过程", step.cycle));
+            for event in &step.phase_events {
+                output.push_str(&format!("\n- {event}"));
+            }
+        }
+        let records = [
+            ("补丁草案", step.patch_draft_id.as_deref()),
+            ("补丁审计", step.patch_audit_id.as_deref()),
+            ("补丁预览", step.patch_preview_id.as_deref()),
+            ("候选应用", step.patch_application_id.as_deref()),
+            ("源码计划", step.patch_source_plan_id.as_deref()),
+            ("源码执行", step.patch_source_execution_id.as_deref()),
+            ("提升衔接", step.patch_source_promotion_id.as_deref()),
+            ("候选准备", step.patch_source_candidate_id.as_deref()),
+            ("版本循环", step.patch_source_cycle_id.as_deref()),
+            ("循环总结", step.patch_source_summary_id.as_deref()),
+        ];
+        let present_records = records
+            .iter()
+            .filter_map(|(label, id)| id.map(|id| format!("{label} {id}")))
+            .collect::<Vec<_>>();
+        if !present_records.is_empty() {
+            output.push_str(&format!(
+                "\n轮次 {} 记录 {}",
+                step.cycle,
+                present_records.join("；")
+            ));
+        }
+        if !step.changed_files.is_empty() {
+            output.push_str(&format!(
+                "\n轮次 {} 真实变更文件 {}",
+                step.cycle,
+                step.changed_files.join("；")
+            ));
+        }
+    }
 }
 
 fn agent_self_loops(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Box<dyn Error>> {
@@ -5545,6 +5591,8 @@ struct AgentToolRunArgs {
     timeout_ms: u64,
     max_bytes: usize,
     prompt: Option<String>,
+    failed_only: bool,
+    timed_out_only: bool,
     command_start: Option<usize>,
     arguments: Vec<String>,
 }
@@ -6500,6 +6548,28 @@ fn parse_agent_tool_run_args(
                 timeout_ms: command.timeout_ms,
             }
         }
+        "command.run" => {
+            let start = command
+                .command_start
+                .ok_or("command.run 需要使用 -- 指定命令")?;
+            let program = command
+                .arguments
+                .get(start)
+                .ok_or("command.run 需要命令")?
+                .clone();
+            AgentToolInvocationInput::CommandRun {
+                target_version: command.target_version,
+                program,
+                args: command.arguments[start + 1..].to_vec(),
+                timeout_ms: command.timeout_ms,
+            }
+        }
+        "command.history" => AgentToolInvocationInput::CommandHistory {
+            target_version: command.target_version,
+            limit: command.limit,
+            failed_only: command.failed_only,
+            timed_out_only: command.timed_out_only,
+        },
         "ai.request" => {
             let prompt = command.prompt.ok_or("ai.request 需要 --prompt")?;
             AgentToolInvocationInput::AiRequestPreview { prompt }
@@ -6525,6 +6595,15 @@ fn parse_agent_tool_run_args(
             AgentToolInvocationInput::CodeDiff {
                 path,
                 max_bytes: command.max_bytes,
+            }
+        }
+        "code.outline" => {
+            let path = command
+                .prompt
+                .ok_or("code.outline 需要 --prompt 指定项目内代码文件路径")?;
+            AgentToolInvocationInput::CodeOutline {
+                path,
+                limit: command.limit,
             }
         }
         "code.read" => {
@@ -6564,6 +6643,8 @@ fn parse_agent_tool_run_command(
     let mut timeout_ms = 30_000;
     let mut max_bytes = 0;
     let mut prompt = None;
+    let mut failed_only = false;
+    let mut timed_out_only = false;
     let mut command_start = None;
     let mut index = 0;
 
@@ -6626,6 +6707,14 @@ fn parse_agent_tool_run_command(
             }
             "--all" => {
                 all_major = true;
+                index += 1;
+            }
+            "--failed" => {
+                failed_only = true;
+                index += 1;
+            }
+            "--timed-out" => {
+                timed_out_only = true;
                 index += 1;
             }
             "--session" => {
@@ -6691,6 +6780,8 @@ fn parse_agent_tool_run_command(
         timeout_ms,
         max_bytes,
         prompt,
+        failed_only,
+        timed_out_only,
         command_start,
         arguments,
     })
@@ -7238,7 +7329,7 @@ agent-work-claim [--current|--candidate|--version VERSION] [--worker ID] [--agen
 agent-work-complete [--current|--candidate|--version VERSION] TASK_ID [--worker ID] [--summary TEXT]
 agent-work-release [--current|--candidate|--version VERSION] TASK_ID [--worker ID] [--reason TEXT]
 agent-work-reap [--current|--candidate|--version VERSION] [--reason TEXT]
-agent-tool-run TOOL_ID --agent AGENT_ID [--current|--candidate|--version VERSION] [--limit N] [--all] [--session SESSION_ID] [--session-version VERSION] [--step N] [--target-version VERSION] [--timeout-ms N] [--max-bytes N] [--prompt TEXT] [-- PROGRAM ARGS...]
+agent-tool-run TOOL_ID --agent AGENT_ID [--current|--candidate|--version VERSION] [--limit N] [--all] [--failed] [--timed-out] [--session SESSION_ID] [--session-version VERSION] [--step N] [--target-version VERSION] [--timeout-ms N] [--max-bytes N] [--prompt TEXT] [-- PROGRAM ARGS...]
 agent-step [--session-version VERSION] [--target-version VERSION] [--tool TOOL_ID] [--limit N] [--timeout-ms N] [--prompt TEXT] SESSION_ID [-- PROGRAM ARGS...]
 agent-steps [--session-version VERSION] [--target-version VERSION] [--limit N] [--timeout-ms N] [--max-steps N] SESSION_ID
 agent-plan [--current|--candidate|--version VERSION] [--limit N] [goal]

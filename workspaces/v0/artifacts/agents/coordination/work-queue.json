@@ -1,10 +1,10 @@
 {
-  "version": "v0.1.71",
-  "goal": "补齐编码智能体变更差异查看工具",
+  "version": "v0.1.72",
+  "goal": "继续丰富 aicoding 技能，补齐代码结构提纲查看工具",
   "thread_count": 1,
   "lease_duration_seconds": 3600,
-  "created_at_unix_seconds": 1777916456,
-  "updated_at_unix_seconds": 1777916898,
+  "created_at_unix_seconds": 1777919868,
+  "updated_at_unix_seconds": 1777920210,
   "conflict_policy": "同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。",
   "prompt_policy": "每个线程只执行领取到的任务，必须遵守写入范围、依赖关系、验收标准和归档规则。",
   "tasks": [
@@ -25,10 +25,10 @@
       ],
       "status": "Completed",
       "claimed_by": "ai-1",
-      "claimed_at_unix_seconds": 1777916459,
-      "completed_at_unix_seconds": 1777916464,
-      "result": "已确认本阶段新增只读 code.diff 工具：用于查看 Git 工作区状态和有限 diff 内容，保持项目根受限、输出限量、跳过本地敏感环境文件，不提供写入或提交能力。",
-      "prompt": "你是 SelfForge 多 AI 协作线程 `ai-1`。\n\n全局目标：补齐编码智能体变更差异查看工具\n当前任务：coord-001-architecture - 拆解协作架构和提示词边界\n职责 Agent：architect\n任务说明：梳理目标、协作规则、提示词约束、冲突策略和后续扩展点。\n\n必须遵守：\n1. 只完成当前已领取任务，禁止重复实现其他任务。\n2. 只修改写入范围：Agents.md，workspaces/v0/artifacts/agents/coordination/。\n3. 依赖任务：无。\n4. 验收标准：提示词必须说明只处理已领取任务；冲突处理必须明确释放或阻断流程。\n5. 租约到期时间 unix:1777923659，无法继续时必须主动释放任务。\n6. 如发现写入范围冲突、依赖缺失或无法完成，执行 `agent-work-release coord-001-architecture --worker ai-1 --reason 原因`。\n7. 完成后执行必要测试，并执行 `agent-work-complete coord-001-architecture --worker ai-1 --summary 摘要`。\n\n当前仍可领取任务：coord-002-application，coord-003-cli。\n冲突策略：同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。"
+      "claimed_at_unix_seconds": 1777919872,
+      "completed_at_unix_seconds": 1777919876,
+      "result": "已确认本阶段架构边界：新增 code.outline 只读工具，用于查看项目内单个文本代码文件的结构提纲；工具限制在项目根目录内，拒绝越界和本地敏感环境文件，只返回符号行号、类型、名称和预览，不做写入。",
+      "prompt": "你是 SelfForge 多 AI 协作线程 `ai-1`。\n\n全局目标：继续丰富 aicoding 技能，补齐代码结构提纲查看工具\n当前任务：coord-001-architecture - 拆解协作架构和提示词边界\n职责 Agent：architect\n任务说明：梳理目标、协作规则、提示词约束、冲突策略和后续扩展点。\n\n必须遵守：\n1. 只完成当前已领取任务，禁止重复实现其他任务。\n2. 只修改写入范围：Agents.md，workspaces/v0/artifacts/agents/coordination/。\n3. 依赖任务：无。\n4. 验收标准：提示词必须说明只处理已领取任务；冲突处理必须明确释放或阻断流程。\n5. 租约到期时间 unix:1777923472，无法继续时必须主动释放任务。\n6. 如发现写入范围冲突、依赖缺失或无法完成，执行 `agent-work-release coord-001-architecture --worker ai-1 --reason 原因`。\n7. 完成后执行必要测试，并执行 `agent-work-complete coord-001-architecture --worker ai-1 --summary 摘要`。\n\n当前仍可领取任务：coord-002-application，coord-003-cli。\n冲突策略：同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。"
     },
     {
       "id": "coord-002-application",
@@ -48,10 +48,10 @@
       ],
       "status": "Completed",
       "claimed_by": "ai-1",
-      "claimed_at_unix_seconds": 1777916468,
-      "completed_at_unix_seconds": 1777916713,
-      "result": "已新增 code.diff 只读差异查看能力，接入工具定义、工具输入、应用层执行器和步骤调用，支持 Git 状态与有限 diff 输出，并过滤本地敏感环境文件。",
-      "prompt": "你是 SelfForge 多 AI 协作线程 `ai-1`。\n\n全局目标：补齐编码智能体变更差异查看工具\n当前任务：coord-002-application - 实现应用层协作队列\n职责 Agent：builder\n任务说明：实现任务板持久化、领取、完成、释放和冲突检测。\n\n必须遵守：\n1. 只完成当前已领取任务，禁止重复实现其他任务。\n2. 只修改写入范围：src/app/agent/，src/app/minimal_loop.rs，src/app/mod.rs。\n3. 依赖任务：无。\n4. 验收标准：队列必须写入 major 工作区 artifacts/agents/coordination；领取必须防止重复任务和写入范围冲突。\n5. 租约到期时间 unix:1777923668，无法继续时必须主动释放任务。\n6. 如发现写入范围冲突、依赖缺失或无法完成，执行 `agent-work-release coord-002-application --worker ai-1 --reason 原因`。\n7. 完成后执行必要测试，并执行 `agent-work-complete coord-002-application --worker ai-1 --summary 摘要`。\n\n当前仍可领取任务：coord-003-cli。\n冲突策略：同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。"
+      "claimed_at_unix_seconds": 1777919879,
+      "completed_at_unix_seconds": 1777920086,
+      "result": "已补齐 code.outline 应用层能力：新增项目内单文件结构提纲读取、工具输入分发和自动步骤 prompt 输入要求；工具只读项目文本文件，不越界、不读取敏感本地环境文件，并返回符号类型、名称、行号和预览。cargo fmt --check 与 agent_code_tool 定向测试通过。",
+      "prompt": "你是 SelfForge 多 AI 协作线程 `ai-1`。\n\n全局目标：继续丰富 aicoding 技能，补齐代码结构提纲查看工具\n当前任务：coord-002-application - 实现应用层协作队列\n职责 Agent：builder\n任务说明：实现任务板持久化、领取、完成、释放和冲突检测。\n\n必须遵守：\n1. 只完成当前已领取任务，禁止重复实现其他任务。\n2. 只修改写入范围：src/app/agent/，src/app/minimal_loop.rs，src/app/mod.rs。\n3. 依赖任务：无。\n4. 验收标准：队列必须写入 major 工作区 artifacts/agents/coordination；领取必须防止重复任务和写入范围冲突。\n5. 租约到期时间 unix:1777923479，无法继续时必须主动释放任务。\n6. 如发现写入范围冲突、依赖缺失或无法完成，执行 `agent-work-release coord-002-application --worker ai-1 --reason 原因`。\n7. 完成后执行必要测试，并执行 `agent-work-complete coord-002-application --worker ai-1 --summary 摘要`。\n\n当前仍可领取任务：coord-003-cli。\n冲突策略：同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。"
     },
     {
       "id": "coord-003-cli",
@@ -70,10 +70,10 @@
       ],
       "status": "Completed",
       "claimed_by": "ai-1",
-      "claimed_at_unix_seconds": 1777916718,
-      "completed_at_unix_seconds": 1777916745,
-      "result": "已为 agent-tool-run 接入 code.diff 参数解析，并在 README 常用命令和编码智能体工具说明中补充差异查看、输出上限和敏感环境文件过滤边界。",
-      "prompt": "你是 SelfForge 多 AI 协作线程 `ai-1`。\n\n全局目标：补齐编码智能体变更差异查看工具\n当前任务：coord-003-cli - 实现协作命令入口\n职责 Agent：builder\n任务说明：提供初始化、状态查询、领取、完成和释放命令。\n\n必须遵守：\n1. 只完成当前已领取任务，禁止重复实现其他任务。\n2. 只修改写入范围：src/main.rs，README.md。\n3. 依赖任务：无。\n4. 验收标准：CLI 只能解析参数和展示应用层结果；领取命令必须输出当前任务提示词。\n5. 租约到期时间 unix:1777923918，无法继续时必须主动释放任务。\n6. 如发现写入范围冲突、依赖缺失或无法完成，执行 `agent-work-release coord-003-cli --worker ai-1 --reason 原因`。\n7. 完成后执行必要测试，并执行 `agent-work-complete coord-003-cli --worker ai-1 --summary 摘要`。\n\n当前仍可领取任务：无。\n冲突策略：同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。"
+      "claimed_at_unix_seconds": 1777920037,
+      "completed_at_unix_seconds": 1777920072,
+      "result": "已为 code.outline 接入 agent-tool-run CLI 和 README 示例，真实命令可返回代码文件结构提纲；格式化已修复。",
+      "prompt": "你是 SelfForge 多 AI 协作线程 `ai-1`。\n\n全局目标：继续丰富 aicoding 技能，补齐代码结构提纲查看工具\n当前任务：coord-003-cli - 实现协作命令入口\n职责 Agent：builder\n任务说明：提供初始化、状态查询、领取、完成和释放命令。\n\n必须遵守：\n1. 只完成当前已领取任务，禁止重复实现其他任务。\n2. 只修改写入范围：src/main.rs，README.md。\n3. 依赖任务：无。\n4. 验收标准：CLI 只能解析参数和展示应用层结果；领取命令必须输出当前任务提示词。\n5. 租约到期时间 unix:1777923637，无法继续时必须主动释放任务。\n6. 如发现写入范围冲突、依赖缺失或无法完成，执行 `agent-work-release coord-003-cli --worker ai-1 --reason 原因`。\n7. 完成后执行必要测试，并执行 `agent-work-complete coord-003-cli --worker ai-1 --summary 摘要`。\n\n当前仍可领取任务：无。\n冲突策略：同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。"
     },
     {
       "id": "coord-004-tests",
@@ -94,10 +94,10 @@
       ],
       "status": "Completed",
       "claimed_by": "ai-1",
-      "claimed_at_unix_seconds": 1777916756,
-      "completed_at_unix_seconds": 1777916859,
-      "result": "已新增 code.diff 定向测试，覆盖 Git 工作区状态、有限 diff 输出、截断标记和 .env 本地敏感环境文件过滤；agent_code_tool 与 agent_tool 定向测试通过。",
-      "prompt": "你是 SelfForge 多 AI 协作线程 `ai-1`。\n\n全局目标：补齐编码智能体变更差异查看工具\n当前任务：coord-004-tests - 补充协作队列测试\n职责 Agent：verifier\n任务说明：覆盖单线程领取、多线程不重复领取、依赖阻断、冲突范围和错误完成。\n\n必须遵守：\n1. 只完成当前已领取任务，禁止重复实现其他任务。\n2. 只修改写入范围：src/lib.rs。\n3. 依赖任务：coord-002-application，coord-003-cli。\n4. 验收标准：必须包含单元、边界和错误测试；测试必须验证重复领取被阻止。\n5. 租约到期时间 unix:1777923956，无法继续时必须主动释放任务。\n6. 如发现写入范围冲突、依赖缺失或无法完成，执行 `agent-work-release coord-004-tests --worker ai-1 --reason 原因`。\n7. 完成后执行必要测试，并执行 `agent-work-complete coord-004-tests --worker ai-1 --summary 摘要`。\n\n当前仍可领取任务：无。\n冲突策略：同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。"
+      "claimed_at_unix_seconds": 1777920072,
+      "completed_at_unix_seconds": 1777920210,
+      "result": "已为 code.outline 补充工具分配、结构提纲调用、越界路径拒绝和本地敏感环境文件拒绝测试，目标测试 agent_code_tool_tests 已通过。",
+      "prompt": "你是 SelfForge 多 AI 协作线程 `ai-1`。\n\n全局目标：继续丰富 aicoding 技能，补齐代码结构提纲查看工具\n当前任务：coord-004-tests - 补充协作队列测试\n职责 Agent：verifier\n任务说明：覆盖单线程领取、多线程不重复领取、依赖阻断、冲突范围和错误完成。\n\n必须遵守：\n1. 只完成当前已领取任务，禁止重复实现其他任务。\n2. 只修改写入范围：src/lib.rs。\n3. 依赖任务：coord-002-application，coord-003-cli。\n4. 验收标准：必须包含单元、边界和错误测试；测试必须验证重复领取被阻止。\n5. 租约到期时间 unix:1777923672，无法继续时必须主动释放任务。\n6. 如发现写入范围冲突、依赖缺失或无法完成，执行 `agent-work-release coord-004-tests --worker ai-1 --reason 原因`。\n7. 完成后执行必要测试，并执行 `agent-work-complete coord-004-tests --worker ai-1 --summary 摘要`。\n\n当前仍可领取任务：无。\n冲突策略：同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。"
     },
     {
       "id": "coord-005-review-archive",
@@ -123,10 +123,10 @@
       ],
       "status": "Completed",
       "claimed_by": "ai-1",
-      "claimed_at_unix_seconds": 1777916867,
-      "completed_at_unix_seconds": 1777916898,
-      "result": "已将 code.diff 变更差异查看工具阶段写入 v0 任务、记忆、错误和版本聚合归档，记录只读边界、敏感文件过滤、验证结果和未提升版本状态。",
-      "prompt": "你是 SelfForge 多 AI 协作线程 `ai-1`。\n\n全局目标：补齐编码智能体变更差异查看工具\n当前任务：coord-005-review-archive - 审查并写入中文归档\n职责 Agent：archivist\n任务说明：审查协作队列规则，补充任务、记忆、版本和错误归档。\n\n必须遵守：\n1. 只完成当前已领取任务，禁止重复实现其他任务。\n2. 只修改写入范围：forge/tasks/v0.md，forge/memory/v0.md，forge/errors/v0.md，forge/versions/v0.md。\n3. 依赖任务：coord-001-architecture，coord-002-application，coord-003-cli，coord-004-tests。\n4. 验收标准：归档必须为中文；不得创建小版本独立归档文件。\n5. 租约到期时间 unix:1777924067，无法继续时必须主动释放任务。\n6. 如发现写入范围冲突、依赖缺失或无法完成，执行 `agent-work-release coord-005-review-archive --worker ai-1 --reason 原因`。\n7. 完成后执行必要测试，并执行 `agent-work-complete coord-005-review-archive --worker ai-1 --summary 摘要`。\n\n当前仍可领取任务：无。\n冲突策略：同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。"
+      "claimed_at_unix_seconds": 1777920127,
+      "completed_at_unix_seconds": 1777920180,
+      "result": "已将 code.outline 代码结构提纲工具写入 v0 聚合任务、记忆、错误和版本归档，记录只读路径边界、自动步骤 prompt 输入要求、CLI 显式调用、定向测试和未提升版本状态；cargo run -- validate 与开放错误查询通过。",
+      "prompt": "你是 SelfForge 多 AI 协作线程 `ai-1`。\n\n全局目标：继续丰富 aicoding 技能，补齐代码结构提纲查看工具\n当前任务：coord-005-review-archive - 审查并写入中文归档\n职责 Agent：archivist\n任务说明：审查协作队列规则，补充任务、记忆、版本和错误归档。\n\n必须遵守：\n1. 只完成当前已领取任务，禁止重复实现其他任务。\n2. 只修改写入范围：forge/tasks/v0.md，forge/memory/v0.md，forge/errors/v0.md，forge/versions/v0.md。\n3. 依赖任务：coord-001-architecture，coord-002-application，coord-003-cli，coord-004-tests。\n4. 验收标准：归档必须为中文；不得创建小版本独立归档文件。\n5. 租约到期时间 unix:1777923727，无法继续时必须主动释放任务。\n6. 如发现写入范围冲突、依赖缺失或无法完成，执行 `agent-work-release coord-005-review-archive --worker ai-1 --reason 原因`。\n7. 完成后执行必要测试，并执行 `agent-work-complete coord-005-review-archive --worker ai-1 --summary 摘要`。\n\n当前仍可领取任务：无。\n冲突策略：同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。"
     }
   ],
   "events": [
@@ -1516,6 +1516,748 @@
       "worker_id": "ai-1",
       "task_id": "coord-005-review-archive",
       "message": "已将 code.diff 变更差异查看工具阶段写入 v0 任务、记忆、错误和版本聚合归档，记录只读边界、敏感文件过滤、验证结果和未提升版本状态。"
+    },
+    {
+      "order": 313,
+      "timestamp_unix_seconds": 1777918228,
+      "action": "restart",
+      "message": "协作队列已从完成状态重开。上一目标：补齐编码智能体变更差异查看工具。新目标：修复自我进化循环为真实编码智能体循环：读取项目上下文、规划、读代码、生成补丁、验证后按需提升版本，并实时输出 AI 过程。"
+    },
+    {
+      "order": 314,
+      "timestamp_unix_seconds": 1777918231,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-002-application",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 315,
+      "timestamp_unix_seconds": 1777918499,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-002-application",
+      "message": "已将 agent-self-loop 默认执行器改为真实 AI coding 补丁流水线：读取项目结构、Agents.md、README.md 构造上下文，经过补丁草案、审计、预览、候选镜像应用、验证、源码覆盖、候选准备和版本循环后才允许提升版本；无源码变更或验证失败时停止循环。"
+    },
+    {
+      "order": 316,
+      "timestamp_unix_seconds": 1777918504,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-003-cli",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 317,
+      "timestamp_unix_seconds": 1777918615,
+      "action": "release",
+      "worker_id": "ai-1",
+      "task_id": "coord-003-cli",
+      "message": "当前分支存在 src/app/self_evolution_loop.rs 编译错误且不在当前任务写入范围内，无法继续 CLI 或新技能实现；按协作规则释放任务等待重新领取或先修复应用层阻塞。"
+    },
+    {
+      "order": 318,
+      "timestamp_unix_seconds": 1777918653,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-003-cli",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 319,
+      "timestamp_unix_seconds": 1777918659,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-003-cli",
+      "message": "已在 agent-self-loop CLI 启动时输出真实编码循环提示，并在最终报告中追加每轮 AI 阶段事件、补丁流水线记录编号和真实变更文件；README 已说明执行命令、真实补丁流水线和可审计终端输出边界。"
+    },
+    {
+      "order": 320,
+      "timestamp_unix_seconds": 1777918676,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-004-tests",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 321,
+      "timestamp_unix_seconds": 1777918696,
+      "action": "release",
+      "worker_id": "ai-1",
+      "task_id": "coord-004-tests",
+      "message": "全局格式检查失败，失败位于 src/app/self_evolution_loop.rs，不属于当前测试任务写入范围；停止测试任务以避免越权修改，需先领取覆盖该文件的修复任务。"
+    },
+    {
+      "order": 322,
+      "timestamp_unix_seconds": 1777918704,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-001-architecture",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 323,
+      "timestamp_unix_seconds": 1777918723,
+      "action": "retarget",
+      "worker_id": "ai-1",
+      "task_id": "coord-004-application-format",
+      "message": "发现全局格式阻塞位于 src/app/self_evolution_loop.rs，原测试任务写入范围不覆盖该文件；已新增应用层格式修复任务，并让测试和归档依赖它，避免越权写入。"
+    },
+    {
+      "order": 324,
+      "timestamp_unix_seconds": 1777918770,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-001-architecture",
+      "message": "已在任务板中记录当前格式阻塞的协作边界，新增 coord-004-application-format 专项任务，写入范围限定为 src/app/self_evolution_loop.rs，并让测试与归档依赖该任务，避免越权修改。"
+    },
+    {
+      "order": 325,
+      "timestamp_unix_seconds": 1777918790,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-004-application-format",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 326,
+      "timestamp_unix_seconds": 1777918806,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-004-application-format",
+      "message": "已对 src/app/self_evolution_loop.rs 执行定向格式化，恢复 cargo fmt --check 通过；未修改任务外源码或归档。"
+    },
+    {
+      "order": 327,
+      "timestamp_unix_seconds": 1777918810,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-004-tests",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 328,
+      "timestamp_unix_seconds": 1777918829,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-004-tests",
+      "message": "已修正自我进化循环记录结构体测试初始化，覆盖新增阶段事件、补丁记录和真实变更文件字段；已运行 self_evolution_loop 相关库测试和 CLI 解析测试。"
+    },
+    {
+      "order": 329,
+      "timestamp_unix_seconds": 1777918842,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-005-review-archive",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 330,
+      "timestamp_unix_seconds": 1777918891,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-004-tests",
+      "message": "已补充自我进化循环恢复测试的新增字段初始化，覆盖 phase_events、补丁记录编号和真实变更文件列表，定向测试与格式检查通过。"
+    },
+    {
+      "order": 331,
+      "timestamp_unix_seconds": 1777918891,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-004-tests",
+      "message": "已补充自我进化循环步骤记录兼容性测试，覆盖旧 JSON 缺少 AI 过程字段时默认反序列化，以及新增补丁阶段记录和真实变更文件字段的序列化往返；定向测试 self_evolution_loop_record_tests 通过。"
+    },
+    {
+      "order": 332,
+      "timestamp_unix_seconds": 1777918949,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-005-review-archive",
+      "message": "已将自我进化循环真实编码修复写入当前 major 聚合任务、记忆、错误和版本归档；记录了旧循环无源码变更仍连续提升版本的原因、修复方案、阶段验证和后续建议。"
+    },
+    {
+      "order": 333,
+      "timestamp_unix_seconds": 1777918956,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-005-review-archive",
+      "message": "已将自我进化循环真实编码修复的测试补充写入 v0 聚合归档，记录旧 JSON 兼容、新字段序列化往返、定向测试和未提升版本状态。"
+    },
+    {
+      "order": 334,
+      "timestamp_unix_seconds": 1777918963,
+      "action": "restart",
+      "message": "协作队列已从完成状态重开。上一目标：修复自我进化循环为真实编码智能体循环：读取项目上下文、规划、读代码、生成补丁、验证后按需提升版本，并实时输出 AI 过程。新目标：继续添加更多 aicoding 技能，先补齐无需会话的受控命令执行工具。"
+    },
+    {
+      "order": 335,
+      "timestamp_unix_seconds": 1777918968,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-001-architecture",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 336,
+      "timestamp_unix_seconds": 1777918972,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-001-architecture",
+      "message": "已确认本阶段架构边界：新增无需会话的 command.run 受控命令执行工具，必须复用 Runtime 运行记录、禁止隐式 shell 包装、命令来自显式 -- PROGRAM ARGS，工具只负责执行和报告，不提供 Git 写入、提交或密钥读取能力。"
+    },
+    {
+      "order": 337,
+      "timestamp_unix_seconds": 1777918980,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-002-application",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 338,
+      "timestamp_unix_seconds": 1777919012,
+      "action": "release",
+      "worker_id": "ai-1",
+      "task_id": "coord-002-application",
+      "message": "收到用户继续处理 TUI 界面优化需求，但当前任务板目标已切换为 command.run 受控命令执行工具，写入范围与 TUI 和刚完成的自我进化归档均不匹配；为避免越权写入，释放任务并停止等待重新明确任务组。"
+    },
+    {
+      "order": 339,
+      "timestamp_unix_seconds": 1777919094,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-002-application",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 340,
+      "timestamp_unix_seconds": 1777919096,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-003-cli",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 341,
+      "timestamp_unix_seconds": 1777919108,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-002-application",
+      "message": "已新增 command.run 内置工具和调用输入，工具直接复用 Runtime 在目标 workspace 中执行显式程序参数并返回运行记录引用；应用层执行器不依赖 Agent 会话，不使用 shell 包装，也不直接回显 stdout/stderr 内容。"
+    },
+    {
+      "order": 342,
+      "timestamp_unix_seconds": 1777919163,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-002-application",
+      "message": "已接入 command.run 应用层能力：新增工具定义和 CommandRun 输入，复用 Runtime 在目标 workspace 执行显式程序，返回运行摘要、stdout/stderr 字节数、运行目录和 AgentRunReference；已补齐 ExecutionError 转换与错误展示，cargo fmt --check 和定向库测试通过。"
+    },
+    {
+      "order": 343,
+      "timestamp_unix_seconds": 1777919166,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-003-cli",
+      "message": "已为 agent-tool-run 接入 command.run 参数解析，命令来自 -- 后的显式 PROGRAM ARGS；README 已补充 command.run 示例和 Runtime 受控执行边界说明。"
+    },
+    {
+      "order": 344,
+      "timestamp_unix_seconds": 1777919170,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-004-tests",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 345,
+      "timestamp_unix_seconds": 1777919170,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-003-cli",
+      "message": "已为 command.run 补充 README 常用命令和工具说明，确认 agent-tool-run command.run 可通过 -- PROGRAM ARGS 无需会话调用 Runtime 并生成运行记录；同时移除重复解析分支，格式检查通过。"
+    },
+    {
+      "order": 346,
+      "timestamp_unix_seconds": 1777919188,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-003-cli",
+      "message": "已为 agent-tool-run 接入 command.run CLI 参数解析，支持 -- PROGRAM ARGS 明确指定命令，并在 README 增加可复制巡检命令和工具边界说明；已通过 command.run 执行 cargo --version 验证。"
+    },
+    {
+      "order": 347,
+      "timestamp_unix_seconds": 1777919300,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-004-tests",
+      "message": "已补充 command.run 工具定向测试，覆盖工具分配、无需会话生成 Runtime 运行记录、运行记录可查询以及错误输入类型拒绝；agent_code_tool 定向测试和格式检查通过。"
+    },
+    {
+      "order": 348,
+      "timestamp_unix_seconds": 1777919305,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-005-review-archive",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 349,
+      "timestamp_unix_seconds": 1777919306,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-004-tests",
+      "message": "已补充 command.run 定向测试，覆盖 builder/verifier 工具分配、reviewer 不分配、无需会话执行命令生成 Runtime 运行记录，以及错误输入类型拒绝；agent_code_tool_tests 通过。"
+    },
+    {
+      "order": 350,
+      "timestamp_unix_seconds": 1777919309,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-004-tests",
+      "message": "已在 src/lib.rs 补充 command.run 定向测试，覆盖 builder/verifier 工具绑定、reviewer 不绑定、无需会话执行 Runtime 记录和错误输入拒绝；定向测试与格式检查通过。"
+    },
+    {
+      "order": 351,
+      "timestamp_unix_seconds": 1777919315,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-004-tests",
+      "message": "补齐 command.run 工具分配、运行记录与错误输入测试，并通过全量 cargo test。"
+    },
+    {
+      "order": 352,
+      "timestamp_unix_seconds": 1777919332,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-005-review-archive",
+      "message": "已将 command.run 受控命令执行工具写入 v0 聚合归档，记录 Runtime 复用、CLI 示例、测试结果、已解决测试命令与断言问题，以及本阶段未提升版本状态。"
+    },
+    {
+      "order": 353,
+      "timestamp_unix_seconds": 1777919356,
+      "action": "restart",
+      "message": "协作队列已从完成状态重开。上一目标：继续添加更多 aicoding 技能，先补齐无需会话的受控命令执行工具。新目标：继续丰富 aicoding 技能，补齐 Runtime 运行历史查看工具。"
+    },
+    {
+      "order": 354,
+      "timestamp_unix_seconds": 1777919359,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-001-architecture",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 355,
+      "timestamp_unix_seconds": 1777919368,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-001-architecture",
+      "message": "已确认本阶段架构边界：新增 command.history 只读工具，复用 Runtime 运行索引查询，支持 limit、failed 和 timed_out 过滤，不执行命令、不读取 stdout/stderr 正文、不修改运行记录。"
+    },
+    {
+      "order": 356,
+      "timestamp_unix_seconds": 1777919373,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-002-application",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 357,
+      "timestamp_unix_seconds": 1777919438,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-002-application",
+      "message": "已新增 command.history 只读工具和调用输入，工具复用 Runtime 运行索引查询，支持 limit、failed_only 和 timed_out_only 过滤，返回运行摘要和报告路径，不读取 stdout/stderr 正文。"
+    },
+    {
+      "order": 358,
+      "timestamp_unix_seconds": 1777919447,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-003-cli",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 359,
+      "timestamp_unix_seconds": 1777919452,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-002-application",
+      "message": "已新增 command.history 应用层只读工具：通过 Runtime 运行索引查询目标版本最近运行记录，支持 limit、failed_only 和 timed_out_only 过滤，不执行命令、不读取 stdout/stderr 正文、不修改运行记录；格式检查和 cargo check 通过。"
+    },
+    {
+      "order": 360,
+      "timestamp_unix_seconds": 1777919461,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-002-application",
+      "message": "已接入 command.history 应用层工具：新增 CommandHistory 输入和内置工具定义，复用 Runtime RunQuery 查询运行索引，支持 limit、failed_only、timed_out_only，并只返回运行摘要和报告路径。"
+    },
+    {
+      "order": 361,
+      "timestamp_unix_seconds": 1777919487,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-002-application",
+      "message": "已接入 command.history 应用层能力：新增工具定义和 CommandHistory 输入，复用 Runtime query_runs 查询运行索引，支持 limit、failed_only、timed_out_only 过滤，报告仅展示运行元数据和报告路径，不读取 stdout/stderr 正文；cargo fmt --check 和工具绑定测试通过。"
+    },
+    {
+      "order": 362,
+      "timestamp_unix_seconds": 1777919495,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-003-cli",
+      "message": "已为 agent-tool-run 接入 command.history 参数解析，支持 --limit、--failed、--timed-out 和目标版本选择；README 增加 command.history 示例和只读查询边界说明。"
+    },
+    {
+      "order": 363,
+      "timestamp_unix_seconds": 1777919495,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-003-cli",
+      "message": "已接入 command.history CLI 和 README：agent-tool-run 支持 --limit、--failed、--timed-out 查询 Runtime 运行历史，真实命令已返回最近运行摘要。"
+    },
+    {
+      "order": 364,
+      "timestamp_unix_seconds": 1777919499,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-004-tests",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 365,
+      "timestamp_unix_seconds": 1777919514,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-003-cli",
+      "message": "已为 command.history 接入 agent-tool-run 参数解析，支持 --limit、--failed、--timed-out 和目标版本参数；README 已补充常用命令与只读边界说明，真实命令历史查询验证通过。"
+    },
+    {
+      "order": 366,
+      "timestamp_unix_seconds": 1777919544,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-004-tests",
+      "message": "已补充 command.history 定向测试，覆盖 builder/verifier/reviewer 工具分配、运行历史查询、失败过滤和报告路径摘要；agent_code_tool_tests 通过。"
+    },
+    {
+      "order": 367,
+      "timestamp_unix_seconds": 1777919548,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-005-review-archive",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 368,
+      "timestamp_unix_seconds": 1777919557,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-004-tests",
+      "message": "已补充 command.history 测试，覆盖 builder/verifier/reviewer 工具分配、reviewer 只读查询、limit 查询和 failed 过滤；定向测试与格式检查通过。"
+    },
+    {
+      "order": 369,
+      "timestamp_unix_seconds": 1777919571,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-005-review-archive",
+      "message": "已将 command.history 运行历史查看工具写入 v0 聚合归档，记录只读 Runtime 索引查询、过滤参数、CLI 示例、测试结果和未提升版本状态。"
+    },
+    {
+      "order": 370,
+      "timestamp_unix_seconds": 1777919598,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-004-tests",
+      "message": "已补充 command.history 定向测试，覆盖 builder/verifier/reviewer 工具分配、普通历史查询、失败过滤、超时过滤空结果和错误输入拒绝；agent_code_tool 定向测试与格式检查通过。"
+    },
+    {
+      "order": 371,
+      "timestamp_unix_seconds": 1777919617,
+      "action": "restart",
+      "message": "协作队列已从完成状态重开。上一目标：继续丰富 aicoding 技能，补齐 Runtime 运行历史查看工具。新目标：修复 command.history 自动步骤回归，保留 runtime.run 外部命令输入阻断语义。"
+    },
+    {
+      "order": 372,
+      "timestamp_unix_seconds": 1777919621,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-001-architecture",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 373,
+      "timestamp_unix_seconds": 1777919630,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-001-architecture",
+      "message": "已确认回归原因：command.history 无需输入即可自动运行，导致自动步骤跳过 runtime.run 的 PROGRAM 输入需求；修复边界为自动步骤缺少 prompt 时返回输入需求，显式 --tool command.history 或 agent-tool-run 仍允许无 prompt 查询。"
+    },
+    {
+      "order": 374,
+      "timestamp_unix_seconds": 1777919632,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-001-architecture",
+      "message": "已确认回归边界：command.history 是只读历史查询工具，但自动步骤缺少显式意图时不得抢占 runtime.run 的 PROGRAM 输入阻断语义；修复范围限定 src/app/minimal_loop.rs。"
+    },
+    {
+      "order": 375,
+      "timestamp_unix_seconds": 1777919636,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-002-application",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 376,
+      "timestamp_unix_seconds": 1777919637,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-003-cli",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 377,
+      "timestamp_unix_seconds": 1777919681,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-002-application",
+      "message": "已修复 command.history 自动步骤回归：自动步骤缺少 prompt 时返回 PROMPT 输入需求，避免抢占 runtime.run 的 PROGRAM 阻断语义；相关失败测试已通过。"
+    },
+    {
+      "order": 378,
+      "timestamp_unix_seconds": 1777919681,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-003-cli",
+      "message": "本回归阶段无需修改 CLI；确认命令入口保持 command.history 显式 agent-tool-run 查询，自动步骤修复位于应用层。"
+    },
+    {
+      "order": 379,
+      "timestamp_unix_seconds": 1777919685,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-002-application",
+      "message": "已修复 command.history 自动步骤回归：自动步骤缺少 prompt 时返回输入需求，仅显式 --tool command.history 或 agent-tool-run 允许无 prompt 查询，保留 runtime.run 的 PROGRAM 输入阻断语义。"
+    },
+    {
+      "order": 380,
+      "timestamp_unix_seconds": 1777919685,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-004-tests",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 381,
+      "timestamp_unix_seconds": 1777919710,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-004-tests",
+      "message": "已复测 command.history 回归修复，两个原失败测试和全量 cargo test 均通过；库测试 219 条、CLI 测试 10 条全部通过。"
+    },
+    {
+      "order": 382,
+      "timestamp_unix_seconds": 1777919712,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-004-tests",
+      "message": "已复跑回归测试，确认 agent_step_requires_runtime_command_without_mutating_step 与 agent_steps_stops_when_next_step_requires_external_input 均通过，command.history 不再抢占 runtime.run 的外部命令输入阻断语义。"
+    },
+    {
+      "order": 383,
+      "timestamp_unix_seconds": 1777919715,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-005-review-archive",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 384,
+      "timestamp_unix_seconds": 1777919719,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-002-application",
+      "message": "已修复 command.history 自动步骤回归：显式指定 command.history 时仍可查询运行历史，自动步骤扫描时将其视为不可自动执行，避免抢占 runtime.run 的 PROGRAM 输入阻断语义；两个回归定向测试和格式检查通过。"
+    },
+    {
+      "order": 385,
+      "timestamp_unix_seconds": 1777919742,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-005-review-archive",
+      "message": "已归档 command.history 自动步骤回归、根因、修复方案和回归验证结果；确认本阶段不提升版本、不 push、不创建 PR。"
+    },
+    {
+      "order": 386,
+      "timestamp_unix_seconds": 1777919750,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-005-review-archive",
+      "message": "已将 command.history 自动步骤回归修复写入 v0 聚合任务、记忆、错误和版本归档，记录失败测试、原因、修复方案和回归验证结果。"
+    },
+    {
+      "order": 387,
+      "timestamp_unix_seconds": 1777919752,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-005-review-archive",
+      "message": "已归档 command.history 自动步骤回归：记录失败测试、根因、应用层修复、全量测试和仓库验证结果；确认无开放错误且本阶段不提升版本。"
+    },
+    {
+      "order": 388,
+      "timestamp_unix_seconds": 1777919868,
+      "action": "restart",
+      "message": "协作队列已从完成状态重开。上一目标：修复 command.history 自动步骤回归，保留 runtime.run 外部命令输入阻断语义。新目标：继续丰富 aicoding 技能，补齐代码结构提纲查看工具。"
+    },
+    {
+      "order": 389,
+      "timestamp_unix_seconds": 1777919872,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-001-architecture",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 390,
+      "timestamp_unix_seconds": 1777919876,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-001-architecture",
+      "message": "已确认本阶段架构边界：新增 code.outline 只读工具，用于查看项目内单个文本代码文件的结构提纲；工具限制在项目根目录内，拒绝越界和本地敏感环境文件，只返回符号行号、类型、名称和预览，不做写入。"
+    },
+    {
+      "order": 391,
+      "timestamp_unix_seconds": 1777919879,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-002-application",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 392,
+      "timestamp_unix_seconds": 1777920026,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-002-application",
+      "message": "已接入 code.outline 应用层能力：新增 CodeOutline 输入、内置工具定义、项目内文件结构提纲解析和工具报告，自动步骤缺少 prompt 时返回输入需求。"
+    },
+    {
+      "order": 393,
+      "timestamp_unix_seconds": 1777920031,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-002-application",
+      "message": "完成 code.outline 应用层接入：补齐工具定义、CodeOutline 输入、outline_project_code 执行器、自动步骤 prompt 输入要求和应用层公开导出；cargo check --lib 通过且无警告。"
+    },
+    {
+      "order": 394,
+      "timestamp_unix_seconds": 1777920037,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-003-cli",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 395,
+      "timestamp_unix_seconds": 1777920047,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-002-application",
+      "message": "已新增 code.outline 应用层只读工具：限制项目根内单个文件，拒绝越界和本地敏感环境文件，返回符号类型、名称、行号和预览；已接入工具定义、调用输入、执行器和显式/自动步骤输入。"
+    },
+    {
+      "order": 396,
+      "timestamp_unix_seconds": 1777920063,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-003-cli",
+      "message": "完成 code.outline CLI 和 README 接入：agent-tool-run code.outline 使用 --prompt 指定项目内代码文件、--limit 控制返回数量；真实命令查询 src/app/agent/code_tools.rs 通过。"
+    },
+    {
+      "order": 397,
+      "timestamp_unix_seconds": 1777920072,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-004-tests",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 398,
+      "timestamp_unix_seconds": 1777920072,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-003-cli",
+      "message": "已为 code.outline 接入 agent-tool-run CLI 和 README 示例，真实命令可返回代码文件结构提纲；格式化已修复。"
+    },
+    {
+      "order": 399,
+      "timestamp_unix_seconds": 1777920086,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-002-application",
+      "message": "已补齐 code.outline 应用层能力：新增项目内单文件结构提纲读取、工具输入分发和自动步骤 prompt 输入要求；工具只读项目文本文件，不越界、不读取敏感本地环境文件，并返回符号类型、名称、行号和预览。cargo fmt --check 与 agent_code_tool 定向测试通过。"
+    },
+    {
+      "order": 400,
+      "timestamp_unix_seconds": 1777920123,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-004-tests",
+      "message": "已补充并复测 code.outline 定向测试，覆盖工具绑定、项目内代码结构提纲读取、limit 截断和越界路径拒绝；cargo test agent_code_tool 共 11 条通过，cargo fmt --check 通过。"
+    },
+    {
+      "order": 401,
+      "timestamp_unix_seconds": 1777920127,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-005-review-archive",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 402,
+      "timestamp_unix_seconds": 1777920129,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-004-tests",
+      "message": "已补充 code.outline 测试，覆盖工具分配、项目内结构提纲读取、截断标记和越界路径拒绝；定向测试和格式检查通过。"
+    },
+    {
+      "order": 403,
+      "timestamp_unix_seconds": 1777920168,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-005-review-archive",
+      "message": "已归档 code.outline 代码结构提纲工具，记录实现范围、CLI 示例、测试结果、已解决中间警告和本阶段纳入 v0.1.73 收束。"
+    },
+    {
+      "order": 404,
+      "timestamp_unix_seconds": 1777920174,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-004-tests",
+      "message": "完成 code.outline 测试复核：工具绑定包含 builder、verifier、reviewer；成功路径覆盖符号数量、返回上限和截断；错误路径覆盖越界读取拒绝。定向测试、cargo fmt --check 和 cargo check --lib 均通过。"
+    },
+    {
+      "order": 405,
+      "timestamp_unix_seconds": 1777920180,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-005-review-archive",
+      "message": "已将 code.outline 代码结构提纲工具写入 v0 聚合任务、记忆、错误和版本归档，记录只读路径边界、自动步骤 prompt 输入要求、CLI 显式调用、定向测试和未提升版本状态；cargo run -- validate 与开放错误查询通过。"
+    },
+    {
+      "order": 406,
+      "timestamp_unix_seconds": 1777920210,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-004-tests",
+      "message": "已为 code.outline 补充工具分配、结构提纲调用、越界路径拒绝和本地敏感环境文件拒绝测试，目标测试 agent_code_tool_tests 已通过。"
     }
   ]
 }

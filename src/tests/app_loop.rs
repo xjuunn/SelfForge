@@ -15,10 +15,10 @@ fn app_advance_prepares_candidate_when_none_exists() {
         .expect("advance should prepare a candidate when none exists");
 
     assert_eq!(report.outcome, MinimalLoopOutcome::Prepared);
-    assert_eq!(report.starting_version, "v0.1.72");
-    assert_eq!(report.stable_version, "v0.1.72");
-    assert_eq!(report.candidate_version.as_deref(), Some("v0.1.73"));
-    assert_eq!(report.next_expected_version.as_deref(), Some("v0.1.74"));
+    assert_eq!(report.starting_version, "v0.1.73");
+    assert_eq!(report.stable_version, "v0.1.73");
+    assert_eq!(report.candidate_version.as_deref(), Some("v0.1.74"));
+    assert_eq!(report.next_expected_version.as_deref(), Some("v0.1.75"));
 
     cleanup(&root);
 }
@@ -40,10 +40,10 @@ fn app_advance_promotes_candidate_and_prepares_next_candidate() {
         .expect("advance should promote valid candidate and prepare the next one");
 
     assert_eq!(report.outcome, MinimalLoopOutcome::PromotedAndPrepared);
-    assert_eq!(report.starting_version, "v0.1.72");
-    assert_eq!(report.stable_version, "v0.1.73");
-    assert_eq!(report.candidate_version.as_deref(), Some("v0.1.74"));
-    assert_eq!(report.next_expected_version.as_deref(), Some("v0.1.75"));
+    assert_eq!(report.starting_version, "v0.1.73");
+    assert_eq!(report.stable_version, "v0.1.74");
+    assert_eq!(report.candidate_version.as_deref(), Some("v0.1.75"));
+    assert_eq!(report.next_expected_version.as_deref(), Some("v0.1.76"));
 
     cleanup(&root);
 }
@@ -69,8 +69,8 @@ fn app_advance_stops_after_candidate_rollback() {
         .expect("advance should roll back invalid candidate");
 
     assert_eq!(report.outcome, MinimalLoopOutcome::RolledBack);
-    assert_eq!(report.starting_version, "v0.1.72");
-    assert_eq!(report.stable_version, "v0.1.72");
+    assert_eq!(report.starting_version, "v0.1.73");
+    assert_eq!(report.stable_version, "v0.1.73");
     assert_eq!(report.candidate_version.as_deref(), Some("v9.0.0"));
     assert_eq!(report.next_expected_version, None);
     assert!(report.failure.is_some());

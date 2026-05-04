@@ -29,8 +29,11 @@ cargo run -- agents
 cargo run -- agent-tools
 cargo run -- agent-tool-run code.list --agent builder --limit 5 --prompt "src/app"
 cargo run -- agent-tool-run code.diff --agent builder --max-bytes 1200 --prompt "src/app/agent/code_tools.rs"
+cargo run -- agent-tool-run code.outline --agent builder --limit 20 --prompt "src/app/agent/code_tools.rs"
 cargo run -- agent-tool-run code.search --agent builder --limit 3 --prompt "AgentToolInvocation"
 cargo run -- agent-tool-run code.read --agent builder --max-bytes 1200 --prompt "src/app/agent/tools.rs"
+cargo run -- agent-tool-run command.run --agent builder --target-current --timeout-ms 30000 -- cargo --version
+cargo run -- agent-tool-run command.history --agent builder --target-current --limit 5
 cargo run -- agent-skills --current
 cargo run -- agent-skill-select --current --limit 3 --token-budget 800 "README 命令"
 cargo run -- agent-skill-context --current --limit 3 --token-budget 800 "README 命令"
@@ -44,6 +47,8 @@ cargo run -- agent-self-loops --current --limit 10
 
 协作任务、Agent 会话、补丁草案、源码覆盖、自我升级、自我进化循环、版本提升和回滚都依赖当前任务板状态、真实记录编号或最终收束确认。执行这些流程时先运行 `cargo run -- help` 查看完整命令，再用 `agent-work-status`、`agent-sessions`、`agent-patch-drafts`、`agent-patch-audits`、`agent-patch-applications`、`agent-self-upgrades`、`agent-self-loops` 等查询命令取得真实编号。真实 AI 请求使用 `ai-request` 时必须确认环境变量中的密钥可用；普通巡检使用 `ai-request --dry-run`。
 
+执行真实自我进化编码循环使用 `cargo run -- agent-self-loop "目标"`。该命令会读取项目文件结构、`Agents.md` 和 `README.md`，再走 AI 补丁草案、审计、预览、候选镜像应用、验证、源码覆盖、候选准备和版本循环；只有存在真实源码变更且验证通过时才会提升版本。终端会实时输出 `SelfForge AI 过程 ...` 阶段信息；不会输出模型隐藏思考，只输出可审计的阶段状态、AI 可见结果摘要和验证结论。
+
 `agent-self-loop --commit-each-cycle` 只允许创建本地阶段提交；`agent-self-loop --finalize-pr --confirm-finalize` 才允许统一 push、创建 PR、等待 required checks、合并并删除远程任务分支。最终收束前必须先通过 `agent-work-finalize-check`。
 
 # AI 技能加载
@@ -52,7 +57,7 @@ Agent 技能索引写入 `workspaces/v0/artifacts/agents/skills/skill-index.json
 
 # 编码智能体工具
 
-编码智能体常用只读工具通过 `agent-tool-run` 调用。`code.list` 列出项目根目录内的文件，跳过 `.git`、`target` 和本地敏感环境文件，并按 `--limit` 返回有限结果；`code.diff` 查看 Git 工作区状态和有限差异内容，过滤本地敏感环境文件，并用 `--max-bytes` 控制输出上限；`code.search` 在项目根目录内搜索文本，跳过 `.git`、`target` 和本地敏感环境文件，并按 `--limit` 返回有限匹配；`code.read` 读取项目内文件的受控文本前缀，拒绝绝对路径、`..` 越界路径和本地敏感环境文件，可用 `--max-bytes` 控制读取上限。写入类能力仍应通过协作任务板、补丁草案、审计和验证流程受控执行。
+编码智能体常用工具通过 `agent-tool-run` 调用。`code.list` 列出项目根目录内的文件，跳过 `.git`、`target` 和本地敏感环境文件，并按 `--limit` 返回有限结果；`code.diff` 查看 Git 工作区状态和有限差异内容，过滤本地敏感环境文件，并用 `--max-bytes` 控制输出上限；`code.outline` 读取项目内单个代码文件的结构提纲，返回符号类型、名称、行号和预览，并按 `--limit` 控制返回数量；`code.search` 在项目根目录内搜索文本，跳过 `.git`、`target` 和本地敏感环境文件，并按 `--limit` 返回有限匹配；`code.read` 读取项目内文件的受控文本前缀，拒绝绝对路径、`..` 越界路径和本地敏感环境文件，可用 `--max-bytes` 控制读取上限。`command.run` 无需 Agent 会话，使用 `-- PROGRAM ARGS...` 明确指定程序和参数，通过 Runtime 在目标 workspace 中执行并写入运行记录；它不做隐式 shell 包装，也不提供 Git 提交、暂存或还原能力。`command.history` 只读查询 Runtime 最近运行记录，支持 `--limit`、`--failed` 和 `--timed-out` 过滤，只返回运行摘要和报告路径，不读取 stdout 或 stderr 正文。写入类能力仍应通过协作任务板、补丁草案、审计和验证流程受控执行。
 
 # AI 配置
 

@@ -23,27 +23,27 @@ pub use version::{
     version_major_file_name, version_major_key,
 };
 
-pub const CURRENT_VERSION: &str = "v0.1.72";
+pub const CURRENT_VERSION: &str = "v0.1.73";
 
 pub use app::{
     AgentCapability, AgentCodeDiffReport, AgentCodeListEntry, AgentCodeListReport,
-    AgentCodeReadReport, AgentCodeSearchMatch, AgentCodeSearchReport, AgentCodeToolError,
-    AgentDefinition, AgentError, AgentEvolutionError, AgentEvolutionReport, AgentPlan,
-    AgentPlanReport, AgentPlanReportError, AgentPlanStep, AgentRegistry, AgentRunError,
-    AgentRunReference, AgentRunReport, AgentSession, AgentSessionError, AgentSessionEvent,
-    AgentSessionEventKind, AgentSessionMemoryInsight, AgentSessionPlanContext, AgentSessionStatus,
-    AgentSessionStep, AgentSessionStore, AgentSessionSummary, AgentSessionWorkQueueContext,
-    AgentSingleEvolutionReport, AgentSkillError, AgentSkillIndex, AgentSkillIndexReport,
-    AgentSkillMetadata, AgentSkillSelection, AgentSkillSelectionReport, AgentSkillSelectionRequest,
-    AgentStepExecutionError, AgentStepExecutionReport, AgentStepExecutionRequest,
-    AgentStepRunError, AgentStepRunReport, AgentStepRunStop, AgentStepStatus, AgentToolAssignment,
-    AgentToolBinding, AgentToolConfig, AgentToolConfigInitReport, AgentToolDefinition,
-    AgentToolError, AgentToolInvocation, AgentToolInvocationError, AgentToolInvocationInput,
-    AgentToolInvocationReport, AgentToolReport, AgentVerificationReport, AgentWorkClaimReport,
-    AgentWorkCompactionReport, AgentWorkCoordinator, AgentWorkError, AgentWorkEvent,
-    AgentWorkFinalizeCheckError, AgentWorkFinalizeCheckReport, AgentWorkQueue,
-    AgentWorkQueueReport, AgentWorkReapReport, AgentWorkTask, AgentWorkTaskStatus, AiConfigError,
-    AiConfigReport, AiExecutionError, AiExecutionReport, AiPatchApplicationError,
+    AgentCodeOutlineItem, AgentCodeOutlineReport, AgentCodeReadReport, AgentCodeSearchMatch,
+    AgentCodeSearchReport, AgentCodeToolError, AgentDefinition, AgentError, AgentEvolutionError,
+    AgentEvolutionReport, AgentPlan, AgentPlanReport, AgentPlanReportError, AgentPlanStep,
+    AgentRegistry, AgentRunError, AgentRunReference, AgentRunReport, AgentSession,
+    AgentSessionError, AgentSessionEvent, AgentSessionEventKind, AgentSessionMemoryInsight,
+    AgentSessionPlanContext, AgentSessionStatus, AgentSessionStep, AgentSessionStore,
+    AgentSessionSummary, AgentSessionWorkQueueContext, AgentSingleEvolutionReport, AgentSkillError,
+    AgentSkillIndex, AgentSkillIndexReport, AgentSkillMetadata, AgentSkillSelection,
+    AgentSkillSelectionReport, AgentSkillSelectionRequest, AgentStepExecutionError,
+    AgentStepExecutionReport, AgentStepExecutionRequest, AgentStepRunError, AgentStepRunReport,
+    AgentStepRunStop, AgentStepStatus, AgentToolAssignment, AgentToolBinding, AgentToolConfig,
+    AgentToolConfigInitReport, AgentToolDefinition, AgentToolError, AgentToolInvocation,
+    AgentToolInvocationError, AgentToolInvocationInput, AgentToolInvocationReport, AgentToolReport,
+    AgentVerificationReport, AgentWorkClaimReport, AgentWorkCompactionReport, AgentWorkCoordinator,
+    AgentWorkError, AgentWorkEvent, AgentWorkFinalizeCheckError, AgentWorkFinalizeCheckReport,
+    AgentWorkQueue, AgentWorkQueueReport, AgentWorkReapReport, AgentWorkTask, AgentWorkTaskStatus,
+    AiConfigError, AiConfigReport, AiExecutionError, AiExecutionReport, AiPatchApplicationError,
     AiPatchApplicationFile, AiPatchApplicationRecord, AiPatchApplicationReport,
     AiPatchApplicationStatus, AiPatchApplicationStore, AiPatchApplicationStoreError,
     AiPatchApplicationSummary, AiPatchAuditError, AiPatchAuditFinding, AiPatchAuditFindingKind,
@@ -91,7 +91,8 @@ pub use app::{
     SelfEvolutionLoopRequest, SelfEvolutionLoopStatus, SelfEvolutionLoopStepRecord,
     SelfEvolutionLoopStepStatus, SelfEvolutionLoopSummary, SelfForgeApp,
     format_agent_skill_context, inspect_project_code_diff, list_project_code_files,
-    normalize_ai_self_upgrade_goal, read_project_code_file, search_project_code,
+    normalize_ai_self_upgrade_goal, outline_project_code, read_project_code_file,
+    search_project_code,
 };
 
 #[cfg(test)]
@@ -641,18 +642,29 @@ mod agent_code_tool_tests {
         let app = bootstrap_app(&root);
 
         let report = app.agent_tools(CURRENT_VERSION).expect("工具报告应可读取");
+        let architect = report.tool_ids_for_agent("architect");
         let builder = report.tool_ids_for_agent("builder");
         let verifier = report.tool_ids_for_agent("verifier");
         let reviewer = report.tool_ids_for_agent("reviewer");
 
+        assert!(architect.contains(&"code.outline".to_string()));
         assert!(builder.contains(&"code.search".to_string()));
         assert!(builder.contains(&"code.read".to_string()));
         assert!(builder.contains(&"code.diff".to_string()));
+        assert!(builder.contains(&"code.outline".to_string()));
+        assert!(builder.contains(&"command.run".to_string()));
+        assert!(builder.contains(&"command.history".to_string()));
+        assert!(verifier.contains(&"code.outline".to_string()));
         assert!(verifier.contains(&"code.read".to_string()));
         assert!(verifier.contains(&"code.diff".to_string()));
+        assert!(verifier.contains(&"command.run".to_string()));
+        assert!(verifier.contains(&"command.history".to_string()));
+        assert!(reviewer.contains(&"code.outline".to_string()));
         assert!(reviewer.contains(&"code.search".to_string()));
         assert!(reviewer.contains(&"code.read".to_string()));
         assert!(reviewer.contains(&"code.diff".to_string()));
+        assert!(!reviewer.contains(&"command.run".to_string()));
+        assert!(reviewer.contains(&"command.history".to_string()));
 
         fs::remove_dir_all(root).expect("测试目录应可清理");
     }
@@ -838,6 +850,85 @@ mod agent_code_tool_tests {
     }
 
     #[test]
+    fn agent_tool_invocation_outlines_project_code_file() {
+        let root = temp_root("code-tool-outline");
+        let app = bootstrap_app(&root);
+        fs::create_dir_all(root.join("src").join("app")).expect("测试应可创建代码目录");
+        fs::write(
+            root.join("src").join("app").join("outline.rs"),
+            "pub struct Demo {\n}\n\nimpl Demo {\n    pub fn run(&self) {}\n}\n\nfn helper() {}\n",
+        )
+        .expect("测试应可写入代码文件");
+
+        let report = app
+            .invoke_agent_tool(AgentToolInvocation {
+                agent_id: "reviewer".to_string(),
+                tool_id: "code.outline".to_string(),
+                version: CURRENT_VERSION.to_string(),
+                input: AgentToolInvocationInput::CodeOutline {
+                    path: "src/app/outline.rs".to_string(),
+                    limit: 2,
+                },
+            })
+            .expect("code.outline 应可读取项目内代码结构");
+
+        assert!(report.summary.contains("src/app/outline.rs"));
+        assert!(report.summary.contains("符号 4 个"));
+        assert!(report.summary.contains("返回 2 个"));
+        assert!(report.summary.contains("截断 true"));
+        assert!(report.details[0].contains("结构体 Demo"));
+        assert!(report.details[1].contains("实现 Demo"));
+        assert!(report.details[0].contains("src/app/outline.rs:1"));
+
+        fs::remove_dir_all(root).expect("测试目录应可清理");
+    }
+
+    #[test]
+    fn agent_tool_invocation_rejects_outline_workspace_escape() {
+        let root = temp_root("code-tool-outline-escape");
+        let app = bootstrap_app(&root);
+
+        let error = app
+            .invoke_agent_tool(AgentToolInvocation {
+                agent_id: "reviewer".to_string(),
+                tool_id: "code.outline".to_string(),
+                version: CURRENT_VERSION.to_string(),
+                input: AgentToolInvocationInput::CodeOutline {
+                    path: "../secret.rs".to_string(),
+                    limit: 10,
+                },
+            })
+            .expect_err("越界结构提纲读取必须被拒绝");
+
+        assert!(error.to_string().contains("不允许越过项目根目录"));
+
+        fs::remove_dir_all(root).expect("测试目录应可清理");
+    }
+
+    #[test]
+    fn agent_tool_invocation_rejects_outline_sensitive_env_file() {
+        let root = temp_root("code-tool-outline-sensitive");
+        let app = bootstrap_app(&root);
+        fs::write(root.join(".env"), "OPENAI_API_KEY=secret\n").expect("测试应可写入本地环境文件");
+
+        let error = app
+            .invoke_agent_tool(AgentToolInvocation {
+                agent_id: "reviewer".to_string(),
+                tool_id: "code.outline".to_string(),
+                version: CURRENT_VERSION.to_string(),
+                input: AgentToolInvocationInput::CodeOutline {
+                    path: ".env".to_string(),
+                    limit: 10,
+                },
+            })
+            .expect_err("本地环境文件结构提纲读取必须被拒绝");
+
+        assert!(error.to_string().contains("不允许越过项目根目录"));
+
+        fs::remove_dir_all(root).expect("测试目录应可清理");
+    }
+
+    #[test]
     fn agent_tool_invocation_rejects_code_read_workspace_escape() {
         let root = temp_root("code-tool-path-escape");
         let app = bootstrap_app(&root);
@@ -857,6 +948,236 @@ mod agent_code_tool_tests {
         assert!(error.to_string().contains("不允许越过项目根目录"));
 
         fs::remove_dir_all(root).expect("测试目录应可清理");
+    }
+
+    #[test]
+    fn agent_tool_invocation_command_run_records_runtime_without_session() {
+        let root = temp_root("command-run-tool");
+        let app = bootstrap_app(&root);
+        let program = std::env::current_exe()
+            .expect("测试可执行文件路径应可读取")
+            .to_string_lossy()
+            .into_owned();
+
+        let report = app
+            .invoke_agent_tool(AgentToolInvocation {
+                agent_id: "builder".to_string(),
+                tool_id: "command.run".to_string(),
+                version: CURRENT_VERSION.to_string(),
+                input: AgentToolInvocationInput::CommandRun {
+                    target_version: CURRENT_VERSION.to_string(),
+                    program,
+                    args: vec!["--help".to_string()],
+                    timeout_ms: 5_000,
+                },
+            })
+            .expect("command.run 工具应可无需会话执行命令");
+
+        assert!(report.summary.contains("命令运行"));
+        assert!(report.summary.contains("退出码 Some(0)"));
+        let run = report.run.expect("command.run 应返回运行记录引用");
+        assert_eq!(run.version, CURRENT_VERSION);
+        assert_eq!(run.exit_code, Some(0));
+        assert!(!run.timed_out);
+        assert!(root.join(&run.report_file).is_file());
+        let runs = app
+            .supervisor()
+            .list_runs(CURRENT_VERSION, 10)
+            .expect("command.run 记录应可通过 Runtime 查询");
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].run_id, run.run_id);
+
+        fs::remove_dir_all(root).expect("测试目录应可清理");
+    }
+
+    #[test]
+    fn agent_tool_invocation_command_run_rejects_wrong_input() {
+        let root = temp_root("command-run-wrong-input");
+        let app = bootstrap_app(&root);
+
+        let error = app
+            .invoke_agent_tool(AgentToolInvocation {
+                agent_id: "builder".to_string(),
+                tool_id: "command.run".to_string(),
+                version: CURRENT_VERSION.to_string(),
+                input: AgentToolInvocationInput::Empty,
+            })
+            .expect_err("command.run 必须拒绝错误输入类型");
+
+        assert!(error.to_string().contains("调用输入不匹配"));
+        assert!(error.to_string().contains("CommandRun"));
+
+        fs::remove_dir_all(root).expect("测试目录应可清理");
+    }
+
+    #[test]
+    fn agent_tool_invocation_queries_command_history_with_filters() {
+        let root = temp_root("command-history-tool");
+        let app = bootstrap_app(&root);
+        let program = std::env::current_exe()
+            .expect("测试可执行文件路径应可读取")
+            .to_string_lossy()
+            .into_owned();
+
+        for args in [
+            vec!["--help".to_string()],
+            vec!["--definitely-invalid-self-forge-test-flag".to_string()],
+        ] {
+            app.invoke_agent_tool(AgentToolInvocation {
+                agent_id: "builder".to_string(),
+                tool_id: "command.run".to_string(),
+                version: CURRENT_VERSION.to_string(),
+                input: AgentToolInvocationInput::CommandRun {
+                    target_version: CURRENT_VERSION.to_string(),
+                    program: program.clone(),
+                    args,
+                    timeout_ms: 5_000,
+                },
+            })
+            .expect("测试应可准备 Runtime 运行记录");
+        }
+
+        let all = app
+            .invoke_agent_tool(AgentToolInvocation {
+                agent_id: "builder".to_string(),
+                tool_id: "command.history".to_string(),
+                version: CURRENT_VERSION.to_string(),
+                input: AgentToolInvocationInput::CommandHistory {
+                    target_version: CURRENT_VERSION.to_string(),
+                    limit: 10,
+                    failed_only: false,
+                    timed_out_only: false,
+                },
+            })
+            .expect("command.history 应可读取运行历史");
+        assert!(all.summary.contains("返回运行记录 2 条"));
+        assert_eq!(all.details.len(), 2);
+        assert!(all.details.iter().all(|detail| detail.contains("报告")));
+
+        let failed = app
+            .invoke_agent_tool(AgentToolInvocation {
+                agent_id: "reviewer".to_string(),
+                tool_id: "command.history".to_string(),
+                version: CURRENT_VERSION.to_string(),
+                input: AgentToolInvocationInput::CommandHistory {
+                    target_version: CURRENT_VERSION.to_string(),
+                    limit: 10,
+                    failed_only: true,
+                    timed_out_only: false,
+                },
+            })
+            .expect("reviewer 应可只读查询失败运行历史");
+        assert!(failed.summary.contains("返回运行记录 1 条"));
+        assert_eq!(failed.details.len(), 1);
+        assert!(failed.details[0].contains("invalid"));
+
+        let timed_out = app
+            .invoke_agent_tool(AgentToolInvocation {
+                agent_id: "reviewer".to_string(),
+                tool_id: "command.history".to_string(),
+                version: CURRENT_VERSION.to_string(),
+                input: AgentToolInvocationInput::CommandHistory {
+                    target_version: CURRENT_VERSION.to_string(),
+                    limit: 10,
+                    failed_only: false,
+                    timed_out_only: true,
+                },
+            })
+            .expect("command.history 应支持超时过滤");
+        assert!(timed_out.summary.contains("返回运行记录 0 条"));
+        assert!(timed_out.details.is_empty());
+
+        fs::remove_dir_all(root).expect("测试目录应可清理");
+    }
+
+    #[test]
+    fn agent_tool_invocation_command_history_rejects_wrong_input() {
+        let root = temp_root("command-history-wrong-input");
+        let app = bootstrap_app(&root);
+
+        let error = app
+            .invoke_agent_tool(AgentToolInvocation {
+                agent_id: "reviewer".to_string(),
+                tool_id: "command.history".to_string(),
+                version: CURRENT_VERSION.to_string(),
+                input: AgentToolInvocationInput::Empty,
+            })
+            .expect_err("command.history 必须拒绝错误输入类型");
+
+        assert!(error.to_string().contains("调用输入不匹配"));
+        assert!(error.to_string().contains("CommandHistory"));
+
+        fs::remove_dir_all(root).expect("测试目录应可清理");
+    }
+}
+
+#[cfg(test)]
+mod self_evolution_loop_record_tests {
+    use super::*;
+
+    #[test]
+    fn self_evolution_step_record_accepts_old_json_without_ai_process_fields() {
+        let json = r#"{
+            "cycle": 1,
+            "status": "Running",
+            "started_at_unix_seconds": 10,
+            "completed_at_unix_seconds": null,
+            "stable_version_before": "v0.1.72",
+            "stable_version_after": null,
+            "audit_id": null,
+            "summary_id": null,
+            "error": null
+        }"#;
+
+        let record: SelfEvolutionLoopStepRecord =
+            serde_json::from_str(json).expect("旧循环步骤记录应保持兼容");
+
+        assert_eq!(record.phase_events, Vec::<String>::new());
+        assert_eq!(record.patch_draft_id, None);
+        assert_eq!(record.patch_source_cycle_id, None);
+        assert_eq!(record.changed_files, Vec::<String>::new());
+    }
+
+    #[test]
+    fn self_evolution_step_record_preserves_ai_process_fields() {
+        let record = SelfEvolutionLoopStepRecord {
+            cycle: 2,
+            status: SelfEvolutionLoopStepStatus::Succeeded,
+            started_at_unix_seconds: 10,
+            completed_at_unix_seconds: Some(20),
+            stable_version_before: "v0.1.72".to_string(),
+            stable_version_after: Some("v0.1.73".to_string()),
+            audit_id: None,
+            summary_id: None,
+            phase_events: vec!["完成补丁预览。".to_string()],
+            patch_draft_id: Some("draft-1".to_string()),
+            patch_audit_id: Some("audit-1".to_string()),
+            patch_preview_id: Some("preview-1".to_string()),
+            patch_application_id: Some("application-1".to_string()),
+            patch_source_plan_id: Some("source-plan-1".to_string()),
+            patch_source_execution_id: Some("source-execution-1".to_string()),
+            patch_source_promotion_id: Some("source-promotion-1".to_string()),
+            patch_source_candidate_id: Some("source-candidate-1".to_string()),
+            patch_source_cycle_id: Some("source-cycle-1".to_string()),
+            patch_source_summary_id: Some("source-summary-1".to_string()),
+            changed_files: vec!["src/app/agent/example.rs".to_string()],
+            error: None,
+        };
+
+        let json = serde_json::to_string(&record).expect("循环步骤记录应可序列化");
+        let roundtrip: SelfEvolutionLoopStepRecord =
+            serde_json::from_str(&json).expect("循环步骤记录应可反序列化");
+
+        assert_eq!(roundtrip.phase_events, vec!["完成补丁预览。"]);
+        assert_eq!(roundtrip.patch_draft_id.as_deref(), Some("draft-1"));
+        assert_eq!(
+            roundtrip.patch_source_execution_id.as_deref(),
+            Some("source-execution-1")
+        );
+        assert_eq!(
+            roundtrip.changed_files,
+            vec!["src/app/agent/example.rs".to_string()]
+        );
     }
 }
 
