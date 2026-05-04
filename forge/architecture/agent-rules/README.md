@@ -14,6 +14,7 @@
 | 文件 | 内容 |
 | --- | --- |
 | `project-structure.md` | 项目目录、Rust 模块边界、workspace 根目录规则 |
+| `code-architecture.md` | 大文件拆分、模块职责、代码架构边界 |
 | `git-pr.md` | 分支、PR、CI、提交、合并后清理 |
 | `archives-memory.md` | forge 归档、记忆、任务、错误、版本记录 |
 | `runtime-validation.md` | Runtime 执行、验证、preflight、cycle、错误记录 |

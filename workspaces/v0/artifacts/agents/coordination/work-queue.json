@@ -1,10 +1,10 @@
 {
-  "version": "v0.1.67",
-  "goal": "规范分阶段本地提交和最终 PR 流程",
+  "version": "v0.1.69",
+  "goal": "为任务板状态添加活跃任务过滤",
   "thread_count": 3,
   "lease_duration_seconds": 3600,
   "created_at_unix_seconds": 1777889312,
-  "updated_at_unix_seconds": 1777902797,
+  "updated_at_unix_seconds": 1777904507,
   "conflict_policy": "同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。",
   "prompt_policy": "每个线程只执行领取到的任务，必须遵守写入范围、依赖关系、验收标准和归档规则。",
   "tasks": [
@@ -586,72 +586,85 @@
       "completed_at_unix_seconds": 1777902794,
       "result": "已完成 v0.1.68 最终收束准备：提升版本、同步测试期望、补充 v0 聚合归档，并通过 cargo fmt --check、cargo test、git diff --check、validate、preflight 和开放错误查询。",
       "prompt": "已压缩：任务 coord-020-finalize-v068 已完成。完成摘要：已完成 v0.1.68 最终收束准备：提升版本、同步测试期望、补充 v0 聚合归档，并通过 cargo fmt --check、cargo test、git diff --check、validate、preflight 和开放错误查询。。执行边界保留在 title、description、write_scope、acceptance 和 result 字段中。"
+    },
+    {
+      "id": "coord-021-status-active-only",
+      "title": "为 agent-work-status 添加活跃任务过滤",
+      "description": "新增只读 --active-only 参数，仅展示待领取和已领取任务，保留任务统计和队列摘要，减少长任务板输出噪音。",
+      "preferred_agent_id": "builder",
+      "priority": 27,
+      "depends_on": [
+        "coord-020-finalize-v068"
+      ],
+      "write_scope": [
+        "src/main.rs",
+        "README.md",
+        "forge/architecture/agent-rules/agent-coordination.md",
+        "forge/tasks/v0.md",
+        "forge/memory/v0.md",
+        "forge/errors/v0.md",
+        "forge/versions/v0.md",
+        "workspaces/v0/artifacts/agents/coordination/",
+        "src/cli/agent_work_status.rs",
+        "src/cli/mod.rs",
+        "forge/architecture/agent-rules/code-architecture.md",
+        "Agents.md",
+        "forge/architecture/agent-rules/README.md"
+      ],
+      "acceptance": [
+        "agent-work-status --active-only 只显示待领取和已领取任务。",
+        "默认 agent-work-status 输出保持兼容。",
+        "补充 CLI 单元测试和中文文档。",
+        "本地阶段不提升版本、不 push。",
+        "大文件新增逻辑必须优先拆分到清晰模块，避免继续堆叠 main.rs。"
+      ],
+      "status": "Completed",
+      "claimed_by": "ai-1",
+      "claimed_at_unix_seconds": 1777903291,
+      "completed_at_unix_seconds": 1777904279,
+      "result": "已新增 agent-work-status --active-only 只读活跃任务过滤，并将状态输出逻辑拆分到 src/cli/agent_work_status.rs；补充大文件拆分规则、README、协作规则和 v0 聚合归档，验证已通过。",
+      "prompt": "已压缩：任务 coord-021-status-active-only 已完成。完成摘要：已新增 agent-work-status --active-only 只读活跃任务过滤，并将状态输出逻辑拆分到 src/cli/agent_work_status.rs；补充大文件拆分规则、README、协作规则和 v0 聚合归档，验证已通过。。执行边界保留在 title、description、write_scope、acceptance 和 result 字段中。"
+    },
+    {
+      "id": "coord-022-finalize-v069",
+      "title": "收束 v0.1.69 活跃任务过滤 PR",
+      "description": "将 agent-work-status --active-only 和大文件拆分规则收束为 v0.1.69，完成版本提升、最终归档、统一 push 和 Pull Request。",
+      "preferred_agent_id": "archivist",
+      "priority": 28,
+      "depends_on": [
+        "coord-021-status-active-only"
+      ],
+      "write_scope": [
+        "Cargo.toml",
+        "Cargo.lock",
+        "README.md",
+        "src/lib.rs",
+        "state/state.json",
+        "src/tests/app_loop.rs",
+        "src/tests/layout_version.rs",
+        "src/tests/agent_core.rs",
+        "src/tests/patch_draft_flow.rs",
+        "forge/tasks/v0.md",
+        "forge/memory/v0.md",
+        "forge/errors/v0.md",
+        "forge/versions/v0.md",
+        "workspaces/v0/artifacts/agents/coordination/"
+      ],
+      "acceptance": [
+        "版本从 v0.1.68 提升到 v0.1.69。",
+        "测试期望同步到 v0.1.69 基线。",
+        "最终归档记录完整验证结果。",
+        "PR 只在最终收束时统一 push 一次，并关联 Issue #1。"
+      ],
+      "status": "Completed",
+      "claimed_by": "ai-1",
+      "claimed_at_unix_seconds": 1777904306,
+      "completed_at_unix_seconds": 1777904500,
+      "result": "已完成 v0.1.69 最终收束准备：提升版本、同步测试期望、补充最终归档，并通过 cargo fmt --check、cargo test、git diff --check、validate、preflight 和开放错误查询。",
+      "prompt": "已压缩：任务 coord-022-finalize-v069 已完成。完成摘要：已完成 v0.1.69 最终收束准备：提升版本、同步测试期望、补充最终归档，并通过 cargo fmt --check、cargo test、git diff --check、validate、preflight 和开放错误查询。。执行边界保留在 title、description、write_scope、acceptance 和 result 字段中。"
     }
   ],
   "events": [
-    {
-      "order": 125,
-      "timestamp_unix_seconds": 1777896106,
-      "action": "compact",
-      "message": "协作任务板已压缩：压缩已完成任务提示词 1 个，移除旧事件 4 条，压缩前事件 24 条。"
-    },
-    {
-      "order": 126,
-      "timestamp_unix_seconds": 1777925020,
-      "action": "retarget",
-      "message": "协作队列追加任务组收束只读检查命令实现任务。"
-    },
-    {
-      "order": 127,
-      "timestamp_unix_seconds": 1777896224,
-      "action": "claim",
-      "worker_id": "ai-1",
-      "task_id": "coord-016-finalize-check",
-      "message": "任务已被工作线程领取。"
-    },
-    {
-      "order": 128,
-      "timestamp_unix_seconds": 1777899842,
-      "action": "complete",
-      "worker_id": "ai-1",
-      "task_id": "coord-016-finalize-check",
-      "message": "新增只读 agent-work-finalize-check 命令，覆盖任务状态和开放错误阻断检查，补充测试、README、Agents.md、协作规则和 v0 聚合归档。"
-    },
-    {
-      "order": 129,
-      "timestamp_unix_seconds": 1777899858,
-      "action": "compact",
-      "message": "协作任务板已压缩：压缩已完成任务提示词 1 个，移除旧事件 4 条，压缩前事件 24 条。"
-    },
-    {
-      "order": 130,
-      "timestamp_unix_seconds": 1777900158,
-      "action": "retarget",
-      "task_id": "coord-017-unrelated-task-pr-rule",
-      "message": "协作队列追加无关后续任务自动收束和独立分支规则任务。"
-    },
-    {
-      "order": 131,
-      "timestamp_unix_seconds": 1777900279,
-      "action": "claim",
-      "worker_id": "ai-1",
-      "task_id": "coord-017-unrelated-task-pr-rule",
-      "message": "任务已被工作线程领取。"
-    },
-    {
-      "order": 132,
-      "timestamp_unix_seconds": 1777900436,
-      "action": "complete",
-      "worker_id": "ai-1",
-      "task_id": "coord-017-unrelated-task-pr-rule",
-      "message": "已补充无关后续任务处理规则：完全无关任务先收束当前分支的小版本 PR，再从最新 master 创建独立分支；每个分支只处理自身相关任务，并更新输出规则和 v0 聚合归档。"
-    },
-    {
-      "order": 133,
-      "timestamp_unix_seconds": 1777900440,
-      "action": "compact",
-      "message": "协作任务板已压缩：压缩已完成任务提示词 1 个，移除旧事件 4 条，压缩前事件 24 条。"
-    },
     {
       "order": 134,
       "timestamp_unix_seconds": 1777900769,
@@ -738,6 +751,72 @@
       "timestamp_unix_seconds": 1777902797,
       "action": "compact",
       "message": "协作任务板已压缩：压缩已完成任务提示词 2 个，移除旧事件 7 条，压缩前事件 27 条。"
+    },
+    {
+      "order": 146,
+      "timestamp_unix_seconds": 1777903280,
+      "action": "retarget",
+      "task_id": "coord-021-status-active-only",
+      "message": "协作队列追加 agent-work-status 活跃任务过滤任务。"
+    },
+    {
+      "order": 147,
+      "timestamp_unix_seconds": 1777903291,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-021-status-active-only",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 148,
+      "timestamp_unix_seconds": 1777903368,
+      "action": "retarget",
+      "worker_id": "ai-1",
+      "task_id": "coord-021-status-active-only",
+      "message": "根据用户要求补充大文件拆分约束，新增 CLI 模块和代码架构规则写入范围。"
+    },
+    {
+      "order": 149,
+      "timestamp_unix_seconds": 1777904279,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-021-status-active-only",
+      "message": "已新增 agent-work-status --active-only 只读活跃任务过滤，并将状态输出逻辑拆分到 src/cli/agent_work_status.rs；补充大文件拆分规则、README、协作规则和 v0 聚合归档，验证已通过。"
+    },
+    {
+      "order": 150,
+      "timestamp_unix_seconds": 1777904299,
+      "action": "retarget",
+      "task_id": "coord-022-finalize-v069",
+      "message": "协作队列追加 v0.1.69 最终收束任务。"
+    },
+    {
+      "order": 151,
+      "timestamp_unix_seconds": 1777904306,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-022-finalize-v069",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 152,
+      "timestamp_unix_seconds": 1777904366,
+      "action": "retarget",
+      "message": "协作队列已复用到版本 v0.1.69。"
+    },
+    {
+      "order": 153,
+      "timestamp_unix_seconds": 1777904500,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-022-finalize-v069",
+      "message": "已完成 v0.1.69 最终收束准备：提升版本、同步测试期望、补充最终归档，并通过 cargo fmt --check、cargo test、git diff --check、validate、preflight 和开放错误查询。"
+    },
+    {
+      "order": 154,
+      "timestamp_unix_seconds": 1777904507,
+      "action": "compact",
+      "message": "协作任务板已压缩：压缩已完成任务提示词 2 个，移除旧事件 9 条，压缩前事件 29 条。"
     }
   ]
 }

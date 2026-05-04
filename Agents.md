@@ -17,7 +17,7 @@ SelfForge 必须跨 Windows、macOS、Linux 运行，核心执行引擎使用 Ru
 1. 修改仓库文件前必须在 `codex/` 任务分支上工作，禁止直接在 `master` 写入。
 2. 修改文件前必须领取协作任务板任务，并只改领取任务允许的写入范围。
 3. 所有 Markdown、提交信息、源码注释和用户可见输出必须使用中文，禁止 Emoji。
-4. 源码扩展优先进入 `src/app/`，CLI 只做参数解析和展示。
+4. 源码扩展优先进入 `src/app/`，CLI 只做参数解析和展示；文件过大时必须自动拆分到清晰模块，禁止继续堆叠。
 5. 认知类记录必须写入当前 major 聚合归档，禁止为 patch 或 minor 新建独立归档文件。
 6. 阶段性提交前必须完成必要验证；PR 必须等待 required checks 通过后才能合并。
 7. API Key 只能来自环境变量或本地 `.env`，禁止写入源码、文档、日志、状态或运行记录。
@@ -56,6 +56,7 @@ SelfForge 必须跨 Windows、macOS、Linux 运行，核心执行引擎使用 Ru
 | 任务类型 | 必读规则 |
 | --- | --- |
 | 项目结构、目录、模块边界 | `forge/architecture/agent-rules/project-structure.md` |
+| 大文件拆分、模块边界、代码架构 | `forge/architecture/agent-rules/code-architecture.md` |
 | Git、分支、PR、CI、提交 | `forge/architecture/agent-rules/git-pr.md` |
 | forge、记忆、任务、错误、版本归档 | `forge/architecture/agent-rules/archives-memory.md` |
 | Runtime、preflight、run、cycle、错误记录 | `forge/architecture/agent-rules/runtime-validation.md` |
