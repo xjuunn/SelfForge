@@ -4,7 +4,7 @@
   "thread_count": 3,
   "lease_duration_seconds": 3600,
   "created_at_unix_seconds": 1777889312,
-  "updated_at_unix_seconds": 1777894321,
+  "updated_at_unix_seconds": 1777894536,
   "conflict_policy": "同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。",
   "prompt_policy": "每个线程只执行领取到的任务，必须遵守写入范围、依赖关系、验收标准和归档规则。",
   "tasks": [
@@ -218,6 +218,37 @@
       "prompt": "已压缩：任务 coord-012-work-queue-block 已完成。完成摘要：已新增 agent-work-block 受控阻断命令，并将 4 个旧默认待领取任务标记为已阻断，避免后续 AI 误领取。。执行边界保留在 title、description、write_scope、acceptance 和 result 字段中。"
     },
     {
+      "id": "coord-013-local-archive",
+      "title": "归档本地阶段成果",
+      "description": "将分阶段 PR 规则、任务板压缩命令、任务板阻断命令和本地验证结果写入当前 major 聚合归档，作为后续收束 PR 的审计依据。",
+      "preferred_agent_id": "archivist",
+      "priority": 18,
+      "depends_on": [
+        "coord-009-batched-pr-flow",
+        "coord-010-commit-version-rule",
+        "coord-011-work-queue-compact",
+        "coord-012-work-queue-block"
+      ],
+      "write_scope": [
+        "forge/tasks/v0.md",
+        "forge/memory/v0.md",
+        "forge/errors/v0.md",
+        "forge/versions/v0.md",
+        "workspaces/v0/artifacts/agents/coordination/"
+      ],
+      "acceptance": [
+        "归档必须说明本阶段未提升版本、未 push、未创建 PR。",
+        "归档必须记录新增命令和验证结果。",
+        "归档必须说明旧待办任务已通过阻断命令处理。"
+      ],
+      "status": "Completed",
+      "claimed_by": "ai-1",
+      "claimed_at_unix_seconds": 1777894466,
+      "completed_at_unix_seconds": 1777894528,
+      "result": "已将分阶段 PR 流程、任务板压缩、任务板阻断、本地验证结果和未推送状态写入 v0 major 聚合归档。",
+      "prompt": "已压缩：任务 coord-013-local-archive 已完成。完成摘要：已将分阶段 PR 流程、任务板压缩、任务板阻断、本地验证结果和未推送状态写入 v0 major 聚合归档。。执行边界保留在 title、description、write_scope、acceptance 和 result 字段中。"
+    },
+    {
       "id": "coord-002-application",
       "title": "实现应用层协作队列",
       "description": "实现任务板持久化、领取、完成、释放和冲突检测。",
@@ -305,34 +336,6 @@
     }
   ],
   "events": [
-    {
-      "order": 91,
-      "timestamp_unix_seconds": 1777921262,
-      "action": "retarget",
-      "message": "协作队列追加任务组统一推送、Issue #1 关联和回复进度规范任务。"
-    },
-    {
-      "order": 92,
-      "timestamp_unix_seconds": 1777892496,
-      "action": "claim",
-      "worker_id": "ai-1",
-      "task_id": "coord-008-task-group-push-rules",
-      "message": "任务已被工作线程领取。"
-    },
-    {
-      "order": 93,
-      "timestamp_unix_seconds": 1777892551,
-      "action": "complete",
-      "worker_id": "ai-1",
-      "task_id": "coord-008-task-group-push-rules",
-      "message": "已更新 Agents.md、Git/PR 规则和输出规则，明确相关任务组本地完成后统一推送、提交或 PR 关联 Issue #1，并要求回复结尾包含任务进度和未完成任务列表。"
-    },
-    {
-      "order": 94,
-      "timestamp_unix_seconds": 1777921875,
-      "action": "retarget",
-      "message": "协作队列追加分阶段本地提交和最终 PR 流程澄清任务，要求同一任务组在分支内多次本地提交，用户确认完成后才提升小版本、统一 push 和创建 PR。"
-    },
     {
       "order": 95,
       "timestamp_unix_seconds": 1777893107,
@@ -454,6 +457,34 @@
       "timestamp_unix_seconds": 1777894321,
       "action": "compact",
       "message": "协作任务板已压缩：压缩已完成任务提示词 1 个，移除旧事件 8 条，压缩前事件 28 条。"
+    },
+    {
+      "order": 112,
+      "timestamp_unix_seconds": 1777923250,
+      "action": "retarget",
+      "message": "协作队列追加本地阶段归档任务，记录分阶段 PR 规则、任务板压缩和阻断命令成果。"
+    },
+    {
+      "order": 113,
+      "timestamp_unix_seconds": 1777894466,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-013-local-archive",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 114,
+      "timestamp_unix_seconds": 1777894528,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-013-local-archive",
+      "message": "已将分阶段 PR 流程、任务板压缩、任务板阻断、本地验证结果和未推送状态写入 v0 major 聚合归档。"
+    },
+    {
+      "order": 115,
+      "timestamp_unix_seconds": 1777894536,
+      "action": "compact",
+      "message": "协作任务板已压缩：压缩已完成任务提示词 1 个，移除旧事件 4 条，压缩前事件 24 条。"
     }
   ]
 }
