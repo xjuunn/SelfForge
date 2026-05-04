@@ -23,7 +23,7 @@ pub use version::{
     version_major_file_name, version_major_key,
 };
 
-pub const CURRENT_VERSION: &str = "v0.1.70";
+pub const CURRENT_VERSION: &str = "v0.1.71";
 
 pub use app::{
     AgentCapability, AgentDefinition, AgentError, AgentEvolutionError, AgentEvolutionReport,

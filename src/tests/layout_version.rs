@@ -98,11 +98,11 @@ fn evolution_prepares_next_candidate_version() {
         .prepare_next_version("prepare the next controlled candidate")
         .expect("evolution should prepare a candidate version");
 
-    assert_eq!(report.current_version, "v0.1.70");
-    assert_eq!(report.next_version, "v0.1.71");
+    assert_eq!(report.current_version, "v0.1.71");
+    assert_eq!(report.next_version, "v0.1.72");
     assert!(root.join("workspaces").join("v0").is_dir());
     assert_workspace_structure(&root);
-    assert!(!root.join("workspaces").join("v0.1.71").exists());
+    assert!(!root.join("workspaces").join("v0.1.72").exists());
     assert!(root.join("forge").join("memory").join("v0.md").is_file());
     assert!(root.join("forge").join("tasks").join("v0.md").is_file());
     assert!(root.join("forge").join("errors").join("v0.md").is_file());
@@ -111,26 +111,26 @@ fn evolution_prepares_next_candidate_version() {
         !root
             .join("forge")
             .join("versions")
-            .join("v0.1.71.md")
+            .join("v0.1.72.md")
             .exists()
     );
     let version_record = fs::read_to_string(root.join("forge").join("versions").join("v0.md"))
         .expect("major version record should be readable");
-    assert!(version_record.contains("## v0.1.71"));
-    assert_eq!(report.state.current_version, "v0.1.70");
+    assert!(version_record.contains("## v0.1.72"));
+    assert_eq!(report.state.current_version, "v0.1.71");
     assert_eq!(report.state.status, "candidate_prepared");
     assert_eq!(
         report.state.version_scheme.as_deref(),
         Some("semantic:vMAJOR.MINOR.PATCH")
     );
-    assert_eq!(report.state.candidate_version.as_deref(), Some("v0.1.71"));
+    assert_eq!(report.state.candidate_version.as_deref(), Some("v0.1.72"));
     assert_eq!(
         report.state.candidate_workspace.as_deref(),
         Some("workspaces/v0")
     );
 
     supervisor
-        .verify_version("v0.1.71")
+        .verify_version("v0.1.72")
         .expect("candidate layout should validate");
 
     cleanup(&root);
@@ -145,7 +145,7 @@ fn evolution_normalizes_legacy_current_workspace_to_major_workspace() {
         .initialize_current_version()
         .expect("bootstrap should succeed before evolution");
     let mut state = ForgeState::load(&root).expect("state should be readable");
-    state.workspace = "workspaces/v0.1.70".to_string();
+    state.workspace = "workspaces/v0.1.71".to_string();
     state.save(&root).expect("state should be writable");
 
     let report = supervisor
@@ -180,7 +180,7 @@ fn evolution_appends_candidate_task_document_without_overwriting_existing_conten
     let task = fs::read_to_string(root.join("forge").join("tasks").join("v0.md"))
         .expect("task should remain readable");
     assert!(task.contains("人工任务计划"));
-    assert!(task.contains("## v0.1.71"));
+    assert!(task.contains("## v0.1.72"));
 
     cleanup(&root);
 }
@@ -216,10 +216,10 @@ fn promotion_moves_candidate_to_current_version() {
         .promote_candidate()
         .expect("candidate should promote after validation");
 
-    assert_eq!(report.previous_version, "v0.1.70");
-    assert_eq!(report.promoted_version, "v0.1.71");
-    assert_eq!(report.state.current_version, "v0.1.71");
-    assert_eq!(report.state.parent_version.as_deref(), Some("v0.1.70"));
+    assert_eq!(report.previous_version, "v0.1.71");
+    assert_eq!(report.promoted_version, "v0.1.72");
+    assert_eq!(report.state.current_version, "v0.1.72");
+    assert_eq!(report.state.parent_version.as_deref(), Some("v0.1.71"));
     assert_eq!(report.state.candidate_version, None);
     assert_eq!(report.state.status, "active");
 
@@ -242,12 +242,12 @@ fn cycle_promotes_valid_candidate_version() {
         .run_candidate_cycle()
         .expect("valid candidate should complete the cycle");
 
-    assert_eq!(report.previous_version, "v0.1.70");
-    assert_eq!(report.candidate_version, "v0.1.71");
+    assert_eq!(report.previous_version, "v0.1.71");
+    assert_eq!(report.candidate_version, "v0.1.72");
     assert_eq!(report.result, CycleResult::Promoted);
     assert!(report.candidate_validation.is_some());
     assert_eq!(report.failure, None);
-    assert_eq!(report.state.current_version, "v0.1.71");
+    assert_eq!(report.state.current_version, "v0.1.72");
     assert_eq!(report.state.candidate_version, None);
     assert_eq!(report.state.status, "active");
 
@@ -270,10 +270,10 @@ fn rollback_clears_candidate_without_deleting_workspace() {
         .rollback_candidate("测试回滚")
         .expect("rollback should clear candidate state");
 
-    assert_eq!(report.current_version, "v0.1.70");
-    assert_eq!(report.rolled_back_version, "v0.1.71");
+    assert_eq!(report.current_version, "v0.1.71");
+    assert_eq!(report.rolled_back_version, "v0.1.72");
     assert_eq!(report.state.status, "rolled_back");
-    assert_eq!(report.state.current_version, "v0.1.70");
+    assert_eq!(report.state.current_version, "v0.1.71");
     assert_eq!(report.state.candidate_version, None);
     assert!(root.join("workspaces").join("v0").is_dir());
 
@@ -300,12 +300,12 @@ fn cycle_rolls_back_invalid_candidate_version() {
         .run_candidate_cycle()
         .expect("invalid candidate should roll back without promoting");
 
-    assert_eq!(report.previous_version, "v0.1.70");
+    assert_eq!(report.previous_version, "v0.1.71");
     assert_eq!(report.candidate_version, "v9.0.0");
     assert_eq!(report.result, CycleResult::RolledBack);
     assert!(report.candidate_validation.is_none());
     assert!(report.failure.is_some());
-    assert_eq!(report.state.current_version, "v0.1.70");
+    assert_eq!(report.state.current_version, "v0.1.71");
     assert_eq!(report.state.candidate_version, None);
     assert_eq!(report.state.status, "rolled_back");
 
