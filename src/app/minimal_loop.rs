@@ -125,6 +125,8 @@ pub struct BranchCheckReport {
     pub task_claimed_by: Option<String>,
     pub task_matches_worker: Option<bool>,
     pub task_matches_branch: Option<bool>,
+    pub suggested_branch: Option<String>,
+    pub suggested_branch_source: Option<String>,
     pub blockers: Vec<String>,
     pub warnings: Vec<String>,
     pub can_write: bool,
@@ -334,6 +336,12 @@ struct AgentStepWorkClaim {
     task_id: String,
     worker_id: String,
     newly_claimed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct BranchNameSuggestion {
+    branch: String,
+    source: String,
 }
 
 #[derive(Debug, Clone)]
@@ -2897,6 +2905,7 @@ impl SelfForgeApp {
         worker_id: Option<&str>,
         task_id: Option<&str>,
         base_branch: &str,
+        suggest_branch: bool,
     ) -> Result<BranchCheckReport, BranchCheckError> {
         let current_branch = git_required(&self.root, &["branch", "--show-current"])?;
         let current_branch = if current_branch.trim().is_empty() {
@@ -2974,6 +2983,14 @@ impl SelfForgeApp {
             }
         }
 
+        let branch_suggestion = if suggest_branch {
+            queue_report
+                .as_ref()
+                .and_then(|report| suggest_branch_name(report, worker_id, task_id))
+        } else {
+            None
+        };
+
         let mut task_status = None;
         let mut task_claimed_by = None;
         let mut task_matches_worker = None;
@@ -3002,6 +3019,12 @@ impl SelfForgeApp {
                     task_claimed_by,
                     task_matches_worker,
                     task_matches_branch,
+                    suggested_branch: branch_suggestion
+                        .as_ref()
+                        .map(|suggestion| suggestion.branch.clone()),
+                    suggested_branch_source: branch_suggestion
+                        .as_ref()
+                        .map(|suggestion| suggestion.source.clone()),
                     blockers,
                     warnings,
                     can_write: false,
@@ -3038,6 +3061,12 @@ impl SelfForgeApp {
             warnings.push("已指定 --worker 但未指定 --task，无法校验具体任务持有关系".to_string());
         }
 
+        let suggested_branch = branch_suggestion
+            .as_ref()
+            .map(|suggestion| suggestion.branch.clone());
+        let suggested_branch_source = branch_suggestion
+            .as_ref()
+            .map(|suggestion| suggestion.source.clone());
         let can_write = blockers.is_empty();
         Ok(BranchCheckReport {
             version: version.to_string(),
@@ -3062,6 +3091,8 @@ impl SelfForgeApp {
             task_claimed_by,
             task_matches_worker,
             task_matches_branch,
+            suggested_branch,
+            suggested_branch_source,
             blockers,
             warnings,
             can_write,
@@ -5334,6 +5365,72 @@ fn parse_branch_distance(output: &str) -> (Option<usize>, Option<usize>) {
         parts[0].parse::<usize>().ok(),
         parts[1].parse::<usize>().ok(),
     )
+}
+
+fn suggest_branch_name(
+    report: &AgentWorkQueueReport,
+    worker_id: Option<&str>,
+    task_id: Option<&str>,
+) -> Option<BranchNameSuggestion> {
+    if let Some(task_id) = task_id {
+        return Some(BranchNameSuggestion {
+            branch: branch_name_for_task(task_id),
+            source: "显式任务编号".to_string(),
+        });
+    }
+
+    if let Some(worker_id) = worker_id {
+        if let Some(task) = report
+            .queue
+            .tasks
+            .iter()
+            .find(|task| task.claimed_by.as_deref() == Some(worker_id))
+        {
+            return Some(BranchNameSuggestion {
+                branch: branch_name_for_task(&task.id),
+                source: format!("工作线程 {worker_id} 已领取任务"),
+            });
+        }
+    }
+
+    report
+        .queue
+        .tasks
+        .iter()
+        .filter(|task| task.status == AgentWorkTaskStatus::Pending)
+        .min_by_key(|task| task.priority)
+        .or_else(|| {
+            report
+                .queue
+                .tasks
+                .iter()
+                .filter(|task| task.status != AgentWorkTaskStatus::Completed)
+                .min_by_key(|task| task.priority)
+        })
+        .map(|task| BranchNameSuggestion {
+            branch: branch_name_for_task(&task.id),
+            source: "任务板下一条待处理任务".to_string(),
+        })
+}
+
+fn branch_name_for_task(task_id: &str) -> String {
+    let mut slug = String::new();
+    let mut last_dash = false;
+    for ch in task_id.chars().flat_map(|ch| ch.to_lowercase()) {
+        if ch.is_ascii_alphanumeric() {
+            slug.push(ch);
+            last_dash = false;
+        } else if !last_dash {
+            slug.push('-');
+            last_dash = true;
+        }
+    }
+    let slug = slug.trim_matches('-');
+    if slug.is_empty() {
+        "codex/task".to_string()
+    } else {
+        format!("codex/{slug}")
+    }
 }
 
 fn current_unix_seconds() -> u64 {
