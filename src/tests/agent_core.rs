@@ -622,6 +622,104 @@ fn agent_work_reap_keeps_active_claims() {
 }
 
 #[test]
+fn agent_work_compact_trims_completed_prompts_and_old_events() {
+    let root = temp_root("agent-work-compact");
+    let app = SelfForgeApp::new(&root);
+
+    app.supervisor()
+        .initialize_current_version()
+        .expect("bootstrap should succeed before compact test");
+    let init = app
+        .init_agent_work_queue(CURRENT_VERSION, "验证任务板压缩", 1)
+        .expect("work queue should initialize");
+    let claim = app
+        .claim_agent_work(CURRENT_VERSION, "ai-1", Some("architect"))
+        .expect("task should be claimed before completion");
+    app.complete_agent_work(CURRENT_VERSION, &claim.task.id, "ai-1", "架构任务完成")
+        .expect("claimed task should complete");
+
+    let mut queue: AgentWorkQueue =
+        serde_json::from_str(&fs::read_to_string(&init.queue_path).expect("queue readable"))
+            .expect("queue json should parse");
+    let pending_prompt = queue
+        .tasks
+        .iter()
+        .find(|task| task.id == "coord-002-application")
+        .expect("pending task should exist")
+        .prompt
+        .clone();
+    for index in 0..25 {
+        queue.events.push(AgentWorkEvent {
+            order: queue.events.len() + 1,
+            timestamp_unix_seconds: index,
+            action: "测试事件".to_string(),
+            worker_id: None,
+            task_id: None,
+            message: format!("压缩前事件 {index}"),
+        });
+    }
+    fs::write(
+        &init.queue_path,
+        serde_json::to_string_pretty(&queue).expect("queue should serialize"),
+    )
+    .expect("test should write verbose queue");
+
+    let report = app
+        .compact_agent_work_queue(CURRENT_VERSION, Some(5))
+        .expect("work queue compaction should succeed");
+
+    assert_eq!(report.compacted_task_prompts, 1);
+    assert!(report.removed_events > 0);
+    assert_eq!(report.retained_events, 6);
+    let completed = report
+        .queue
+        .tasks
+        .iter()
+        .find(|task| task.id == claim.task.id)
+        .expect("completed task should remain");
+    assert_eq!(completed.status, AgentWorkTaskStatus::Completed);
+    assert!(completed.prompt.starts_with("已压缩："));
+    let pending = report
+        .queue
+        .tasks
+        .iter()
+        .find(|task| task.id == "coord-002-application")
+        .expect("pending task should remain");
+    assert_eq!(pending.status, AgentWorkTaskStatus::Pending);
+    assert_eq!(pending.prompt, pending_prompt);
+    assert_eq!(
+        report
+            .queue
+            .events
+            .last()
+            .map(|event| event.action.as_str()),
+        Some("compact")
+    );
+
+    cleanup(&root);
+}
+
+#[test]
+fn agent_work_compact_rejects_zero_keep_events() {
+    let root = temp_root("agent-work-compact-zero");
+    let app = SelfForgeApp::new(&root);
+
+    app.supervisor()
+        .initialize_current_version()
+        .expect("bootstrap should succeed before compact zero test");
+    app.init_agent_work_queue(CURRENT_VERSION, "验证非法压缩参数", 1)
+        .expect("work queue should initialize");
+
+    let error = app
+        .compact_agent_work_queue(CURRENT_VERSION, Some(0))
+        .expect_err("zero retained events must be rejected");
+
+    assert!(matches!(error, AgentWorkError::InvalidKeepEvents));
+
+    cleanup(&root);
+}
+
+#[test]
 fn agent_work_queue_rejects_zero_threads() {
     let root = temp_root("agent-work-zero-thread");
     let app = SelfForgeApp::new(&root);

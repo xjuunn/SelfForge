@@ -4,7 +4,7 @@
   "thread_count": 3,
   "lease_duration_seconds": 3600,
   "created_at_unix_seconds": 1777889312,
-  "updated_at_unix_seconds": 1777893446,
+  "updated_at_unix_seconds": 1777893963,
   "conflict_policy": "同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。",
   "prompt_policy": "每个线程只执行领取到的任务，必须遵守写入范围、依赖关系、验收标准和归档规则。",
   "tasks": [
@@ -28,7 +28,7 @@
       "claimed_at_unix_seconds": 1777889587,
       "completed_at_unix_seconds": 1777889743,
       "result": "已将 Agents.md 中直接合并 master 的流程改为企业级 Pull Request 闸门流程，并同步任务板目标为 PR 合并规范。",
-      "prompt": "你是 SelfForge 多 AI 协作线程 `ai-1`。\n\n全局目标：改为企业级 PR 合并流程\n当前任务：coord-001-architecture - 拆解协作架构和提示词边界\n职责 Agent：architect\n任务说明：梳理目标、协作规则、提示词约束、冲突策略和后续扩展点。\n\n必须遵守：\n1. 只完成当前已领取任务，禁止重复实现其他任务。\n2. 只修改写入范围：Agents.md，workspaces/v0/artifacts/agents/coordination/。\n3. 依赖任务：无。\n4. 验收标准：提示词必须说明只处理已领取任务；冲突处理必须明确释放或阻断流程。\n5. 租约到期时间 unix:1777893187，无法继续时必须主动释放任务。\n6. 如发现写入范围冲突、依赖缺失或无法完成，执行 `agent-work-release coord-001-architecture --worker ai-1 --reason 原因`。\n7. 完成后执行必要测试，并执行 `agent-work-complete coord-001-architecture --worker ai-1 --summary 摘要`。\n\n当前仍可领取任务：coord-002-application，coord-003-cli。\n冲突策略：同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。"
+      "prompt": "已压缩：任务 coord-001-architecture 已完成。完成摘要：已将 Agents.md 中直接合并 master 的流程改为企业级 Pull Request 闸门流程，并同步任务板目标为 PR 合并规范。。执行边界保留在 title、description、write_scope、acceptance 和 result 字段中。"
     },
     {
       "id": "coord-006-ci-pr-checks",
@@ -51,7 +51,7 @@
       "claimed_at_unix_seconds": 1777890330,
       "completed_at_unix_seconds": 1777890390,
       "result": "已新增 GitHub Actions PR 验证工作流，覆盖 cargo fmt --check、cargo test、cargo run -- validate、cargo run -- preflight 和开放错误检查，并在本地完成验证。",
-      "prompt": "你是 SelfForge 多 AI 协作线程 `ai-1`。\n\n全局目标：为 Pull Request 增加必跑 CI 验证\n当前任务：coord-006-ci-pr-checks - 增加 PR 必跑 CI 验证\n职责 Agent：verifier\n任务说明：创建 GitHub Actions 工作流，让 Pull Request 自动执行格式化、测试、布局验证、预检和开放错误检查。\n\n必须遵守：\n1. 只完成当前已领取任务，禁止重复实现其他任务。\n2. 只修改写入范围：.github/workflows/，workspaces/v0/artifacts/agents/coordination/。\n3. 依赖任务：无。\n4. 验收标准：PR 工作流必须至少执行 cargo fmt --check、cargo test、cargo run -- validate 和 cargo run -- preflight；工作流必须可在 pull_request、master push 和手动触发时运行；任务分支必须通过 PR 流程进入 master。\n5. 租约到期时间 unix:1777893930，无法继续时必须主动释放任务。\n6. 如发现写入范围冲突、依赖缺失或无法完成，执行 `agent-work-release coord-006-ci-pr-checks --worker ai-1 --reason 原因`。\n7. 完成后执行必要测试，并执行 `agent-work-complete coord-006-ci-pr-checks --worker ai-1 --summary 摘要`。\n\n当前仍可领取任务：coord-002-application，coord-003-cli。\n冲突策略：同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。"
+      "prompt": "已压缩：任务 coord-006-ci-pr-checks 已完成。完成摘要：已新增 GitHub Actions PR 验证工作流，覆盖 cargo fmt --check、cargo test、cargo run -- validate、cargo run -- preflight 和开放错误检查，并在本地完成验证。。执行边界保留在 title、description、write_scope、acceptance 和 result 字段中。"
     },
     {
       "id": "coord-007-doc-split",
@@ -75,7 +75,7 @@
       "claimed_at_unix_seconds": 1777891584,
       "completed_at_unix_seconds": 1777891718,
       "result": "已将 Agents.md 精简为 58 行入口规则和按需阅读索引，并把详细 AI 规则拆分到 forge/architecture/agent-rules/ 下的主题文档。",
-      "prompt": "你是 SelfForge 多 AI 协作线程 `ai-1`。\n\n全局目标：拆分 AI 规则文档并精简 Agents.md\n当前任务：coord-007-doc-split - 拆分 AI 规则文档\n职责 Agent：architect\n任务说明：将 Agents.md 精简为入口规则和阅读索引，把长规则拆分到按主题的架构文档中。\n\n必须遵守：\n1. 只完成当前已领取任务，禁止重复实现其他任务。\n2. 只修改写入范围：Agents.md，forge/architecture/agent-rules/，workspaces/v0/artifacts/agents/coordination/。\n3. 依赖任务：无。\n4. 验收标准：Agents.md 必须简洁，只保留全局硬规则、最小流程和按需阅读索引；拆分后的规则文件必须按主题组织，便于 AI 只读取当前任务需要的内容；所有新增 Markdown 必须使用中文且禁止 Emoji。\n5. 租约到期时间 unix:1777895184，无法继续时必须主动释放任务。\n6. 如发现写入范围冲突、依赖缺失或无法完成，执行 `agent-work-release coord-007-doc-split --worker ai-1 --reason 原因`。\n7. 完成后执行必要测试，并执行 `agent-work-complete coord-007-doc-split --worker ai-1 --summary 摘要`。\n\n当前仍可领取任务：coord-002-application，coord-003-cli。\n冲突策略：同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。"
+      "prompt": "已压缩：任务 coord-007-doc-split 已完成。完成摘要：已将 Agents.md 精简为 58 行入口规则和按需阅读索引，并把详细 AI 规则拆分到 forge/architecture/agent-rules/ 下的主题文档。。执行边界保留在 title、description、write_scope、acceptance 和 result 字段中。"
     },
     {
       "id": "coord-008-task-group-push-rules",
@@ -100,7 +100,7 @@
       "claimed_at_unix_seconds": 1777892496,
       "completed_at_unix_seconds": 1777892551,
       "result": "已更新 Agents.md、Git/PR 规则和输出规则，明确相关任务组本地完成后统一推送、提交或 PR 关联 Issue #1，并要求回复结尾包含任务进度和未完成任务列表。",
-      "prompt": "你是 SelfForge 多 AI 协作线程 `ai-1`。\n\n全局目标：规范任务组统一推送和 Issue 关联\n当前任务：coord-008-task-group-push-rules - 规范任务组统一推送和 Issue 关联\n职责 Agent：architect\n任务说明：更新 AI 入口规则和 Git 规则，要求相关任务在本地分支内完成后统一推送，并在提交或 PR 中关联 GitHub Issue #1。\n\n必须遵守：\n1. 只完成当前已领取任务，禁止重复实现其他任务。\n2. 只修改写入范围：Agents.md，forge/architecture/agent-rules/git-pr.md，forge/architecture/agent-rules/testing-output.md，workspaces/v0/artifacts/agents/coordination/。\n3. 依赖任务：无。\n4. 验收标准：Agents.md 必须明确相关任务完成后统一推送分支，禁止每个小任务都推送；规则必须要求提交或 PR 关联 https://github.com/xjuunn/SelfForge/issues/1；每轮回复必须包含任务进度和未完成任务列表。\n5. 租约到期时间 unix:1777896096，无法继续时必须主动释放任务。\n6. 如发现写入范围冲突、依赖缺失或无法完成，执行 `agent-work-release coord-008-task-group-push-rules --worker ai-1 --reason 原因`。\n7. 完成后执行必要测试，并执行 `agent-work-complete coord-008-task-group-push-rules --worker ai-1 --summary 摘要`。\n\n当前仍可领取任务：coord-002-application，coord-003-cli。\n冲突策略：同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。"
+      "prompt": "已压缩：任务 coord-008-task-group-push-rules 已完成。完成摘要：已更新 Agents.md、Git/PR 规则和输出规则，明确相关任务组本地完成后统一推送、提交或 PR 关联 Issue #1，并要求回复结尾包含任务进度和未完成任务列表。。执行边界保留在 title、description、write_scope、acceptance 和 result 字段中。"
     },
     {
       "id": "coord-009-batched-pr-flow",
@@ -126,7 +126,7 @@
       "claimed_at_unix_seconds": 1777893107,
       "completed_at_unix_seconds": 1777893189,
       "result": "已修正分阶段本地提交和最终 PR 流程：同一相关任务组保留在一个分支内，多轮对话可继续微调，用户确认完成后才提升小版本、统一 push 一次并创建 PR。",
-      "prompt": "你是 SelfForge 多 AI 协作线程 `ai-1`。\n\n全局目标：规范分阶段本地提交和最终 PR 流程\n当前任务：coord-009-batched-pr-flow - 澄清分阶段本地提交和最终 PR 流程\n职责 Agent：architect\n任务说明：修正 AI 规则，明确同一相关任务组可在一个分支中多次本地提交，只有用户确认任务组完成后才提升小版本、统一 push 并创建 Pull Request。\n\n必须遵守：\n1. 只完成当前已领取任务，禁止重复实现其他任务。\n2. 只修改写入范围：Agents.md，forge/architecture/agent-rules/git-pr.md，forge/architecture/agent-rules/testing-output.md，workspaces/v0/artifacts/agents/coordination/。\n3. 依赖任务：无。\n4. 验收标准：规则必须明确每次用户消息不等于任务组完成，后续对话可继续微调同一分支；规则必须明确只有任务组完成并由用户确认后才统一 push、创建 PR，并且只 push 一次；规则必须明确每次 PR 才提升 patch 或 minor，小版本不得随每次本地 commit 提升；规则必须明确任务过重时在任务列表中留下后续任务，当前分支继续承载相关任务项。\n5. 租约到期时间 unix:1777896707，无法继续时必须主动释放任务。\n6. 如发现写入范围冲突、依赖缺失或无法完成，执行 `agent-work-release coord-009-batched-pr-flow --worker ai-1 --reason 原因`。\n7. 完成后执行必要测试，并执行 `agent-work-complete coord-009-batched-pr-flow --worker ai-1 --summary 摘要`。\n\n当前仍可领取任务：coord-002-application，coord-003-cli。\n冲突策略：同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。"
+      "prompt": "已压缩：任务 coord-009-batched-pr-flow 已完成。完成摘要：已修正分阶段本地提交和最终 PR 流程：同一相关任务组保留在一个分支内，多轮对话可继续微调，用户确认完成后才提升小版本、统一 push 一次并创建 PR。。执行边界保留在 title、description、write_scope、acceptance 和 result 字段中。"
     },
     {
       "id": "coord-010-commit-version-rule",
@@ -151,7 +151,39 @@
       "claimed_at_unix_seconds": 1777893400,
       "completed_at_unix_seconds": 1777893446,
       "result": "已澄清未提升版本的阶段性本地提交不携带版本号，最终提升版本的收束提交或 PR 才携带 vMAJOR.MINOR.PATCH。",
-      "prompt": "你是 SelfForge 多 AI 协作线程 `ai-1`。\n\n全局目标：规范分阶段本地提交和最终 PR 流程\n当前任务：coord-010-commit-version-rule - 澄清未提升版本时提交信息不携带版本号\n职责 Agent：architect\n任务说明：修正规则，明确没有版本提升的阶段性本地 commit 不需要携带版本号，只有最终提升版本的提交或 PR 才携带版本号。\n\n必须遵守：\n1. 只完成当前已领取任务，禁止重复实现其他任务。\n2. 只修改写入范围：Agents.md，forge/architecture/agent-rules/git-pr.md，forge/architecture/agent-rules/testing-output.md，workspaces/v0/artifacts/agents/coordination/。\n3. 依赖任务：无。\n4. 验收标准：规则必须明确未提升版本时本地提交标题不携带版本号；规则必须明确最终版本提升提交或 PR 才携带 vMAJOR.MINOR.PATCH；规则必须保留中文提交信息和禁止 Emoji 要求。\n5. 租约到期时间 unix:1777897000，无法继续时必须主动释放任务。\n6. 如发现写入范围冲突、依赖缺失或无法完成，执行 `agent-work-release coord-010-commit-version-rule --worker ai-1 --reason 原因`。\n7. 完成后执行必要测试，并执行 `agent-work-complete coord-010-commit-version-rule --worker ai-1 --summary 摘要`。\n\n当前仍可领取任务：coord-002-application，coord-003-cli。\n冲突策略：同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。"
+      "prompt": "已压缩：任务 coord-010-commit-version-rule 已完成。完成摘要：已澄清未提升版本的阶段性本地提交不携带版本号，最终提升版本的收束提交或 PR 才携带 vMAJOR.MINOR.PATCH。。执行边界保留在 title、description、write_scope、acceptance 和 result 字段中。"
+    },
+    {
+      "id": "coord-011-work-queue-compact",
+      "title": "实现协作任务板压缩命令",
+      "description": "新增受控任务板压缩能力，减少已完成任务提示词和历史事件噪声，同时保留当前任务状态、完成摘要和最近事件。",
+      "preferred_agent_id": "builder",
+      "priority": 16,
+      "depends_on": [],
+      "write_scope": [
+        "src/app/agent/coordination.rs",
+        "src/app/agent/coordination/model.rs",
+        "src/app/minimal_loop.rs",
+        "src/app/mod.rs",
+        "src/main.rs",
+        "src/lib.rs",
+        "src/tests/agent_core.rs",
+        "README.md",
+        "forge/architecture/agent-rules/agent-coordination.md",
+        "workspaces/v0/artifacts/agents/coordination/"
+      ],
+      "acceptance": [
+        "新增 agent-work-compact 命令，默认保留最近事件并压缩已完成任务 prompt。",
+        "压缩不得删除待领取或已领取任务，不得破坏任务状态和写入范围。",
+        "压缩结果必须写入同一个 work-queue.json，并追加 compact 事件。",
+        "必须补充测试和中文文档。"
+      ],
+      "status": "Completed",
+      "claimed_by": "ai-1",
+      "claimed_at_unix_seconds": 1777893719,
+      "completed_at_unix_seconds": 1777893958,
+      "result": "已新增 agent-work-compact 受控压缩命令，保留任务状态和摘要，压缩已完成任务提示词并裁剪旧事件，同时补充测试和中文文档。",
+      "prompt": "已压缩：任务 coord-011-work-queue-compact 已完成。完成摘要：已新增 agent-work-compact 受控压缩命令，保留任务状态和摘要，压缩已完成任务提示词并裁剪旧事件，同时补充测试和中文文档。。执行边界保留在 title、description、write_scope、acceptance 和 result 字段中。"
     },
     {
       "id": "coord-002-application",
@@ -237,606 +269,6 @@
     }
   ],
   "events": [
-    {
-      "order": 1,
-      "timestamp_unix_seconds": 1777630213,
-      "action": "init",
-      "message": "多 AI 协作队列已初始化。"
-    },
-    {
-      "order": 2,
-      "timestamp_unix_seconds": 1777630214,
-      "action": "claim",
-      "worker_id": "ai-lease",
-      "task_id": "coord-002-application",
-      "message": "任务已被工作线程领取。"
-    },
-    {
-      "order": 3,
-      "timestamp_unix_seconds": 1777630216,
-      "action": "reap",
-      "worker_id": "ai-lease",
-      "task_id": "coord-002-application",
-      "message": "真实租约过期验证"
-    },
-    {
-      "order": 4,
-      "timestamp_unix_seconds": 1777630670,
-      "action": "retarget",
-      "message": "协作队列已复用到版本 v0.1.43。"
-    },
-    {
-      "order": 5,
-      "timestamp_unix_seconds": 1777631221,
-      "action": "claim",
-      "worker_id": "agent-session-1777631215682135400-000-step-1",
-      "task_id": "coord-001-architecture",
-      "message": "任务已被工作线程领取。"
-    },
-    {
-      "order": 6,
-      "timestamp_unix_seconds": 1777631221,
-      "action": "complete",
-      "worker_id": "agent-session-1777631215682135400-000-step-1",
-      "task_id": "coord-001-architecture",
-      "message": "步骤 1 工具 memory.context 已完成：已读取最近记忆 2 条。"
-    },
-    {
-      "order": 7,
-      "timestamp_unix_seconds": 1777631263,
-      "action": "release",
-      "worker_id": "agent-session-1777631215682135400-000-step-1",
-      "task_id": "coord-001-architecture",
-      "message": "真实验证结束，恢复任务板以便后续进化继续领取。"
-    },
-    {
-      "order": 8,
-      "timestamp_unix_seconds": 1777631371,
-      "action": "retarget",
-      "message": "协作队列已复用到版本 v0.1.44。"
-    },
-    {
-      "order": 9,
-      "timestamp_unix_seconds": 1777632508,
-      "action": "retarget",
-      "message": "协作队列已复用到版本 v0.1.45。"
-    },
-    {
-      "order": 10,
-      "timestamp_unix_seconds": 1777633153,
-      "action": "retarget",
-      "message": "协作队列已复用到版本 v0.1.46。"
-    },
-    {
-      "order": 11,
-      "timestamp_unix_seconds": 1777633573,
-      "action": "retarget",
-      "message": "协作队列已复用到版本 v0.1.47。"
-    },
-    {
-      "order": 12,
-      "timestamp_unix_seconds": 1777634314,
-      "action": "retarget",
-      "message": "协作队列已复用到版本 v0.1.48。"
-    },
-    {
-      "order": 13,
-      "timestamp_unix_seconds": 1777635047,
-      "action": "retarget",
-      "message": "协作队列已复用到版本 v0.1.49。"
-    },
-    {
-      "order": 14,
-      "timestamp_unix_seconds": 1777635990,
-      "action": "retarget",
-      "message": "协作队列已复用到版本 v0.1.50。"
-    },
-    {
-      "order": 15,
-      "timestamp_unix_seconds": 1777636802,
-      "action": "retarget",
-      "message": "协作队列已复用到版本 v0.1.51。"
-    },
-    {
-      "order": 16,
-      "timestamp_unix_seconds": 1777637553,
-      "action": "retarget",
-      "message": "协作队列已复用到版本 v0.1.52。"
-    },
-    {
-      "order": 17,
-      "timestamp_unix_seconds": 1777638283,
-      "action": "retarget",
-      "message": "协作队列已复用到版本 v0.1.53。"
-    },
-    {
-      "order": 18,
-      "timestamp_unix_seconds": 1777639433,
-      "action": "retarget",
-      "message": "协作队列已复用到版本 v0.1.54。"
-    },
-    {
-      "order": 19,
-      "timestamp_unix_seconds": 1777640475,
-      "action": "retarget",
-      "message": "协作队列已复用到版本 v0.1.55。"
-    },
-    {
-      "order": 20,
-      "timestamp_unix_seconds": 1777641579,
-      "action": "retarget",
-      "message": "协作队列已复用到版本 v0.1.56。"
-    },
-    {
-      "order": 21,
-      "timestamp_unix_seconds": 1777642612,
-      "action": "retarget",
-      "message": "协作队列已复用到版本 v0.1.57。"
-    },
-    {
-      "order": 22,
-      "timestamp_unix_seconds": 1777643366,
-      "action": "retarget",
-      "message": "协作队列已复用到版本 v0.1.58。"
-    },
-    {
-      "order": 23,
-      "timestamp_unix_seconds": 1777644542,
-      "action": "retarget",
-      "message": "协作队列已复用到版本 v0.1.59。"
-    },
-    {
-      "order": 24,
-      "timestamp_unix_seconds": 1777645314,
-      "action": "retarget",
-      "message": "协作队列已复用到版本 v0.1.60。"
-    },
-    {
-      "order": 25,
-      "timestamp_unix_seconds": 1777646292,
-      "action": "retarget",
-      "message": "协作队列已复用到版本 v0.1.61。"
-    },
-    {
-      "order": 26,
-      "timestamp_unix_seconds": 1777647115,
-      "action": "retarget",
-      "message": "协作队列已复用到版本 v0.1.62。"
-    },
-    {
-      "order": 27,
-      "timestamp_unix_seconds": 1777647950,
-      "action": "retarget",
-      "message": "协作队列已复用到版本 v0.1.63。"
-    },
-    {
-      "order": 28,
-      "timestamp_unix_seconds": 1777648542,
-      "action": "retarget",
-      "message": "协作队列已复用到版本 v0.1.64。"
-    },
-    {
-      "order": 29,
-      "timestamp_unix_seconds": 1777648992,
-      "action": "retarget",
-      "message": "协作队列已复用到版本 v0.1.65。"
-    },
-    {
-      "order": 30,
-      "timestamp_unix_seconds": 1777884459,
-      "action": "claim",
-      "worker_id": "ai-1",
-      "task_id": "coord-002-application",
-      "message": "任务已被工作线程领取。"
-    },
-    {
-      "order": 31,
-      "timestamp_unix_seconds": 1777884651,
-      "action": "complete",
-      "worker_id": "ai-1",
-      "task_id": "coord-002-application",
-      "message": "已将协作队列模型、报告和错误类型拆分到独立 model 子模块，并通过完整测试验证。"
-    },
-    {
-      "order": 32,
-      "timestamp_unix_seconds": 1777884940,
-      "action": "claim",
-      "worker_id": "ai-1",
-      "task_id": "coord-001-architecture",
-      "message": "任务已被工作线程领取。"
-    },
-    {
-      "order": 33,
-      "timestamp_unix_seconds": 1777884984,
-      "action": "complete",
-      "worker_id": "ai-1",
-      "task_id": "coord-001-architecture",
-      "message": "已在 Agents.md 中强制提交标题使用 type(scope): v版本 中文描述格式，并保留版本号和中文描述要求。"
-    },
-    {
-      "order": 34,
-      "timestamp_unix_seconds": 1777885080,
-      "action": "claim",
-      "worker_id": "ai-1",
-      "task_id": "coord-003-cli",
-      "message": "任务已被工作线程领取。"
-    },
-    {
-      "order": 35,
-      "timestamp_unix_seconds": 1777885126,
-      "action": "complete",
-      "worker_id": "ai-1",
-      "task_id": "coord-003-cli",
-      "message": "已补齐 README 中协作 CLI 初始化、状态、领取、完成、释放和租约清理命令，并验证协作状态输出。"
-    },
-    {
-      "order": 36,
-      "timestamp_unix_seconds": 1777885141,
-      "action": "claim",
-      "worker_id": "ai-1",
-      "task_id": "coord-004-tests",
-      "message": "任务已被工作线程领取。"
-    },
-    {
-      "order": 37,
-      "timestamp_unix_seconds": 1777885171,
-      "action": "complete",
-      "worker_id": "ai-1",
-      "task_id": "coord-004-tests",
-      "message": "已复核现有协作队列测试覆盖单线程领取、多线程不重复领取、依赖阻断、写入范围冲突、错误完成、释放和租约清理，并通过定向和完整测试。"
-    },
-    {
-      "order": 38,
-      "timestamp_unix_seconds": 1777885178,
-      "action": "claim",
-      "worker_id": "ai-1",
-      "task_id": "coord-005-review-archive",
-      "message": "任务已被工作线程领取。"
-    },
-    {
-      "order": 39,
-      "timestamp_unix_seconds": 1777885234,
-      "action": "complete",
-      "worker_id": "ai-1",
-      "task_id": "coord-005-review-archive",
-      "message": "已完成协作 CLI 收口归档，记录 README 命令补齐、协作队列测试复核和全部剩余任务完成情况。"
-    },
-    {
-      "order": 40,
-      "timestamp_unix_seconds": 1777885469,
-      "action": "release",
-      "worker_id": "ai-1",
-      "task_id": "coord-002-application",
-      "message": "继续实现已完成任务板重开能力"
-    },
-    {
-      "order": 41,
-      "timestamp_unix_seconds": 1777885472,
-      "action": "claim",
-      "worker_id": "ai-1",
-      "task_id": "coord-002-application",
-      "message": "任务已被工作线程领取。"
-    },
-    {
-      "order": 42,
-      "timestamp_unix_seconds": 1777885606,
-      "action": "complete",
-      "worker_id": "ai-1",
-      "task_id": "coord-002-application",
-      "message": "已新增已完成协作任务板重开能力，只有全部任务完成时才允许重开新目标，并通过协作队列定向测试。"
-    },
-    {
-      "order": 43,
-      "timestamp_unix_seconds": 1777885611,
-      "action": "release",
-      "worker_id": "ai-1",
-      "task_id": "coord-003-cli",
-      "message": "继续接入任务板重开 CLI 参数"
-    },
-    {
-      "order": 44,
-      "timestamp_unix_seconds": 1777885617,
-      "action": "claim",
-      "worker_id": "ai-1",
-      "task_id": "coord-003-cli",
-      "message": "任务已被工作线程领取。"
-    },
-    {
-      "order": 45,
-      "timestamp_unix_seconds": 1777885688,
-      "action": "complete",
-      "worker_id": "ai-1",
-      "task_id": "coord-003-cli",
-      "message": "已接入 agent-work-init --reset-completed 参数，README 和帮助文本同步更新，并验证未完成队列会拒绝重开。"
-    },
-    {
-      "order": 46,
-      "timestamp_unix_seconds": 1777885735,
-      "action": "release",
-      "worker_id": "ai-1",
-      "task_id": "coord-005-review-archive",
-      "message": "继续归档任务板重开能力"
-    },
-    {
-      "order": 47,
-      "timestamp_unix_seconds": 1777885740,
-      "action": "claim",
-      "worker_id": "ai-1",
-      "task_id": "coord-005-review-archive",
-      "message": "任务已被工作线程领取。"
-    },
-    {
-      "order": 48,
-      "timestamp_unix_seconds": 1777885820,
-      "action": "complete",
-      "worker_id": "ai-1",
-      "task_id": "coord-005-review-archive",
-      "message": "已归档协作任务板重开能力、未完成队列拒绝验证和完整测试结果。"
-    },
-    {
-      "order": 49,
-      "timestamp_unix_seconds": 1777887406,
-      "action": "restart",
-      "message": "协作队列已从完成状态重开。上一目标：多 AI 协作修改代码。新目标：规范分支协作流程。"
-    },
-    {
-      "order": 50,
-      "timestamp_unix_seconds": 1777887411,
-      "action": "claim",
-      "worker_id": "ai-1",
-      "task_id": "coord-001-architecture",
-      "message": "任务已被工作线程领取。"
-    },
-    {
-      "order": 51,
-      "timestamp_unix_seconds": 1777887530,
-      "action": "complete",
-      "worker_id": "ai-1",
-      "task_id": "coord-001-architecture",
-      "message": "已在 Agents.md 增加分支隔离、合并验证、分支删除和多 AI 独立工作树规则，并通过布局验证。"
-    },
-    {
-      "order": 52,
-      "timestamp_unix_seconds": 1777887537,
-      "action": "claim",
-      "worker_id": "ai-1",
-      "task_id": "coord-002-application",
-      "message": "任务已被工作线程领取。"
-    },
-    {
-      "order": 53,
-      "timestamp_unix_seconds": 1777887542,
-      "action": "complete",
-      "worker_id": "ai-1",
-      "task_id": "coord-002-application",
-      "message": "本轮目标为流程规则更新，应用层协作队列已有能力满足分支流程归档需求，无需修改 src/app。"
-    },
-    {
-      "order": 54,
-      "timestamp_unix_seconds": 1777887545,
-      "action": "claim",
-      "worker_id": "ai-1",
-      "task_id": "coord-003-cli",
-      "message": "任务已被工作线程领取。"
-    },
-    {
-      "order": 55,
-      "timestamp_unix_seconds": 1777887551,
-      "action": "complete",
-      "worker_id": "ai-1",
-      "task_id": "coord-003-cli",
-      "message": "本轮只更新 Agents.md 中的操作规则，现有 CLI 不需要新增参数，README 保持简洁入口。"
-    },
-    {
-      "order": 56,
-      "timestamp_unix_seconds": 1777887560,
-      "action": "claim",
-      "worker_id": "ai-1",
-      "task_id": "coord-004-tests",
-      "message": "任务已被工作线程领取。"
-    },
-    {
-      "order": 57,
-      "timestamp_unix_seconds": 1777887579,
-      "action": "complete",
-      "worker_id": "ai-1",
-      "task_id": "coord-004-tests",
-      "message": "已执行 cargo fmt --check、cargo test、validate、preflight 和开放错误查询；文档流程变更无需新增 Rust 测试。"
-    },
-    {
-      "order": 58,
-      "timestamp_unix_seconds": 1777887590,
-      "action": "claim",
-      "worker_id": "ai-1",
-      "task_id": "coord-005-review-archive",
-      "message": "任务已被工作线程领取。"
-    },
-    {
-      "order": 59,
-      "timestamp_unix_seconds": 1777887661,
-      "action": "complete",
-      "worker_id": "ai-1",
-      "task_id": "coord-005-review-archive",
-      "message": "已将分支协作流程规范、验证结果和无开放错误结论写入 v0 major 聚合归档。"
-    },
-    {
-      "order": 60,
-      "timestamp_unix_seconds": 1777887926,
-      "action": "restart",
-      "message": "协作队列已从完成状态重开。上一目标：规范分支协作流程。新目标：实现分支流程只读检查命令。"
-    },
-    {
-      "order": 61,
-      "timestamp_unix_seconds": 1777887931,
-      "action": "claim",
-      "worker_id": "ai-1",
-      "task_id": "coord-001-architecture",
-      "message": "任务已被工作线程领取。"
-    },
-    {
-      "order": 62,
-      "timestamp_unix_seconds": 1777887954,
-      "action": "complete",
-      "worker_id": "ai-1",
-      "task_id": "coord-001-architecture",
-      "message": "已在 Agents.md 补充分支流程只读检查命令 branch-check 的职责、只读边界和阻断规则。"
-    },
-    {
-      "order": 63,
-      "timestamp_unix_seconds": 1777887979,
-      "action": "claim",
-      "worker_id": "ai-1",
-      "task_id": "coord-002-application",
-      "message": "任务已被工作线程领取。"
-    },
-    {
-      "order": 64,
-      "timestamp_unix_seconds": 1777888250,
-      "action": "complete",
-      "worker_id": "ai-1",
-      "task_id": "coord-002-application",
-      "message": "已在 SelfForgeApp 新增 branch_check 只读应用层入口，读取 Git 状态和协作任务板并返回阻断项，不修改文件或任务状态。"
-    },
-    {
-      "order": 65,
-      "timestamp_unix_seconds": 1777888256,
-      "action": "claim",
-      "worker_id": "ai-1",
-      "task_id": "coord-003-cli",
-      "message": "任务已被工作线程领取。"
-    },
-    {
-      "order": 66,
-      "timestamp_unix_seconds": 1777888499,
-      "action": "complete",
-      "worker_id": "ai-1",
-      "task_id": "coord-003-cli",
-      "message": "已新增 branch-check CLI 参数解析和中文输出，并在 README 常用命令中补充入口。"
-    },
-    {
-      "order": 67,
-      "timestamp_unix_seconds": 1777888623,
-      "action": "claim",
-      "worker_id": "ai-1",
-      "task_id": "coord-004-tests",
-      "message": "任务已被工作线程领取。"
-    },
-    {
-      "order": 68,
-      "timestamp_unix_seconds": 1777888630,
-      "action": "complete",
-      "worker_id": "ai-1",
-      "task_id": "coord-004-tests",
-      "message": "已在现有测试分层中补充分支检查定向测试，覆盖 master 阻断和已领取任务分支允许路径；cargo test branch_check 通过。"
-    },
-    {
-      "order": 69,
-      "timestamp_unix_seconds": 1777888655,
-      "action": "claim",
-      "worker_id": "ai-1",
-      "task_id": "coord-005-review-archive",
-      "message": "任务已被工作线程领取。"
-    },
-    {
-      "order": 70,
-      "timestamp_unix_seconds": 1777888719,
-      "action": "complete",
-      "worker_id": "ai-1",
-      "task_id": "coord-005-review-archive",
-      "message": "已将 branch-check 命令实现、测试结果、CLI 解析修复和无开放错误结论写入 v0 major 聚合归档。"
-    },
-    {
-      "order": 71,
-      "timestamp_unix_seconds": 1777888867,
-      "action": "restart",
-      "message": "协作队列已从完成状态重开。上一目标：实现分支流程只读检查命令。新目标：增加分支命名建议。"
-    },
-    {
-      "order": 72,
-      "timestamp_unix_seconds": 1777888873,
-      "action": "claim",
-      "worker_id": "ai-1",
-      "task_id": "coord-001-architecture",
-      "message": "任务已被工作线程领取。"
-    },
-    {
-      "order": 73,
-      "timestamp_unix_seconds": 1777888894,
-      "action": "complete",
-      "worker_id": "ai-1",
-      "task_id": "coord-001-architecture",
-      "message": "已在 Agents.md 补充 branch-check --suggest 的只读边界、分支名来源优先级和禁止创建分支规则。"
-    },
-    {
-      "order": 74,
-      "timestamp_unix_seconds": 1777888903,
-      "action": "claim",
-      "worker_id": "ai-1",
-      "task_id": "coord-002-application",
-      "message": "任务已被工作线程领取。"
-    },
-    {
-      "order": 75,
-      "timestamp_unix_seconds": 1777889055,
-      "action": "complete",
-      "worker_id": "ai-1",
-      "task_id": "coord-002-application",
-      "message": "已在 branch_check 报告中增加 suggested_branch 和来源字段，并实现基于任务编号、worker 已领取任务或任务板下一任务的分支建议。"
-    },
-    {
-      "order": 76,
-      "timestamp_unix_seconds": 1777889061,
-      "action": "claim",
-      "worker_id": "ai-1",
-      "task_id": "coord-003-cli",
-      "message": "任务已被工作线程领取。"
-    },
-    {
-      "order": 77,
-      "timestamp_unix_seconds": 1777889067,
-      "action": "complete",
-      "worker_id": "ai-1",
-      "task_id": "coord-003-cli",
-      "message": "已接入 branch-check --suggest 参数、中文输出建议分支和 README 示例。"
-    },
-    {
-      "order": 78,
-      "timestamp_unix_seconds": 1777889071,
-      "action": "claim",
-      "worker_id": "ai-1",
-      "task_id": "coord-004-tests",
-      "message": "任务已被工作线程领取。"
-    },
-    {
-      "order": 79,
-      "timestamp_unix_seconds": 1777889076,
-      "action": "complete",
-      "worker_id": "ai-1",
-      "task_id": "coord-004-tests",
-      "message": "已新增 branch-check --suggest 定向测试并执行 cargo test branch_check，3 个测试全部通过。"
-    },
-    {
-      "order": 80,
-      "timestamp_unix_seconds": 1777889101,
-      "action": "claim",
-      "worker_id": "ai-1",
-      "task_id": "coord-005-review-archive",
-      "message": "任务已被工作线程领取。"
-    },
-    {
-      "order": 81,
-      "timestamp_unix_seconds": 1777889158,
-      "action": "complete",
-      "worker_id": "ai-1",
-      "task_id": "coord-005-review-archive",
-      "message": "已将 branch-check --suggest 分支命名建议、测试结果和无开放错误结论写入 v0 major 聚合归档。"
-    },
-    {
-      "order": 82,
-      "timestamp_unix_seconds": 1777889312,
-      "action": "restart",
-      "message": "协作队列已从完成状态重开。上一目标：增加分支命名建议。新目标：改为企业级 PR 合并流程。"
-    },
     {
       "order": 83,
       "timestamp_unix_seconds": 1777889587,
@@ -962,6 +394,34 @@
       "worker_id": "ai-1",
       "task_id": "coord-010-commit-version-rule",
       "message": "已澄清未提升版本的阶段性本地提交不携带版本号，最终提升版本的收束提交或 PR 才携带 vMAJOR.MINOR.PATCH。"
+    },
+    {
+      "order": 100,
+      "timestamp_unix_seconds": 1777922750,
+      "action": "retarget",
+      "message": "协作队列追加任务板压缩命令实现任务，要求压缩已完成任务提示词和旧事件，同时保留当前调度状态。"
+    },
+    {
+      "order": 101,
+      "timestamp_unix_seconds": 1777893719,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-011-work-queue-compact",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 102,
+      "timestamp_unix_seconds": 1777893958,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-011-work-queue-compact",
+      "message": "已新增 agent-work-compact 受控压缩命令，保留任务状态和摘要，压缩已完成任务提示词并裁剪旧事件，同时补充测试和中文文档。"
+    },
+    {
+      "order": 103,
+      "timestamp_unix_seconds": 1777893963,
+      "action": "compact",
+      "message": "协作任务板已压缩：压缩已完成任务提示词 7 个，移除旧事件 82 条，压缩前事件 102 条。"
     }
   ]
 }

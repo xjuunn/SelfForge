@@ -96,6 +96,16 @@ pub struct AgentWorkReapReport {
     pub queue: AgentWorkQueue,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentWorkCompactionReport {
+    pub version: String,
+    pub queue_path: PathBuf,
+    pub compacted_task_prompts: usize,
+    pub removed_events: usize,
+    pub retained_events: usize,
+    pub queue: AgentWorkQueue,
+}
+
 #[derive(Debug, Clone)]
 pub struct AgentWorkCoordinator {
     pub(super) root: PathBuf,
@@ -114,6 +124,7 @@ pub enum AgentWorkError {
     },
     InvalidThreadCount,
     InvalidLeaseSeconds,
+    InvalidKeepEvents,
     InvalidWorkerId {
         worker_id: String,
     },
@@ -183,6 +194,7 @@ impl fmt::Display for AgentWorkError {
             }
             AgentWorkError::InvalidThreadCount => write!(formatter, "线程数量必须大于 0"),
             AgentWorkError::InvalidLeaseSeconds => write!(formatter, "任务租约秒数必须大于 0"),
+            AgentWorkError::InvalidKeepEvents => write!(formatter, "保留事件数量必须大于 0"),
             AgentWorkError::InvalidWorkerId { worker_id } => {
                 write!(formatter, "工作线程标识不合法：{worker_id}")
             }
@@ -237,6 +249,7 @@ impl Error for AgentWorkError {
             | AgentWorkError::MissingQueue { .. }
             | AgentWorkError::InvalidThreadCount
             | AgentWorkError::InvalidLeaseSeconds
+            | AgentWorkError::InvalidKeepEvents
             | AgentWorkError::InvalidWorkerId { .. }
             | AgentWorkError::InvalidTaskId { .. }
             | AgentWorkError::TaskNotFound { .. }

@@ -29,6 +29,7 @@ cargo run -- agent-work-claim --worker ai-1 --agent builder
 cargo run -- agent-work-complete TASK_ID --worker ai-1 --summary "完成摘要"
 cargo run -- agent-work-release TASK_ID --worker ai-1 --reason "释放原因"
 cargo run -- agent-work-reap --reason "租约过期清理"
+cargo run -- agent-work-compact --keep-events 20
 cargo run -- agent-plan "目标"
 cargo run -- agent-start "目标"
 cargo run -- agent-steps SESSION_ID
