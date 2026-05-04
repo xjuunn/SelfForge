@@ -1,41 +1,45 @@
 mod patch_scope;
 
 use super::agent::{
-    AgentDefinition, AgentError, AgentPlan, AgentRegistry, AgentRunReference, AgentSession,
-    AgentSessionError, AgentSessionMemoryInsight, AgentSessionPlanContext, AgentSessionStatus,
-    AgentSessionStep, AgentSessionStore, AgentSessionSummary, AgentSessionWorkQueueContext,
-    AgentStepExecutionReport, AgentStepExecutionRequest, AgentStepStatus,
-    AgentToolConfigInitReport, AgentToolError, AgentToolInvocation, AgentToolInvocationInput,
-    AgentToolInvocationReport, AgentToolReport, AgentWorkClaimReport, AgentWorkCompactionReport,
-    AgentWorkCoordinator, AgentWorkError, AgentWorkQueueReport, AgentWorkReapReport,
-    AgentWorkTaskStatus, AiPatchApplicationFile, AiPatchApplicationRecord,
-    AiPatchApplicationStatus, AiPatchApplicationStore, AiPatchApplicationStoreError,
-    AiPatchApplicationSummary, AiPatchAuditFinding, AiPatchAuditFindingKind, AiPatchAuditRecord,
-    AiPatchAuditSeverity, AiPatchAuditStatus, AiPatchAuditStore, AiPatchAuditStoreError,
-    AiPatchAuditSummary, AiPatchDraftRecord, AiPatchDraftStatus, AiPatchDraftStore,
-    AiPatchDraftStoreError, AiPatchDraftSummary, AiPatchPreviewChange, AiPatchPreviewRecord,
-    AiPatchPreviewStatus, AiPatchPreviewStore, AiPatchPreviewStoreError, AiPatchPreviewSummary,
-    AiPatchSourceCandidateRecord, AiPatchSourceCandidateStatus, AiPatchSourceCandidateStore,
-    AiPatchSourceCandidateStoreError, AiPatchSourceCandidateSummary,
-    AiPatchSourceCycleFollowUpRecord, AiPatchSourceCycleFollowUpStatus,
-    AiPatchSourceCycleFollowUpStore, AiPatchSourceCycleFollowUpStoreError,
-    AiPatchSourceCycleFollowUpSummary, AiPatchSourceCycleRecord, AiPatchSourceCycleResult,
-    AiPatchSourceCycleStatus, AiPatchSourceCycleStore, AiPatchSourceCycleStoreError,
-    AiPatchSourceCycleSummary, AiPatchSourceExecutionFile, AiPatchSourceExecutionRecord,
-    AiPatchSourceExecutionStatus, AiPatchSourceExecutionStore, AiPatchSourceExecutionStoreError,
-    AiPatchSourceExecutionSummary, AiPatchSourcePlanFile, AiPatchSourcePlanRecord,
-    AiPatchSourcePlanStatus, AiPatchSourcePlanStore, AiPatchSourcePlanStoreError,
-    AiPatchSourcePlanSummary, AiPatchSourcePromotionRecord, AiPatchSourcePromotionStatus,
-    AiPatchSourcePromotionStore, AiPatchSourcePromotionStoreError, AiPatchSourcePromotionSummary,
-    AiPatchSourceTaskAuditFinding, AiPatchSourceTaskAuditRecord, AiPatchSourceTaskAuditStatus,
-    AiPatchSourceTaskAuditStore, AiPatchSourceTaskAuditStoreError, AiPatchSourceTaskAuditSummary,
-    AiPatchSourceTaskDraftRecord, AiPatchSourceTaskDraftStatus, AiPatchSourceTaskDraftStore,
-    AiPatchSourceTaskDraftStoreError, AiPatchSourceTaskDraftSummary,
-    AiPatchVerificationCommandRecord, AiPatchVerificationStatus, AiSelfUpgradeAuditError,
-    AiSelfUpgradeAuditRecord, AiSelfUpgradeAuditStatus, AiSelfUpgradeAuditStore,
-    AiSelfUpgradeAuditSummary, AiSelfUpgradeSummaryIndexEntry, AiSelfUpgradeSummaryRecord,
-    AiSelfUpgradeSummaryStatus, AiSelfUpgradeSummaryStore, AiSelfUpgradeSummaryStoreError,
-    apply_tools_to_plan, initialize_agent_tool_config, load_agent_tool_report,
+    AgentCodeToolError, AgentDefinition, AgentError, AgentPlan, AgentRegistry, AgentRunReference,
+    AgentSession, AgentSessionError, AgentSessionMemoryInsight, AgentSessionPlanContext,
+    AgentSessionStatus, AgentSessionStep, AgentSessionStore, AgentSessionSummary,
+    AgentSessionWorkQueueContext, AgentSkillError, AgentSkillIndexReport,
+    AgentSkillSelectionReport, AgentSkillSelectionRequest, AgentStepExecutionReport,
+    AgentStepExecutionRequest, AgentStepStatus, AgentToolConfigInitReport, AgentToolError,
+    AgentToolInvocation, AgentToolInvocationInput, AgentToolInvocationReport, AgentToolReport,
+    AgentWorkClaimReport, AgentWorkCompactionReport, AgentWorkCoordinator, AgentWorkError,
+    AgentWorkQueueReport, AgentWorkReapReport, AgentWorkTaskStatus, AiPatchApplicationFile,
+    AiPatchApplicationRecord, AiPatchApplicationStatus, AiPatchApplicationStore,
+    AiPatchApplicationStoreError, AiPatchApplicationSummary, AiPatchAuditFinding,
+    AiPatchAuditFindingKind, AiPatchAuditRecord, AiPatchAuditSeverity, AiPatchAuditStatus,
+    AiPatchAuditStore, AiPatchAuditStoreError, AiPatchAuditSummary, AiPatchDraftRecord,
+    AiPatchDraftStatus, AiPatchDraftStore, AiPatchDraftStoreError, AiPatchDraftSummary,
+    AiPatchPreviewChange, AiPatchPreviewRecord, AiPatchPreviewStatus, AiPatchPreviewStore,
+    AiPatchPreviewStoreError, AiPatchPreviewSummary, AiPatchSourceCandidateRecord,
+    AiPatchSourceCandidateStatus, AiPatchSourceCandidateStore, AiPatchSourceCandidateStoreError,
+    AiPatchSourceCandidateSummary, AiPatchSourceCycleFollowUpRecord,
+    AiPatchSourceCycleFollowUpStatus, AiPatchSourceCycleFollowUpStore,
+    AiPatchSourceCycleFollowUpStoreError, AiPatchSourceCycleFollowUpSummary,
+    AiPatchSourceCycleRecord, AiPatchSourceCycleResult, AiPatchSourceCycleStatus,
+    AiPatchSourceCycleStore, AiPatchSourceCycleStoreError, AiPatchSourceCycleSummary,
+    AiPatchSourceExecutionFile, AiPatchSourceExecutionRecord, AiPatchSourceExecutionStatus,
+    AiPatchSourceExecutionStore, AiPatchSourceExecutionStoreError, AiPatchSourceExecutionSummary,
+    AiPatchSourcePlanFile, AiPatchSourcePlanRecord, AiPatchSourcePlanStatus,
+    AiPatchSourcePlanStore, AiPatchSourcePlanStoreError, AiPatchSourcePlanSummary,
+    AiPatchSourcePromotionRecord, AiPatchSourcePromotionStatus, AiPatchSourcePromotionStore,
+    AiPatchSourcePromotionStoreError, AiPatchSourcePromotionSummary, AiPatchSourceTaskAuditFinding,
+    AiPatchSourceTaskAuditRecord, AiPatchSourceTaskAuditStatus, AiPatchSourceTaskAuditStore,
+    AiPatchSourceTaskAuditStoreError, AiPatchSourceTaskAuditSummary, AiPatchSourceTaskDraftRecord,
+    AiPatchSourceTaskDraftStatus, AiPatchSourceTaskDraftStore, AiPatchSourceTaskDraftStoreError,
+    AiPatchSourceTaskDraftSummary, AiPatchVerificationCommandRecord, AiPatchVerificationStatus,
+    AiSelfUpgradeAuditError, AiSelfUpgradeAuditRecord, AiSelfUpgradeAuditStatus,
+    AiSelfUpgradeAuditStore, AiSelfUpgradeAuditSummary, AiSelfUpgradeSummaryIndexEntry,
+    AiSelfUpgradeSummaryRecord, AiSelfUpgradeSummaryStatus, AiSelfUpgradeSummaryStore,
+    AiSelfUpgradeSummaryStoreError, apply_tools_to_plan, format_agent_skill_context,
+    initialize_agent_skill_index, initialize_agent_tool_config, inspect_project_code_diff,
+    list_project_code_files, load_agent_skill_index, load_agent_tool_report,
+    read_project_code_file, search_project_code, select_agent_skills,
 };
 use super::ai_provider::{
     AiConfigError, AiConfigReport, AiExecutionError, AiExecutionReport, AiProviderRegistry,
@@ -178,6 +182,7 @@ pub struct AiSelfUpgradePreview {
     pub request: AiRequestSpec,
     pub preflight: PreflightReport,
     pub insights: MemoryInsightReport,
+    pub skills: AgentSkillSelectionReport,
 }
 
 #[derive(Debug, Clone)]
@@ -207,6 +212,7 @@ pub struct AiPatchDraftPreview {
     pub request: AiRequestSpec,
     pub preflight: PreflightReport,
     pub insights: MemoryInsightReport,
+    pub skills: AgentSkillSelectionReport,
     pub allowed_write_roots: Vec<String>,
     pub required_sections: Vec<String>,
 }
@@ -418,6 +424,7 @@ pub enum AgentEvolutionError {
 pub enum AiSelfUpgradeError {
     Preflight(MinimalLoopError),
     Memory(MemoryContextError),
+    Skill(AgentSkillError),
     Ai(AiExecutionError),
     Audit(AiSelfUpgradeAuditError),
     Blocked {
@@ -442,6 +449,7 @@ pub enum AiSelfUpgradeSummaryError {
 pub enum AiPatchDraftError {
     Preflight(MinimalLoopError),
     Memory(MemoryContextError),
+    Skill(AgentSkillError),
     Ai(AiExecutionError),
     Store(AiPatchDraftStoreError),
     TaskAudit(AiPatchSourceTaskAuditStoreError),
@@ -579,6 +587,7 @@ pub enum AgentRunError {
 #[derive(Debug)]
 pub enum AgentToolInvocationError {
     Tools(AgentToolError),
+    Code(AgentCodeToolError),
     Memory(MemoryContextError),
     Session(AgentSessionError),
     Run(AgentRunError),
@@ -724,10 +733,18 @@ impl SelfForgeApp {
             normalize_optional_text(goal).unwrap_or_else(|| "生成下一轮 AI 补丁草案".to_string());
         let allowed_write_roots = patch_draft_allowed_write_roots(&preflight.current_version)?;
         let required_sections = patch_draft_required_sections();
+        let mut skill_request =
+            AgentSkillSelectionRequest::new(preflight.current_version.clone(), &goal);
+        skill_request.limit = 4;
+        skill_request.token_budget = 1_600;
+        let skills = self
+            .select_agent_skills(skill_request)
+            .map_err(AiPatchDraftError::Skill)?;
         let prompt = build_ai_patch_draft_prompt(
             &preflight,
             &target_version,
             &insights,
+            &skills,
             &goal,
             &allowed_write_roots,
             &required_sections,
@@ -749,6 +766,7 @@ impl SelfForgeApp {
             request,
             preflight,
             insights,
+            skills,
             allowed_write_roots,
             required_sections,
         })
@@ -2751,8 +2769,23 @@ impl SelfForgeApp {
             .memory_insights(&preflight.current_version, 5)
             .map_err(AiSelfUpgradeError::Memory)?;
         let normalized_hint = normalize_optional_text(hint);
-        let prompt =
-            build_ai_self_upgrade_prompt(&preflight, &insights, normalized_hint.as_deref());
+        let mut skill_request = AgentSkillSelectionRequest::new(
+            preflight.current_version.clone(),
+            normalized_hint
+                .as_deref()
+                .unwrap_or("AI 自我升级 目标决策 自动进化 计划 验证 回滚"),
+        );
+        skill_request.limit = 3;
+        skill_request.token_budget = 1_200;
+        let skills = self
+            .select_agent_skills(skill_request)
+            .map_err(AiSelfUpgradeError::Skill)?;
+        let prompt = build_ai_self_upgrade_prompt(
+            &preflight,
+            &insights,
+            &skills,
+            normalized_hint.as_deref(),
+        );
         let request = AiProviderRegistry::build_text_request_project_with(
             &self.root,
             &prompt,
@@ -2768,6 +2801,7 @@ impl SelfForgeApp {
             request,
             preflight,
             insights,
+            skills,
         })
     }
 
@@ -3238,6 +3272,27 @@ impl SelfForgeApp {
         AgentRegistry::standard().plan_for_goal(goal)
     }
 
+    pub fn init_agent_skill_index(
+        &self,
+        version: &str,
+    ) -> Result<AgentSkillIndexReport, AgentSkillError> {
+        initialize_agent_skill_index(&self.root, version)
+    }
+
+    pub fn agent_skill_index(
+        &self,
+        version: &str,
+    ) -> Result<AgentSkillIndexReport, AgentSkillError> {
+        load_agent_skill_index(&self.root, version)
+    }
+
+    pub fn select_agent_skills(
+        &self,
+        request: AgentSkillSelectionRequest,
+    ) -> Result<AgentSkillSelectionReport, AgentSkillError> {
+        select_agent_skills(&self.root, request)
+    }
+
     pub fn agent_plan_with_memory(
         &self,
         goal: &str,
@@ -3437,6 +3492,110 @@ impl SelfForgeApp {
                 _ => Err(AgentToolInvocationError::UnsupportedInput {
                     tool_id,
                     expected: "AiRequestPreview".to_string(),
+                }),
+            },
+            "code.search" => match input {
+                AgentToolInvocationInput::CodeSearch { query, limit } => {
+                    let report = search_project_code(&self.root, &query, limit)?;
+                    Ok(AgentToolInvocationReport {
+                        agent_id,
+                        tool_id,
+                        version,
+                        summary: format!(
+                            "代码搜索完成，扫描文件 {} 个，命中文件 {} 个，匹配 {} 条。",
+                            report.scanned_file_count,
+                            report.matched_file_count,
+                            report.matches.len()
+                        ),
+                        details: report
+                            .matches
+                            .iter()
+                            .map(|entry| format!("{}:{} {}", entry.path, entry.line, entry.preview))
+                            .collect(),
+                        run: None,
+                    })
+                }
+                _ => Err(AgentToolInvocationError::UnsupportedInput {
+                    tool_id,
+                    expected: "CodeSearch".to_string(),
+                }),
+            },
+            "code.list" => match input {
+                AgentToolInvocationInput::CodeList { path, limit } => {
+                    let report = list_project_code_files(&self.root, &path, limit)?;
+                    Ok(AgentToolInvocationReport {
+                        agent_id,
+                        tool_id,
+                        version,
+                        summary: format!(
+                            "项目文件列表完成，路径 {}，文件 {} 个，返回 {} 个，截断 {}。",
+                            report.path,
+                            report.file_count,
+                            report.files.len(),
+                            report.truncated
+                        ),
+                        details: report
+                            .files
+                            .iter()
+                            .map(|entry| format!("{} 字节 {}", entry.path, entry.bytes))
+                            .collect(),
+                        run: None,
+                    })
+                }
+                _ => Err(AgentToolInvocationError::UnsupportedInput {
+                    tool_id,
+                    expected: "CodeList".to_string(),
+                }),
+            },
+            "code.diff" => match input {
+                AgentToolInvocationInput::CodeDiff { path, max_bytes } => {
+                    let report = inspect_project_code_diff(&self.root, &path, max_bytes)?;
+                    let mut details = report
+                        .status_entries
+                        .iter()
+                        .map(|entry| format!("状态 {}", entry))
+                        .collect::<Vec<_>>();
+                    if !report.diff.is_empty() {
+                        details.push(format!("差异:\n{}", report.diff));
+                    }
+                    Ok(AgentToolInvocationReport {
+                        agent_id,
+                        tool_id,
+                        version,
+                        summary: format!(
+                            "项目差异查看完成，路径 {}，状态 {} 条，diff 字节 {}，截断 {}。",
+                            report.path,
+                            report.status_entries.len(),
+                            report.diff_bytes,
+                            report.truncated
+                        ),
+                        details,
+                        run: None,
+                    })
+                }
+                _ => Err(AgentToolInvocationError::UnsupportedInput {
+                    tool_id,
+                    expected: "CodeDiff".to_string(),
+                }),
+            },
+            "code.read" => match input {
+                AgentToolInvocationInput::CodeRead { path, max_bytes } => {
+                    let report = read_project_code_file(&self.root, &path, max_bytes)?;
+                    Ok(AgentToolInvocationReport {
+                        agent_id,
+                        tool_id,
+                        version,
+                        summary: format!(
+                            "已读取代码文件 {}，字节 {}，截断 {}。",
+                            report.path, report.bytes_read, report.truncated
+                        ),
+                        details: vec![report.content],
+                        run: None,
+                    })
+                }
+                _ => Err(AgentToolInvocationError::UnsupportedInput {
+                    tool_id,
+                    expected: "CodeRead".to_string(),
                 }),
             },
             "forge.archive" => match input {
@@ -4367,6 +4526,69 @@ impl SelfForgeApp {
                 limit: request.limit,
                 all_major: true,
             },
+            "code.search" => {
+                let Some(prompt) = &request.prompt else {
+                    return Err(AgentStepExecutionError::InputRequired {
+                        step_order: step.order,
+                        tool_id: tool_id.to_string(),
+                        input: "prompt".to_string(),
+                    });
+                };
+                AgentToolInvocationInput::CodeSearch {
+                    query: prompt.clone(),
+                    limit: request.limit,
+                }
+            }
+            "code.list" => {
+                let explicit_tool = request.tool_id.as_deref() == Some(tool_id);
+                let Some(path) = request.prompt.clone().or_else(|| {
+                    if explicit_tool {
+                        Some(".".to_string())
+                    } else {
+                        None
+                    }
+                }) else {
+                    return Err(AgentStepExecutionError::InputRequired {
+                        step_order: step.order,
+                        tool_id: tool_id.to_string(),
+                        input: "prompt".to_string(),
+                    });
+                };
+                AgentToolInvocationInput::CodeList {
+                    path,
+                    limit: request.limit,
+                }
+            }
+            "code.diff" => {
+                let explicit_tool = request.tool_id.as_deref() == Some(tool_id);
+                let Some(path) = request.prompt.clone().or_else(|| {
+                    if explicit_tool {
+                        Some(".".to_string())
+                    } else {
+                        None
+                    }
+                }) else {
+                    return Err(AgentStepExecutionError::InputRequired {
+                        step_order: step.order,
+                        tool_id: tool_id.to_string(),
+                        input: "prompt".to_string(),
+                    });
+                };
+                AgentToolInvocationInput::CodeDiff { path, max_bytes: 0 }
+            }
+            "code.read" => {
+                let Some(prompt) = &request.prompt else {
+                    return Err(AgentStepExecutionError::InputRequired {
+                        step_order: step.order,
+                        tool_id: tool_id.to_string(),
+                        input: "prompt".to_string(),
+                    });
+                };
+                AgentToolInvocationInput::CodeRead {
+                    path: prompt.clone(),
+                    max_bytes: 0,
+                }
+            }
             "forge.archive" => AgentToolInvocationInput::ForgeArchiveStatus,
             "runtime.run" => {
                 let Some(program) = &request.program else {
@@ -4877,6 +5099,7 @@ fn build_ai_patch_draft_prompt(
     preflight: &PreflightReport,
     target_version: &str,
     insights: &MemoryInsightReport,
+    skills: &AgentSkillSelectionReport,
     goal: &str,
     allowed_write_roots: &[String],
     required_sections: &[String],
@@ -4904,6 +5127,8 @@ fn build_ai_patch_draft_prompt(
     for section in required_sections {
         prompt.push_str(&format!("- {section}\n"));
     }
+    prompt.push_str("\n# 按需技能上下文\n");
+    prompt.push_str(&format_agent_skill_context(skills));
     prompt.push_str("\n# 近期成功经验\n");
     prompt.push_str(&format_memory_insight_lines(
         &insights.success_experiences,
@@ -6671,6 +6896,7 @@ fn build_ai_patch_source_task_audit_markdown(
 fn build_ai_self_upgrade_prompt(
     preflight: &PreflightReport,
     insights: &MemoryInsightReport,
+    skills: &AgentSkillSelectionReport,
     hint: Option<&str>,
 ) -> String {
     let mut prompt = String::new();
@@ -6691,6 +6917,10 @@ fn build_ai_self_upgrade_prompt(
     if let Some(hint) = hint {
         prompt.push_str(&format!("- 用户补充目标：{hint}\n"));
     }
+    prompt.push('\n');
+
+    prompt.push_str("# 按需技能上下文\n");
+    prompt.push_str(&format_agent_skill_context(skills));
     prompt.push('\n');
 
     prompt.push_str("# 近期成功经验\n");
@@ -6989,6 +7219,9 @@ impl fmt::Display for AiSelfUpgradeError {
             AiSelfUpgradeError::Memory(error) => {
                 write!(formatter, "AI 自我升级读取记忆失败：{error}")
             }
+            AiSelfUpgradeError::Skill(error) => {
+                write!(formatter, "AI 自我升级读取按需技能失败：{error}")
+            }
             AiSelfUpgradeError::Ai(error) => write!(formatter, "AI 自我升级请求失败：{error}"),
             AiSelfUpgradeError::Audit(error) => {
                 write!(formatter, "AI 自我升级审计记录失败：{error}")
@@ -7020,6 +7253,7 @@ impl Error for AiSelfUpgradeError {
         match self {
             AiSelfUpgradeError::Preflight(error) => Some(error),
             AiSelfUpgradeError::Memory(error) => Some(error),
+            AiSelfUpgradeError::Skill(error) => Some(error),
             AiSelfUpgradeError::Ai(error) => Some(error),
             AiSelfUpgradeError::Audit(error) => Some(error),
             AiSelfUpgradeError::Evolution(error) => Some(error),
@@ -7063,6 +7297,9 @@ impl fmt::Display for AiPatchDraftError {
             }
             AiPatchDraftError::Memory(error) => {
                 write!(formatter, "AI 补丁草案读取记忆失败：{error}")
+            }
+            AiPatchDraftError::Skill(error) => {
+                write!(formatter, "AI 补丁草案读取按需技能失败：{error}")
             }
             AiPatchDraftError::Ai(error) => write!(formatter, "AI 补丁草案请求失败：{error}"),
             AiPatchDraftError::Store(error) => {
@@ -7111,6 +7348,7 @@ impl Error for AiPatchDraftError {
         match self {
             AiPatchDraftError::Preflight(error) => Some(error),
             AiPatchDraftError::Memory(error) => Some(error),
+            AiPatchDraftError::Skill(error) => Some(error),
             AiPatchDraftError::Ai(error) => Some(error),
             AiPatchDraftError::Store(error) => Some(error),
             AiPatchDraftError::TaskAudit(error) => Some(error),
@@ -7570,6 +7808,7 @@ impl fmt::Display for AgentToolInvocationError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             AgentToolInvocationError::Tools(error) => write!(formatter, "{error}"),
+            AgentToolInvocationError::Code(error) => write!(formatter, "{error}"),
             AgentToolInvocationError::Memory(error) => write!(formatter, "{error}"),
             AgentToolInvocationError::Session(error) => write!(formatter, "{error}"),
             AgentToolInvocationError::Run(error) => write!(formatter, "{error}"),
@@ -7594,6 +7833,7 @@ impl Error for AgentToolInvocationError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             AgentToolInvocationError::Tools(error) => Some(error),
+            AgentToolInvocationError::Code(error) => Some(error),
             AgentToolInvocationError::Memory(error) => Some(error),
             AgentToolInvocationError::Session(error) => Some(error),
             AgentToolInvocationError::Run(error) => Some(error),
@@ -7610,6 +7850,12 @@ impl Error for AgentToolInvocationError {
 impl From<AgentToolError> for AgentToolInvocationError {
     fn from(error: AgentToolError) -> Self {
         AgentToolInvocationError::Tools(error)
+    }
+}
+
+impl From<AgentCodeToolError> for AgentToolInvocationError {
+    fn from(error: AgentCodeToolError) -> Self {
+        AgentToolInvocationError::Code(error)
     }
 }
 

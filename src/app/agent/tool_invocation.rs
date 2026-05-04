@@ -34,6 +34,22 @@ pub enum AgentToolInvocationInput {
     AiRequestPreview {
         prompt: String,
     },
+    CodeSearch {
+        query: String,
+        limit: usize,
+    },
+    CodeRead {
+        path: String,
+        max_bytes: usize,
+    },
+    CodeList {
+        path: String,
+        limit: usize,
+    },
+    CodeDiff {
+        path: String,
+        max_bytes: usize,
+    },
     ForgeArchiveStatus,
 }
 

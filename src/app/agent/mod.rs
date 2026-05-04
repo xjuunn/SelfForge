@@ -1,3 +1,4 @@
+mod code_tools;
 mod coordination;
 mod patch_application;
 mod patch_audit;
@@ -15,10 +16,16 @@ mod registry;
 mod self_upgrade_audit;
 mod self_upgrade_summary;
 mod session;
+mod skills;
 mod tool_invocation;
 mod tools;
 mod types;
 
+pub use code_tools::{
+    AgentCodeDiffReport, AgentCodeListEntry, AgentCodeListReport, AgentCodeReadReport,
+    AgentCodeSearchMatch, AgentCodeSearchReport, AgentCodeToolError, inspect_project_code_diff,
+    list_project_code_files, read_project_code_file, search_project_code,
+};
 pub use coordination::{
     AgentWorkClaimReport, AgentWorkCompactionReport, AgentWorkCoordinator, AgentWorkError,
     AgentWorkEvent, AgentWorkQueue, AgentWorkQueueReport, AgentWorkReapReport, AgentWorkTask,
@@ -87,6 +94,12 @@ pub use session::{
     AgentRunReference, AgentSession, AgentSessionError, AgentSessionEvent, AgentSessionEventKind,
     AgentSessionMemoryInsight, AgentSessionPlanContext, AgentSessionStatus, AgentSessionStep,
     AgentSessionStore, AgentSessionSummary, AgentSessionWorkQueueContext, AgentStepStatus,
+};
+pub use skills::{
+    AgentSkillError, AgentSkillIndex, AgentSkillIndexReport, AgentSkillMetadata,
+    AgentSkillSelection, AgentSkillSelectionReport, AgentSkillSelectionRequest,
+    format_agent_skill_context, initialize_agent_skill_index, load_agent_skill_index,
+    select_agent_skills,
 };
 pub use tool_invocation::{
     AgentStepExecutionReport, AgentStepExecutionRequest, AgentToolInvocation,

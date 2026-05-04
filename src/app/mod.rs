@@ -6,10 +6,14 @@ mod minimal_loop;
 mod self_evolution_loop;
 
 pub use agent::{
-    AgentCapability, AgentDefinition, AgentError, AgentPlan, AgentPlanStep, AgentRegistry,
-    AgentRunReference, AgentSession, AgentSessionError, AgentSessionEvent, AgentSessionEventKind,
+    AgentCapability, AgentCodeDiffReport, AgentCodeListEntry, AgentCodeListReport,
+    AgentCodeReadReport, AgentCodeSearchMatch, AgentCodeSearchReport, AgentCodeToolError,
+    AgentDefinition, AgentError, AgentPlan, AgentPlanStep, AgentRegistry, AgentRunReference,
+    AgentSession, AgentSessionError, AgentSessionEvent, AgentSessionEventKind,
     AgentSessionMemoryInsight, AgentSessionPlanContext, AgentSessionStatus, AgentSessionStep,
-    AgentSessionStore, AgentSessionSummary, AgentSessionWorkQueueContext, AgentStepExecutionReport,
+    AgentSessionStore, AgentSessionSummary, AgentSessionWorkQueueContext, AgentSkillError,
+    AgentSkillIndex, AgentSkillIndexReport, AgentSkillMetadata, AgentSkillSelection,
+    AgentSkillSelectionReport, AgentSkillSelectionRequest, AgentStepExecutionReport,
     AgentStepExecutionRequest, AgentStepStatus, AgentToolAssignment, AgentToolBinding,
     AgentToolConfig, AgentToolConfigInitReport, AgentToolDefinition, AgentToolError,
     AgentToolInvocation, AgentToolInvocationInput, AgentToolInvocationReport, AgentToolReport,
@@ -42,6 +46,8 @@ pub use agent::{
     AiSelfUpgradeAuditRecord, AiSelfUpgradeAuditStatus, AiSelfUpgradeAuditStore,
     AiSelfUpgradeAuditSummary, AiSelfUpgradeSummaryIndexEntry, AiSelfUpgradeSummaryRecord,
     AiSelfUpgradeSummaryStatus, AiSelfUpgradeSummaryStore, AiSelfUpgradeSummaryStoreError,
+    format_agent_skill_context, inspect_project_code_diff, list_project_code_files,
+    read_project_code_file, search_project_code,
 };
 pub use ai_provider::{
     AiConfigError, AiConfigReport, AiExecutionError, AiExecutionReport, AiProviderRegistry,
