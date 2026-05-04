@@ -13,6 +13,7 @@ workspaces/vMAJOR/artifacts/agents/coordination/work-queue.json
 ```txt
 agent-work-init
 agent-work-status
+agent-work-finalize-check
 agent-work-claim --worker ID --agent AGENT_ID
 agent-work-complete TASK_ID --worker ID --summary TEXT
 agent-work-release TASK_ID --worker ID --reason TEXT
@@ -27,6 +28,14 @@ agent-work-block TASK_ID --reason TEXT
 2. 当旧队列没有待领取和已领取任务，且任务状态只包含已完成或已阻断时，可以使用 `agent-work-init --reset-completed` 重开下一轮协作。
 3. 存在待领取或已领取任务时禁止重开，必须先完成、释放、阻断或清理过期领取。
 4. 重开必须保留历史事件并追加 `restart` 事件，便于审计上一轮目标和新目标。
+
+# 任务组收束检查
+
+1. 用户确认相关任务组完成前，禁止 push、创建 PR 或提升版本。
+2. 准备最终版本提升前，必须运行 `agent-work-finalize-check`。
+3. 检查必须只读，不得修改任务板、状态文件或归档。
+4. 存在待领取、已领取任务或开放错误时，禁止收束。
+5. 已完成和已阻断任务都视为终态；已阻断任务必须保留阻断原因。
 
 # 任务板压缩
 

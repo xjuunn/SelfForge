@@ -4,7 +4,7 @@
   "thread_count": 3,
   "lease_duration_seconds": 3600,
   "created_at_unix_seconds": 1777889312,
-  "updated_at_unix_seconds": 1777896106,
+  "updated_at_unix_seconds": 1777899858,
   "conflict_policy": "同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。",
   "prompt_policy": "每个线程只执行领取到的任务，必须遵守写入范围、依赖关系、验收标准和归档规则。",
   "tasks": [
@@ -404,38 +404,47 @@
       "completed_at_unix_seconds": 1777896100,
       "result": "已修复终态任务板重开判断：Completed 和 Blocked 混合终态可通过 --reset-completed 重开，Pending 或 Claimed 活跃任务仍拒绝重开，并补充测试、文档和归档。",
       "prompt": "已压缩：任务 coord-015-terminal-queue-reset 已完成。完成摘要：已修复终态任务板重开判断：Completed 和 Blocked 混合终态可通过 --reset-completed 重开，Pending 或 Claimed 活跃任务仍拒绝重开，并补充测试、文档和归档。。执行边界保留在 title、description、write_scope、acceptance 和 result 字段中。"
+    },
+    {
+      "id": "coord-016-finalize-check",
+      "title": "实现任务组收束只读检查命令",
+      "description": "新增只读命令，用于最终提升版本和统一 push 前检查协作任务板是否无待领取、无已领取、无开放错误，并输出是否允许收束。",
+      "preferred_agent_id": "builder",
+      "priority": 22,
+      "depends_on": [
+        "coord-015-terminal-queue-reset"
+      ],
+      "write_scope": [
+        "src/app/agent/coordination.rs",
+        "src/app/agent/coordination/model.rs",
+        "src/app/minimal_loop.rs",
+        "src/app/mod.rs",
+        "src/lib.rs",
+        "src/main.rs",
+        "src/tests/agent_core.rs",
+        "README.md",
+        "forge/architecture/agent-rules/agent-coordination.md",
+        "forge/tasks/v0.md",
+        "forge/memory/v0.md",
+        "forge/errors/v0.md",
+        "forge/versions/v0.md",
+        "workspaces/v0/artifacts/agents/coordination/"
+      ],
+      "acceptance": [
+        "新增只读 agent-work-finalize-check 命令，不修改任务板、状态文件或归档。",
+        "检查结果必须包含任务板待领取、已领取、已完成、已阻断数量。",
+        "存在 Pending、Claimed 或开放错误时必须判定不可收束。",
+        "必须补充测试、中文文档和 v0 聚合归档。"
+      ],
+      "status": "Completed",
+      "claimed_by": "ai-1",
+      "claimed_at_unix_seconds": 1777896224,
+      "completed_at_unix_seconds": 1777899842,
+      "result": "新增只读 agent-work-finalize-check 命令，覆盖任务状态和开放错误阻断检查，补充测试、README、Agents.md、协作规则和 v0 聚合归档。",
+      "prompt": "已压缩：任务 coord-016-finalize-check 已完成。完成摘要：新增只读 agent-work-finalize-check 命令，覆盖任务状态和开放错误阻断检查，补充测试、README、Agents.md、协作规则和 v0 聚合归档。。执行边界保留在 title、description、write_scope、acceptance 和 result 字段中。"
     }
   ],
   "events": [
-    {
-      "order": 105,
-      "timestamp_unix_seconds": 1777894146,
-      "action": "claim",
-      "worker_id": "ai-1",
-      "task_id": "coord-012-work-queue-block",
-      "message": "任务已被工作线程领取。"
-    },
-    {
-      "order": 106,
-      "timestamp_unix_seconds": 1777894294,
-      "action": "block",
-      "task_id": "coord-002-application",
-      "message": "旧默认任务来自早期协作队列实现目标，当前任务组已改为分阶段 PR 流程，避免误领取。"
-    },
-    {
-      "order": 107,
-      "timestamp_unix_seconds": 1777894299,
-      "action": "block",
-      "task_id": "coord-003-cli",
-      "message": "旧默认任务来自早期协作队列 CLI 目标，当前任务组已改为分阶段 PR 流程，避免误领取。"
-    },
-    {
-      "order": 108,
-      "timestamp_unix_seconds": 1777894304,
-      "action": "block",
-      "task_id": "coord-004-tests",
-      "message": "旧默认测试任务依赖已阻断的早期实现任务，当前任务组已有独立测试覆盖，避免误领取。"
-    },
     {
       "order": 109,
       "timestamp_unix_seconds": 1777894310,
@@ -551,6 +560,34 @@
     {
       "order": 125,
       "timestamp_unix_seconds": 1777896106,
+      "action": "compact",
+      "message": "协作任务板已压缩：压缩已完成任务提示词 1 个，移除旧事件 4 条，压缩前事件 24 条。"
+    },
+    {
+      "order": 126,
+      "timestamp_unix_seconds": 1777925020,
+      "action": "retarget",
+      "message": "协作队列追加任务组收束只读检查命令实现任务。"
+    },
+    {
+      "order": 127,
+      "timestamp_unix_seconds": 1777896224,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-016-finalize-check",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 128,
+      "timestamp_unix_seconds": 1777899842,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-016-finalize-check",
+      "message": "新增只读 agent-work-finalize-check 命令，覆盖任务状态和开放错误阻断检查，补充测试、README、Agents.md、协作规则和 v0 聚合归档。"
+    },
+    {
+      "order": 129,
+      "timestamp_unix_seconds": 1777899858,
       "action": "compact",
       "message": "协作任务板已压缩：压缩已完成任务提示词 1 个，移除旧事件 4 条，压缩前事件 24 条。"
     }

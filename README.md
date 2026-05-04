@@ -26,6 +26,7 @@ cargo run -- agent-tools
 cargo run -- agent-work-init --threads 3 --reset-completed "协作目标"
 cargo run -- agent-work-init --threads 3 --reset-completed "下一轮协作目标" # 仅在任务板全为已完成或已阻断时重开
 cargo run -- agent-work-status
+cargo run -- agent-work-finalize-check
 cargo run -- agent-work-claim --worker ai-1 --agent builder
 cargo run -- agent-work-complete TASK_ID --worker ai-1 --summary "完成摘要"
 cargo run -- agent-work-release TASK_ID --worker ai-1 --reason "释放原因"

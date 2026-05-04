@@ -877,6 +877,165 @@ fn agent_work_reset_completed_rejects_active_tasks() {
 }
 
 #[test]
+fn agent_work_finalize_check_allows_terminal_queue_without_open_errors() {
+    let root = temp_root("agent-work-finalize-ready");
+    let app = SelfForgeApp::new(&root);
+
+    app.supervisor()
+        .initialize_current_version()
+        .expect("bootstrap should succeed before finalize check test");
+    let init = app
+        .init_agent_work_queue(CURRENT_VERSION, "准备收束任务组", 2)
+        .expect("work queue should initialize");
+    let mut queue: AgentWorkQueue =
+        serde_json::from_str(&fs::read_to_string(&init.queue_path).expect("queue readable"))
+            .expect("queue json should parse");
+    for (index, task) in queue.tasks.iter_mut().enumerate() {
+        task.status = if index == 0 {
+            AgentWorkTaskStatus::Blocked
+        } else {
+            AgentWorkTaskStatus::Completed
+        };
+        task.result = Some("终态任务".to_string());
+        task.claimed_by = if index == 0 {
+            None
+        } else {
+            Some("ai-1".to_string())
+        };
+        task.claimed_at_unix_seconds = None;
+        task.lease_expires_at_unix_seconds = None;
+        task.completed_at_unix_seconds = Some(2);
+    }
+    fs::write(
+        &init.queue_path,
+        serde_json::to_string_pretty(&queue).expect("queue should serialize"),
+    )
+    .expect("test should write terminal queue");
+
+    let report = app
+        .agent_work_finalize_check(CURRENT_VERSION)
+        .expect("terminal queue should be checked");
+
+    assert!(report.can_finalize);
+    assert_eq!(report.pending_count, 0);
+    assert_eq!(report.claimed_count, 0);
+    assert_eq!(report.blocked_count, 1);
+    assert_eq!(report.completed_count, report.task_count - 1);
+    assert!(report.open_errors.is_empty());
+    assert!(report.blockers.is_empty());
+
+    cleanup(&root);
+}
+
+#[test]
+fn agent_work_finalize_check_blocks_pending_and_claimed_tasks() {
+    let root = temp_root("agent-work-finalize-active");
+    let app = SelfForgeApp::new(&root);
+
+    app.supervisor()
+        .initialize_current_version()
+        .expect("bootstrap should succeed before finalize blocker test");
+    app.init_agent_work_queue(CURRENT_VERSION, "仍有活跃任务", 2)
+        .expect("work queue should initialize");
+
+    let pending_report = app
+        .agent_work_finalize_check(CURRENT_VERSION)
+        .expect("pending queue should be checked");
+    assert!(!pending_report.can_finalize);
+    assert!(pending_report.pending_count > 0);
+    assert!(
+        pending_report
+            .blockers
+            .iter()
+            .any(|blocker| blocker.contains("待领取"))
+    );
+
+    app.claim_agent_work(CURRENT_VERSION, "ai-1", Some("builder"))
+        .expect("task should be claimed before finalize check");
+    let claimed_report = app
+        .agent_work_finalize_check(CURRENT_VERSION)
+        .expect("claimed queue should be checked");
+    assert!(!claimed_report.can_finalize);
+    assert_eq!(claimed_report.claimed_count, 1);
+    assert!(
+        claimed_report
+            .blockers
+            .iter()
+            .any(|blocker| blocker.contains("已领取"))
+    );
+
+    cleanup(&root);
+}
+
+#[test]
+fn agent_work_finalize_check_blocks_open_errors() {
+    let root = temp_root("agent-work-finalize-open-errors");
+    let app = SelfForgeApp::new(&root);
+
+    app.supervisor()
+        .initialize_current_version()
+        .expect("bootstrap should succeed before finalize open error test");
+    let init = app
+        .init_agent_work_queue(CURRENT_VERSION, "错误阻断收束", 1)
+        .expect("work queue should initialize");
+    let mut queue: AgentWorkQueue =
+        serde_json::from_str(&fs::read_to_string(&init.queue_path).expect("queue readable"))
+            .expect("queue json should parse");
+    for task in &mut queue.tasks {
+        task.status = AgentWorkTaskStatus::Completed;
+        task.result = Some("已完成".to_string());
+        task.claimed_by = Some("ai-1".to_string());
+        task.claimed_at_unix_seconds = None;
+        task.lease_expires_at_unix_seconds = None;
+        task.completed_at_unix_seconds = Some(2);
+    }
+    fs::write(
+        &init.queue_path,
+        serde_json::to_string_pretty(&queue).expect("queue should serialize"),
+    )
+    .expect("test should write completed queue");
+    let program = std::env::current_exe()
+        .expect("test executable path should be available")
+        .to_string_lossy()
+        .into_owned();
+    let failed = app
+        .supervisor()
+        .execute_in_workspace(
+            CURRENT_VERSION,
+            &program,
+            &["--self-forge-invalid-test-flag".to_string()],
+            5_000,
+        )
+        .expect("failed command should produce a run record");
+    let run_id = failed
+        .run_dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .expect("run directory should have a valid file name")
+        .to_string();
+    ErrorArchive::new(&root)
+        .record_failed_run(CURRENT_VERSION, Some(&run_id), "", "")
+        .expect("failed run should be archived before finalize check");
+
+    let report = app
+        .agent_work_finalize_check(CURRENT_VERSION)
+        .expect("open errors should be checked");
+
+    assert!(!report.can_finalize);
+    assert_eq!(report.pending_count, 0);
+    assert_eq!(report.claimed_count, 0);
+    assert_eq!(report.open_errors.len(), 1);
+    assert!(
+        report
+            .blockers
+            .iter()
+            .any(|blocker| blocker.contains("开放错误"))
+    );
+
+    cleanup(&root);
+}
+
+#[test]
 fn agent_work_queue_rejects_zero_threads() {
     let root = temp_root("agent-work-zero-thread");
     let app = SelfForgeApp::new(&root);
