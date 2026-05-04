@@ -27,6 +27,8 @@ cargo run -- ai-config
 cargo run -- ai-request --dry-run "提示词"
 cargo run -- agents
 cargo run -- agent-tools
+cargo run -- agent-skills --current
+cargo run -- agent-skill-select --current --limit 3 --token-budget 800 "README 命令"
 cargo run -- agent-work-status --current
 cargo run -- agent-work-status --current --active-only
 cargo run -- agent-work-finalize-check --current
@@ -38,6 +40,10 @@ cargo run -- agent-self-loops --current --limit 10
 协作任务、Agent 会话、补丁草案、源码覆盖、自我升级、自我进化循环、版本提升和回滚都依赖当前任务板状态、真实记录编号或最终收束确认。执行这些流程时先运行 `cargo run -- help` 查看完整命令，再用 `agent-work-status`、`agent-sessions`、`agent-patch-drafts`、`agent-patch-audits`、`agent-patch-applications`、`agent-self-upgrades`、`agent-self-loops` 等查询命令取得真实编号。真实 AI 请求使用 `ai-request` 时必须确认环境变量中的密钥可用；普通巡检使用 `ai-request --dry-run`。
 
 `agent-self-loop --commit-each-cycle` 只允许创建本地阶段提交；`agent-self-loop --finalize-pr --confirm-finalize` 才允许统一 push、创建 PR、等待 required checks、合并并删除远程任务分支。最终收束前必须先通过 `agent-work-finalize-check`。
+
+# AI 技能加载
+
+Agent 技能索引写入 `workspaces/v0/artifacts/agents/skills/skill-index.json`。`agent-skills` 只读取技能元数据，不读取技能正文；`agent-skill-select` 根据目标、标签、触发词和能力召回少量技能，并受 `--limit` 与 `--token-budget` 限制。这样即使技能数量达到几百个，默认上下文也只携带轻量索引和少量相关技能正文。`agent-self-upgrade --dry-run` 会展示技能索引、候选、选择、正文和 token 统计；实际自我升级提示词会包含按需技能上下文，无索引时保持只使用当前状态和近期记忆。
 
 # AI 配置
 

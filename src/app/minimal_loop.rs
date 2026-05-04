@@ -4,6 +4,7 @@ use super::agent::{
     AgentDefinition, AgentError, AgentPlan, AgentRegistry, AgentRunReference, AgentSession,
     AgentSessionError, AgentSessionMemoryInsight, AgentSessionPlanContext, AgentSessionStatus,
     AgentSessionStep, AgentSessionStore, AgentSessionSummary, AgentSessionWorkQueueContext,
+    AgentSkillError, AgentSkillIndexReport, AgentSkillSelectionReport, AgentSkillSelectionRequest,
     AgentStepExecutionReport, AgentStepExecutionRequest, AgentStepStatus,
     AgentToolConfigInitReport, AgentToolError, AgentToolInvocation, AgentToolInvocationInput,
     AgentToolInvocationReport, AgentToolReport, AgentWorkClaimReport, AgentWorkCompactionReport,
@@ -35,7 +36,8 @@ use super::agent::{
     AiSelfUpgradeAuditRecord, AiSelfUpgradeAuditStatus, AiSelfUpgradeAuditStore,
     AiSelfUpgradeAuditSummary, AiSelfUpgradeSummaryIndexEntry, AiSelfUpgradeSummaryRecord,
     AiSelfUpgradeSummaryStatus, AiSelfUpgradeSummaryStore, AiSelfUpgradeSummaryStoreError,
-    apply_tools_to_plan, initialize_agent_tool_config, load_agent_tool_report,
+    apply_tools_to_plan, initialize_agent_skill_index, initialize_agent_tool_config,
+    load_agent_skill_index, load_agent_tool_report, select_agent_skills,
 };
 use super::ai_provider::{
     AiConfigError, AiConfigReport, AiExecutionError, AiExecutionReport, AiProviderRegistry,
@@ -178,6 +180,7 @@ pub struct AiSelfUpgradePreview {
     pub request: AiRequestSpec,
     pub preflight: PreflightReport,
     pub insights: MemoryInsightReport,
+    pub skills: AgentSkillSelectionReport,
 }
 
 #[derive(Debug, Clone)]
@@ -418,6 +421,7 @@ pub enum AgentEvolutionError {
 pub enum AiSelfUpgradeError {
     Preflight(MinimalLoopError),
     Memory(MemoryContextError),
+    Skill(AgentSkillError),
     Ai(AiExecutionError),
     Audit(AiSelfUpgradeAuditError),
     Blocked {
@@ -2751,8 +2755,23 @@ impl SelfForgeApp {
             .memory_insights(&preflight.current_version, 5)
             .map_err(AiSelfUpgradeError::Memory)?;
         let normalized_hint = normalize_optional_text(hint);
-        let prompt =
-            build_ai_self_upgrade_prompt(&preflight, &insights, normalized_hint.as_deref());
+        let mut skill_request = AgentSkillSelectionRequest::new(
+            preflight.current_version.clone(),
+            normalized_hint
+                .as_deref()
+                .unwrap_or("AI 自我升级 目标决策 自动进化 计划 验证 回滚"),
+        );
+        skill_request.limit = 3;
+        skill_request.token_budget = 1_200;
+        let skills = self
+            .select_agent_skills(skill_request)
+            .map_err(AiSelfUpgradeError::Skill)?;
+        let prompt = build_ai_self_upgrade_prompt(
+            &preflight,
+            &insights,
+            &skills,
+            normalized_hint.as_deref(),
+        );
         let request = AiProviderRegistry::build_text_request_project_with(
             &self.root,
             &prompt,
@@ -2768,6 +2787,7 @@ impl SelfForgeApp {
             request,
             preflight,
             insights,
+            skills,
         })
     }
 
@@ -3236,6 +3256,27 @@ impl SelfForgeApp {
 
     pub fn agent_plan(&self, goal: &str) -> Result<AgentPlan, AgentError> {
         AgentRegistry::standard().plan_for_goal(goal)
+    }
+
+    pub fn init_agent_skill_index(
+        &self,
+        version: &str,
+    ) -> Result<AgentSkillIndexReport, AgentSkillError> {
+        initialize_agent_skill_index(&self.root, version)
+    }
+
+    pub fn agent_skill_index(
+        &self,
+        version: &str,
+    ) -> Result<AgentSkillIndexReport, AgentSkillError> {
+        load_agent_skill_index(&self.root, version)
+    }
+
+    pub fn select_agent_skills(
+        &self,
+        request: AgentSkillSelectionRequest,
+    ) -> Result<AgentSkillSelectionReport, AgentSkillError> {
+        select_agent_skills(&self.root, request)
     }
 
     pub fn agent_plan_with_memory(
@@ -6671,6 +6712,7 @@ fn build_ai_patch_source_task_audit_markdown(
 fn build_ai_self_upgrade_prompt(
     preflight: &PreflightReport,
     insights: &MemoryInsightReport,
+    skills: &AgentSkillSelectionReport,
     hint: Option<&str>,
 ) -> String {
     let mut prompt = String::new();
@@ -6691,6 +6733,10 @@ fn build_ai_self_upgrade_prompt(
     if let Some(hint) = hint {
         prompt.push_str(&format!("- 用户补充目标：{hint}\n"));
     }
+    prompt.push('\n');
+
+    prompt.push_str("# 按需技能上下文\n");
+    prompt.push_str(&format_agent_skill_context(skills));
     prompt.push('\n');
 
     prompt.push_str("# 近期成功经验\n");
@@ -6716,6 +6762,42 @@ fn build_ai_self_upgrade_prompt(
     prompt.push_str("\n# 输出格式\n");
     prompt.push_str("只返回一个中文目标句子，例如：继续完善 AI 自我升级流程的受控执行记录。\n");
     prompt
+}
+
+fn format_agent_skill_context(skills: &AgentSkillSelectionReport) -> String {
+    if skills.skills.is_empty() {
+        return format!(
+            "- 未召回技能；索引技能 {} 个，候选 {} 个，默认只使用当前状态和近期记忆。\n",
+            skills.index_skill_count, skills.candidate_skill_count
+        );
+    }
+
+    let mut lines = vec![format!(
+        "- 技能索引 {} 个，候选 {} 个，已选择 {} 个，已加载正文 {} 个，上下文 token 估算 {}。",
+        skills.index_skill_count,
+        skills.candidate_skill_count,
+        skills.selected_skill_count,
+        skills.loaded_skill_count,
+        skills.estimated_context_tokens
+    )];
+    for skill in &skills.skills {
+        lines.push(format!(
+            "- 技能 {}：{}；分数 {}；原因 {}；估算 token {}。",
+            skill.metadata.id,
+            skill.metadata.name,
+            skill.score,
+            skill.reason,
+            skill.estimated_tokens
+        ));
+        if !skill.metadata.summary.trim().is_empty() {
+            lines.push(format!("  摘要：{}", skill.metadata.summary.trim()));
+        }
+        if let Some(content) = &skill.content {
+            lines.push(format!("  正文：{}", truncate_chars(content.trim(), 1_200)));
+        }
+    }
+    lines.push(String::new());
+    lines.join("\n")
 }
 
 fn format_memory_insight_lines(insights: &[MemoryInsight], limit: usize) -> String {
@@ -6989,6 +7071,9 @@ impl fmt::Display for AiSelfUpgradeError {
             AiSelfUpgradeError::Memory(error) => {
                 write!(formatter, "AI 自我升级读取记忆失败：{error}")
             }
+            AiSelfUpgradeError::Skill(error) => {
+                write!(formatter, "AI 自我升级读取按需技能失败：{error}")
+            }
             AiSelfUpgradeError::Ai(error) => write!(formatter, "AI 自我升级请求失败：{error}"),
             AiSelfUpgradeError::Audit(error) => {
                 write!(formatter, "AI 自我升级审计记录失败：{error}")
@@ -7020,6 +7105,7 @@ impl Error for AiSelfUpgradeError {
         match self {
             AiSelfUpgradeError::Preflight(error) => Some(error),
             AiSelfUpgradeError::Memory(error) => Some(error),
+            AiSelfUpgradeError::Skill(error) => Some(error),
             AiSelfUpgradeError::Ai(error) => Some(error),
             AiSelfUpgradeError::Audit(error) => Some(error),
             AiSelfUpgradeError::Evolution(error) => Some(error),

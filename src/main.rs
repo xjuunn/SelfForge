@@ -9,6 +9,7 @@ use cli::self_evolution_loop::{
     format_agent_self_loop_report, parse_agent_self_loop_args, parse_agent_self_loop_record_args,
     parse_agent_self_loops_args,
 };
+use self_forge::app::AgentSkillSelectionRequest;
 use self_forge::{
     AgentStepExecutionRequest, AgentToolInvocation, AgentToolInvocationInput,
     AgentWorkFinalizeCheckReport, AgentWorkQueueReport, BranchCheckReport, CURRENT_VERSION,
@@ -67,6 +68,8 @@ fn main() {
         "ai-request" => ai_request(&app, args.collect()),
         "agents" => agents(&app),
         "agent-tools" => agent_tools(&app, args.collect()),
+        "agent-skills" => agent_skills(&app, args.collect()),
+        "agent-skill-select" => agent_skill_select(&app, args.collect()),
         "agent-work-init" => agent_work_init(&app, args.collect()),
         "agent-work-status" => agent_work_status(&app, args.collect()),
         "agent-work-claim" => agent_work_claim(&app, args.collect()),
@@ -790,6 +793,70 @@ fn agent_tools(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Box
     }))
 }
 
+fn agent_skills(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Box<dyn Error>> {
+    let command = parse_agent_skills_args(arguments)?;
+    let report = if command.init {
+        app.init_agent_skill_index(&command.version)?
+    } else {
+        app.agent_skill_index(&command.version)?
+    };
+    let mut lines = vec![format!(
+        "SelfForge Agent 技能索引 {} 技能 {} 启用 {} 已加载正文 {} 估算索引 token {} 文件 {} 存在 {}",
+        report.version,
+        report.skill_count,
+        report.enabled_skill_count,
+        report.loaded_skill_count,
+        report.estimated_index_tokens,
+        report.index_path.display(),
+        yes_no(report.index_exists)
+    )];
+    for skill in report.skills {
+        lines.push(format!(
+            "技能 {} 名称 {} 启用 {} 优先级 {} 估算 token {} 标签 {} 触发词 {} 正文 {}",
+            skill.id,
+            skill.name,
+            yes_no(skill.enabled),
+            skill.priority,
+            skill.estimated_tokens,
+            list_or_none(&skill.tags),
+            list_or_none(&skill.triggers),
+            skill.content_path.as_deref().unwrap_or("无")
+        ));
+    }
+    Ok(lines.join("\n"))
+}
+
+fn agent_skill_select(
+    app: &SelfForgeApp,
+    arguments: Vec<String>,
+) -> Result<String, Box<dyn Error>> {
+    let request = parse_agent_skill_select_args(arguments)?;
+    let report = app.select_agent_skills(request)?;
+    let mut lines = vec![format!(
+        "SelfForge Agent 技能召回 {} 目标 {} 索引技能 {} 候选 {} 选择 {} 已加载正文 {} 跳过预算 {} 上下文 token {}",
+        report.version,
+        report.goal,
+        report.index_skill_count,
+        report.candidate_skill_count,
+        report.selected_skill_count,
+        report.loaded_skill_count,
+        report.skipped_for_budget,
+        report.estimated_context_tokens
+    )];
+    for skill in report.skills {
+        lines.push(format!(
+            "技能 {} 分数 {} 原因 {} 估算 token {} 正文已加载 {} 名称 {}",
+            skill.metadata.id,
+            skill.score,
+            skill.reason,
+            skill.estimated_tokens,
+            yes_no(skill.content.is_some()),
+            skill.metadata.name
+        ));
+    }
+    Ok(lines.join("\n"))
+}
+
 fn agent_work_init(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Box<dyn Error>> {
     let command = parse_agent_work_init_args(arguments)?;
     boxed(
@@ -1472,13 +1539,18 @@ fn agent_self_upgrade(
     if command.dry_run {
         return boxed(app.ai_self_upgrade_preview(&command.hint).map(|preview| {
             format!(
-                "SelfForge AI 自我升级预览 当前版本 {} 提供商 {} 模型 {} 协议 {} 记忆来源 {} 优化建议 {} 用户提示 {} 提示词字节 {}",
+                "SelfForge AI 自我升级预览 当前版本 {} 提供商 {} 模型 {} 协议 {} 记忆来源 {} 优化建议 {} 技能索引 {} 技能候选 {} 技能选择 {} 技能正文 {} 技能 token {} 用户提示 {} 提示词字节 {}",
                 preview.current_version,
                 preview.request.provider_id,
                 preview.request.model,
                 preview.request.protocol,
                 preview.insights.source_versions.len(),
                 preview.insights.optimization_suggestions.len(),
+                preview.skills.index_skill_count,
+                preview.skills.candidate_skill_count,
+                preview.skills.selected_skill_count,
+                preview.skills.loaded_skill_count,
+                preview.skills.estimated_context_tokens,
                 preview.hint.as_deref().unwrap_or("无"),
                 preview.prompt.len()
             )
@@ -5379,6 +5451,11 @@ struct AgentToolsArgs {
     init: bool,
 }
 
+struct AgentSkillsArgs {
+    version: String,
+    init: bool,
+}
+
 struct AgentWorkInitArgs {
     version: String,
     goal: String,
@@ -5841,6 +5918,104 @@ fn parse_agent_tools_args(arguments: Vec<String>) -> Result<AgentToolsArgs, Box<
     }
 
     Ok(AgentToolsArgs { version, init })
+}
+
+fn parse_agent_skills_args(arguments: Vec<String>) -> Result<AgentSkillsArgs, Box<dyn Error>> {
+    let state = ForgeState::load(env::current_dir()?)?;
+    let mut version = state.current_version.clone();
+    let mut init = false;
+    let mut index = 0;
+
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "--init" => {
+                init = true;
+                index += 1;
+            }
+            "--current" => {
+                version = state.current_version.clone();
+                index += 1;
+            }
+            "--candidate" => {
+                version = state.candidate_version.clone().ok_or("当前没有候选版本")?;
+                index += 1;
+            }
+            "--version" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--version 需要版本号".into());
+                };
+                version = value.clone();
+                index += 2;
+            }
+            other => return Err(format!("未知 agent-skills 参数: {other}").into()),
+        }
+    }
+
+    Ok(AgentSkillsArgs { version, init })
+}
+
+fn parse_agent_skill_select_args(
+    arguments: Vec<String>,
+) -> Result<AgentSkillSelectionRequest, Box<dyn Error>> {
+    let state = ForgeState::load(env::current_dir()?)?;
+    let mut request = AgentSkillSelectionRequest::new(state.current_version.clone(), "");
+    let mut goal_parts = Vec::new();
+    let mut index = 0;
+
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "--current" => {
+                request.version = state.current_version.clone();
+                index += 1;
+            }
+            "--candidate" => {
+                request.version = state.candidate_version.clone().ok_or("当前没有候选版本")?;
+                index += 1;
+            }
+            "--version" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--version 需要版本号".into());
+                };
+                request.version = value.clone();
+                index += 2;
+            }
+            "--limit" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--limit 需要数量".into());
+                };
+                request.limit = value.parse::<usize>()?;
+                index += 2;
+            }
+            "--token-budget" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--token-budget 需要 token 预算".into());
+                };
+                request.token_budget = value.parse::<usize>()?;
+                index += 2;
+            }
+            "--capability" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--capability 需要能力标签".into());
+                };
+                request.required_capabilities.push(value.clone());
+                index += 2;
+            }
+            "--" => {
+                goal_parts.extend(arguments[index + 1..].iter().cloned());
+                break;
+            }
+            other if other.starts_with("--") => {
+                return Err(format!("未知 agent-skill-select 参数: {other}").into());
+            }
+            _ => {
+                goal_parts.extend(arguments[index..].iter().cloned());
+                break;
+            }
+        }
+    }
+
+    request.goal = goal_parts.join(" ");
+    Ok(request)
 }
 
 fn parse_agent_work_init_args(arguments: Vec<String>) -> Result<AgentWorkInitArgs, Box<dyn Error>> {
@@ -6963,6 +7138,18 @@ fn parse_agent_verify_args(arguments: Vec<String>) -> Result<AgentVerifyArgs, Bo
     })
 }
 
+fn yes_no(value: bool) -> &'static str {
+    if value { "是" } else { "否" }
+}
+
+fn list_or_none(values: &[String]) -> String {
+    if values.is_empty() {
+        "无".to_string()
+    } else {
+        values.join("、")
+    }
+}
+
 fn help_text() -> &'static str {
     "SelfForge commands:
 init, validate, status, preflight
@@ -6972,6 +7159,8 @@ memory-insights [--current|--candidate|--version VERSION] [--limit N]
 memory-compact [--current|--candidate|--version VERSION] [--keep N]
 ai-config, ai-request [--dry-run] [--timeout-ms N] [prompt]
 agents, agent-tools [--current|--candidate|--version VERSION] [--init]
+agent-skills [--current|--candidate|--version VERSION] [--init]
+agent-skill-select [--current|--candidate|--version VERSION] [--limit N] [--token-budget N] [--capability TEXT] [goal]
 agent-work-init [--current|--candidate|--version VERSION] [--threads N] [--reset-completed] [goal]
 agent-work-status [--current|--candidate|--version VERSION] [--active-only]
 agent-work-finalize-check [--current|--candidate|--version VERSION]

@@ -15,6 +15,7 @@ mod registry;
 mod self_upgrade_audit;
 mod self_upgrade_summary;
 mod session;
+mod skills;
 mod tool_invocation;
 mod tools;
 mod types;
@@ -87,6 +88,11 @@ pub use session::{
     AgentRunReference, AgentSession, AgentSessionError, AgentSessionEvent, AgentSessionEventKind,
     AgentSessionMemoryInsight, AgentSessionPlanContext, AgentSessionStatus, AgentSessionStep,
     AgentSessionStore, AgentSessionSummary, AgentSessionWorkQueueContext, AgentStepStatus,
+};
+pub use skills::{
+    AgentSkillError, AgentSkillIndex, AgentSkillIndexReport, AgentSkillMetadata,
+    AgentSkillSelection, AgentSkillSelectionReport, AgentSkillSelectionRequest,
+    initialize_agent_skill_index, load_agent_skill_index, select_agent_skills,
 };
 pub use tool_invocation::{
     AgentStepExecutionReport, AgentStepExecutionRequest, AgentToolInvocation,
