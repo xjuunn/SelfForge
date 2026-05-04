@@ -1,10 +1,10 @@
 {
   "version": "v0.1.65",
-  "goal": "规范任务组统一推送和 Issue 关联",
+  "goal": "规范分阶段本地提交和最终 PR 流程",
   "thread_count": 3,
   "lease_duration_seconds": 3600,
   "created_at_unix_seconds": 1777889312,
-  "updated_at_unix_seconds": 1777892551,
+  "updated_at_unix_seconds": 1777893446,
   "conflict_policy": "同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。",
   "prompt_policy": "每个线程只执行领取到的任务，必须遵守写入范围、依赖关系、验收标准和归档规则。",
   "tasks": [
@@ -101,6 +101,57 @@
       "completed_at_unix_seconds": 1777892551,
       "result": "已更新 Agents.md、Git/PR 规则和输出规则，明确相关任务组本地完成后统一推送、提交或 PR 关联 Issue #1，并要求回复结尾包含任务进度和未完成任务列表。",
       "prompt": "你是 SelfForge 多 AI 协作线程 `ai-1`。\n\n全局目标：规范任务组统一推送和 Issue 关联\n当前任务：coord-008-task-group-push-rules - 规范任务组统一推送和 Issue 关联\n职责 Agent：architect\n任务说明：更新 AI 入口规则和 Git 规则，要求相关任务在本地分支内完成后统一推送，并在提交或 PR 中关联 GitHub Issue #1。\n\n必须遵守：\n1. 只完成当前已领取任务，禁止重复实现其他任务。\n2. 只修改写入范围：Agents.md，forge/architecture/agent-rules/git-pr.md，forge/architecture/agent-rules/testing-output.md，workspaces/v0/artifacts/agents/coordination/。\n3. 依赖任务：无。\n4. 验收标准：Agents.md 必须明确相关任务完成后统一推送分支，禁止每个小任务都推送；规则必须要求提交或 PR 关联 https://github.com/xjuunn/SelfForge/issues/1；每轮回复必须包含任务进度和未完成任务列表。\n5. 租约到期时间 unix:1777896096，无法继续时必须主动释放任务。\n6. 如发现写入范围冲突、依赖缺失或无法完成，执行 `agent-work-release coord-008-task-group-push-rules --worker ai-1 --reason 原因`。\n7. 完成后执行必要测试，并执行 `agent-work-complete coord-008-task-group-push-rules --worker ai-1 --summary 摘要`。\n\n当前仍可领取任务：coord-002-application，coord-003-cli。\n冲突策略：同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。"
+    },
+    {
+      "id": "coord-009-batched-pr-flow",
+      "title": "澄清分阶段本地提交和最终 PR 流程",
+      "description": "修正 AI 规则，明确同一相关任务组可在一个分支中多次本地提交，只有用户确认任务组完成后才提升小版本、统一 push 并创建 Pull Request。",
+      "preferred_agent_id": "architect",
+      "priority": 14,
+      "depends_on": [],
+      "write_scope": [
+        "Agents.md",
+        "forge/architecture/agent-rules/git-pr.md",
+        "forge/architecture/agent-rules/testing-output.md",
+        "workspaces/v0/artifacts/agents/coordination/"
+      ],
+      "acceptance": [
+        "规则必须明确每次用户消息不等于任务组完成，后续对话可继续微调同一分支。",
+        "规则必须明确只有任务组完成并由用户确认后才统一 push、创建 PR，并且只 push 一次。",
+        "规则必须明确每次 PR 才提升 patch 或 minor，小版本不得随每次本地 commit 提升。",
+        "规则必须明确任务过重时在任务列表中留下后续任务，当前分支继续承载相关任务项。"
+      ],
+      "status": "Completed",
+      "claimed_by": "ai-1",
+      "claimed_at_unix_seconds": 1777893107,
+      "completed_at_unix_seconds": 1777893189,
+      "result": "已修正分阶段本地提交和最终 PR 流程：同一相关任务组保留在一个分支内，多轮对话可继续微调，用户确认完成后才提升小版本、统一 push 一次并创建 PR。",
+      "prompt": "你是 SelfForge 多 AI 协作线程 `ai-1`。\n\n全局目标：规范分阶段本地提交和最终 PR 流程\n当前任务：coord-009-batched-pr-flow - 澄清分阶段本地提交和最终 PR 流程\n职责 Agent：architect\n任务说明：修正 AI 规则，明确同一相关任务组可在一个分支中多次本地提交，只有用户确认任务组完成后才提升小版本、统一 push 并创建 Pull Request。\n\n必须遵守：\n1. 只完成当前已领取任务，禁止重复实现其他任务。\n2. 只修改写入范围：Agents.md，forge/architecture/agent-rules/git-pr.md，forge/architecture/agent-rules/testing-output.md，workspaces/v0/artifacts/agents/coordination/。\n3. 依赖任务：无。\n4. 验收标准：规则必须明确每次用户消息不等于任务组完成，后续对话可继续微调同一分支；规则必须明确只有任务组完成并由用户确认后才统一 push、创建 PR，并且只 push 一次；规则必须明确每次 PR 才提升 patch 或 minor，小版本不得随每次本地 commit 提升；规则必须明确任务过重时在任务列表中留下后续任务，当前分支继续承载相关任务项。\n5. 租约到期时间 unix:1777896707，无法继续时必须主动释放任务。\n6. 如发现写入范围冲突、依赖缺失或无法完成，执行 `agent-work-release coord-009-batched-pr-flow --worker ai-1 --reason 原因`。\n7. 完成后执行必要测试，并执行 `agent-work-complete coord-009-batched-pr-flow --worker ai-1 --summary 摘要`。\n\n当前仍可领取任务：coord-002-application，coord-003-cli。\n冲突策略：同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。"
+    },
+    {
+      "id": "coord-010-commit-version-rule",
+      "title": "澄清未提升版本时提交信息不携带版本号",
+      "description": "修正规则，明确没有版本提升的阶段性本地 commit 不需要携带版本号，只有最终提升版本的提交或 PR 才携带版本号。",
+      "preferred_agent_id": "architect",
+      "priority": 15,
+      "depends_on": [],
+      "write_scope": [
+        "Agents.md",
+        "forge/architecture/agent-rules/git-pr.md",
+        "forge/architecture/agent-rules/testing-output.md",
+        "workspaces/v0/artifacts/agents/coordination/"
+      ],
+      "acceptance": [
+        "规则必须明确未提升版本时本地提交标题不携带版本号。",
+        "规则必须明确最终版本提升提交或 PR 才携带 vMAJOR.MINOR.PATCH。",
+        "规则必须保留中文提交信息和禁止 Emoji 要求。"
+      ],
+      "status": "Completed",
+      "claimed_by": "ai-1",
+      "claimed_at_unix_seconds": 1777893400,
+      "completed_at_unix_seconds": 1777893446,
+      "result": "已澄清未提升版本的阶段性本地提交不携带版本号，最终提升版本的收束提交或 PR 才携带 vMAJOR.MINOR.PATCH。",
+      "prompt": "你是 SelfForge 多 AI 协作线程 `ai-1`。\n\n全局目标：规范分阶段本地提交和最终 PR 流程\n当前任务：coord-010-commit-version-rule - 澄清未提升版本时提交信息不携带版本号\n职责 Agent：architect\n任务说明：修正规则，明确没有版本提升的阶段性本地 commit 不需要携带版本号，只有最终提升版本的提交或 PR 才携带版本号。\n\n必须遵守：\n1. 只完成当前已领取任务，禁止重复实现其他任务。\n2. 只修改写入范围：Agents.md，forge/architecture/agent-rules/git-pr.md，forge/architecture/agent-rules/testing-output.md，workspaces/v0/artifacts/agents/coordination/。\n3. 依赖任务：无。\n4. 验收标准：规则必须明确未提升版本时本地提交标题不携带版本号；规则必须明确最终版本提升提交或 PR 才携带 vMAJOR.MINOR.PATCH；规则必须保留中文提交信息和禁止 Emoji 要求。\n5. 租约到期时间 unix:1777897000，无法继续时必须主动释放任务。\n6. 如发现写入范围冲突、依赖缺失或无法完成，执行 `agent-work-release coord-010-commit-version-rule --worker ai-1 --reason 原因`。\n7. 完成后执行必要测试，并执行 `agent-work-complete coord-010-commit-version-rule --worker ai-1 --summary 摘要`。\n\n当前仍可领取任务：coord-002-application，coord-003-cli。\n冲突策略：同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。"
     },
     {
       "id": "coord-002-application",
@@ -867,6 +918,50 @@
       "worker_id": "ai-1",
       "task_id": "coord-008-task-group-push-rules",
       "message": "已更新 Agents.md、Git/PR 规则和输出规则，明确相关任务组本地完成后统一推送、提交或 PR 关联 Issue #1，并要求回复结尾包含任务进度和未完成任务列表。"
+    },
+    {
+      "order": 94,
+      "timestamp_unix_seconds": 1777921875,
+      "action": "retarget",
+      "message": "协作队列追加分阶段本地提交和最终 PR 流程澄清任务，要求同一任务组在分支内多次本地提交，用户确认完成后才提升小版本、统一 push 和创建 PR。"
+    },
+    {
+      "order": 95,
+      "timestamp_unix_seconds": 1777893107,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-009-batched-pr-flow",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 96,
+      "timestamp_unix_seconds": 1777893189,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-009-batched-pr-flow",
+      "message": "已修正分阶段本地提交和最终 PR 流程：同一相关任务组保留在一个分支内，多轮对话可继续微调，用户确认完成后才提升小版本、统一 push 一次并创建 PR。"
+    },
+    {
+      "order": 97,
+      "timestamp_unix_seconds": 1777922171,
+      "action": "retarget",
+      "message": "协作队列追加提交信息版本号规则澄清任务，要求未提升版本的阶段性本地提交不携带版本号。"
+    },
+    {
+      "order": 98,
+      "timestamp_unix_seconds": 1777893400,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-010-commit-version-rule",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 99,
+      "timestamp_unix_seconds": 1777893446,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-010-commit-version-rule",
+      "message": "已澄清未提升版本的阶段性本地提交不携带版本号，最终提升版本的收束提交或 PR 才携带 vMAJOR.MINOR.PATCH。"
     }
   ]
 }
