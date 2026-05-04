@@ -89,6 +89,13 @@ struct ScoredSkill {
     reason: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct AgentSkillSearchQuery {
+    goal: String,
+    goal_terms: Vec<String>,
+    required_capabilities: Vec<String>,
+}
+
 #[derive(Debug)]
 pub enum AgentSkillError {
     Version(VersionError),
@@ -210,13 +217,14 @@ pub fn select_agent_skills(
     } else {
         request.token_budget
     };
+    let query = AgentSkillSearchQuery::new(&request.goal, &request.required_capabilities);
     let index = load_agent_skill_index(root, &request.version)?;
     let mut candidates = index
         .skills
         .iter()
         .filter(|skill| skill.enabled)
-        .filter(|skill| capability_filter_matches(skill, &request.required_capabilities))
-        .filter_map(|skill| score_skill(skill, &request.goal))
+        .filter(|skill| capability_filter_matches(skill, &query.required_capabilities))
+        .filter_map(|skill| score_skill(skill, &query))
         .collect::<Vec<_>>();
 
     candidates.sort_by_key(|skill| (Reverse(skill.score), Reverse(skill.metadata.priority)));
@@ -325,34 +333,33 @@ fn validate_skill_index(root: &Path, index: &AgentSkillIndex) -> Result<(), Agen
     Ok(())
 }
 
-fn score_skill(skill: &AgentSkillMetadata, goal: &str) -> Option<ScoredSkill> {
-    let goal = goal.to_lowercase();
+fn score_skill(skill: &AgentSkillMetadata, query: &AgentSkillSearchQuery) -> Option<ScoredSkill> {
     let mut score = 0;
     let mut reasons = Vec::new();
 
-    if contains_term(&goal, &skill.name) {
+    if query.contains_term(&skill.name) {
         score += 8;
         reasons.push("名称匹配");
     }
     for trigger in &skill.triggers {
-        if contains_term(&goal, trigger) {
+        if query.contains_term(trigger) {
             score += 6;
             reasons.push("触发词匹配");
         }
     }
     for tag in &skill.tags {
-        if contains_term(&goal, tag) {
+        if query.contains_term(tag) {
             score += 3;
             reasons.push("标签匹配");
         }
     }
     for capability in &skill.capabilities {
-        if contains_term(&goal, capability) {
+        if query.contains_term(capability) {
             score += 2;
             reasons.push("能力匹配");
         }
     }
-    if contains_term(&goal, &skill.summary) {
+    if query.contains_term(&skill.summary) {
         score += 1;
         reasons.push("摘要匹配");
     }
@@ -364,20 +371,60 @@ fn score_skill(skill: &AgentSkillMetadata, goal: &str) -> Option<ScoredSkill> {
     })
 }
 
-fn contains_term(goal: &str, term: &str) -> bool {
-    let term = term.trim().to_lowercase();
-    !term.is_empty()
-        && (goal.contains(&term) || term.split_whitespace().any(|part| goal.contains(part)))
-}
-
 fn capability_filter_matches(skill: &AgentSkillMetadata, required: &[String]) -> bool {
     required.is_empty()
         || required.iter().all(|required| {
             skill
                 .capabilities
                 .iter()
-                .any(|capability| capability.eq_ignore_ascii_case(required))
+                .map(|capability| normalize_search_text(capability))
+                .any(|capability| capability == *required)
         })
+}
+
+impl AgentSkillSearchQuery {
+    fn new(goal: &str, required_capabilities: &[String]) -> Self {
+        let normalized_goal = normalize_search_text(goal);
+        Self {
+            goal_terms: split_search_terms(&normalized_goal),
+            goal: normalized_goal,
+            required_capabilities: normalize_unique_terms(required_capabilities),
+        }
+    }
+
+    fn contains_term(&self, term: &str) -> bool {
+        let term = normalize_search_text(term);
+        if term.is_empty() {
+            return false;
+        }
+        self.goal.contains(&term)
+            || split_search_terms(&term)
+                .iter()
+                .any(|part| self.goal_terms.iter().any(|goal| goal.contains(part)))
+    }
+}
+
+fn normalize_unique_terms(values: &[String]) -> Vec<String> {
+    let mut normalized = Vec::new();
+    for value in values {
+        let value = normalize_search_text(value);
+        if !value.is_empty() && !normalized.contains(&value) {
+            normalized.push(value);
+        }
+    }
+    normalized
+}
+
+fn normalize_search_text(value: &str) -> String {
+    value.trim().to_lowercase()
+}
+
+fn split_search_terms(value: &str) -> Vec<String> {
+    value
+        .split_whitespace()
+        .filter(|term| !term.is_empty())
+        .map(ToOwned::to_owned)
+        .collect()
 }
 
 fn unique_reasons(reasons: Vec<&str>) -> Vec<&str> {

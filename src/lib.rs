@@ -228,6 +228,59 @@ mod agent_skill_scaling_tests {
     }
 
     #[test]
+    fn agent_skill_select_normalizes_query_and_capabilities() {
+        let root = temp_root("skill-select-query-normalization");
+        let app = bootstrap_app(&root);
+        write_skill_index(
+            &app,
+            &root,
+            vec![
+                AgentSkillMetadata {
+                    id: "readme-doc".to_string(),
+                    name: "README 文档技能".to_string(),
+                    summary: "用于验证查询预处理后仍能召回多词触发技能。".to_string(),
+                    tags: vec!["文档".to_string()],
+                    triggers: vec!["README 命令".to_string()],
+                    capabilities: vec!["Documentation".to_string()],
+                    content_path: None,
+                    priority: 10,
+                    estimated_tokens: 20,
+                    enabled: true,
+                },
+                AgentSkillMetadata {
+                    id: "runtime".to_string(),
+                    name: "运行时技能".to_string(),
+                    summary: "能力不同，不应被文档能力过滤命中。".to_string(),
+                    tags: vec!["运行".to_string()],
+                    triggers: vec!["README".to_string()],
+                    capabilities: vec!["runtime".to_string()],
+                    content_path: None,
+                    priority: 100,
+                    estimated_tokens: 20,
+                    enabled: true,
+                },
+            ],
+        );
+
+        let mut request = AgentSkillSelectionRequest::new(CURRENT_VERSION, "需要 readme 巡检");
+        request.limit = 5;
+        request.token_budget = 100;
+        request.required_capabilities = vec![
+            " documentation ".to_string(),
+            "DOCUMENTATION".to_string(),
+            " ".to_string(),
+        ];
+        let report = app.select_agent_skills(request).expect("技能召回应成功");
+
+        assert_eq!(report.candidate_skill_count, 1);
+        assert_eq!(report.selected_skill_count, 1);
+        assert_eq!(report.skills[0].metadata.id, "readme-doc");
+        assert!(report.skills[0].reason.contains("触发词匹配"));
+
+        fs::remove_dir_all(root).expect("测试目录应可清理");
+    }
+
+    #[test]
     fn agent_skill_select_scans_past_over_budget_candidates() {
         let root = temp_root("skill-select-scan-budget");
         let app = bootstrap_app(&root);
