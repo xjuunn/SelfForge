@@ -1,10 +1,10 @@
 {
-  "version": "v0.1.66",
+  "version": "v0.1.67",
   "goal": "规范分阶段本地提交和最终 PR 流程",
   "thread_count": 3,
   "lease_duration_seconds": 3600,
   "created_at_unix_seconds": 1777889312,
-  "updated_at_unix_seconds": 1777900440,
+  "updated_at_unix_seconds": 1777900995,
   "conflict_policy": "同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。",
   "prompt_policy": "每个线程只执行领取到的任务，必须遵守写入范围、依赖关系、验收标准和归档规则。",
   "tasks": [
@@ -474,45 +474,48 @@
       "completed_at_unix_seconds": 1777900436,
       "result": "已补充无关后续任务处理规则：完全无关任务先收束当前分支的小版本 PR，再从最新 master 创建独立分支；每个分支只处理自身相关任务，并更新输出规则和 v0 聚合归档。",
       "prompt": "已压缩：任务 coord-017-unrelated-task-pr-rule 已完成。完成摘要：已补充无关后续任务处理规则：完全无关任务先收束当前分支的小版本 PR，再从最新 master 创建独立分支；每个分支只处理自身相关任务，并更新输出规则和 v0 聚合归档。。执行边界保留在 title、description、write_scope、acceptance 和 result 字段中。"
+    },
+    {
+      "id": "coord-018-finalize-v067",
+      "title": "最终收束并提升 v0.1.67",
+      "description": "在用户确认当前相关任务组完成后，提升 patch 到 v0.1.67，更新最终归档和测试期望，完成验证后统一 push 并创建 Pull Request。",
+      "preferred_agent_id": "archivist",
+      "priority": 24,
+      "depends_on": [
+        "coord-017-unrelated-task-pr-rule"
+      ],
+      "write_scope": [
+        "Cargo.toml",
+        "Cargo.lock",
+        "README.md",
+        "src/lib.rs",
+        "state/state.json",
+        "src/tests/app_loop.rs",
+        "src/tests/layout_version.rs",
+        "src/tests/agent_core.rs",
+        "src/tests/patch_draft_flow.rs",
+        "forge/tasks/v0.md",
+        "forge/memory/v0.md",
+        "forge/errors/v0.md",
+        "forge/versions/v0.md",
+        "workspaces/v0/artifacts/agents/coordination/"
+      ],
+      "acceptance": [
+        "版本只在最终 PR 收束阶段从 v0.1.66 提升到 v0.1.67。",
+        "最终提交信息和 PR 标题必须携带 v0.1.67。",
+        "PR 正文必须关联 Refs #1 和 https://github.com/xjuunn/SelfForge/issues/1。",
+        "完成前必须运行格式化、完整测试、validate、preflight、开放错误检查和收束检查。",
+        "统一 push 一次并创建 Pull Request。"
+      ],
+      "status": "Completed",
+      "claimed_by": "ai-1",
+      "claimed_at_unix_seconds": 1777900791,
+      "completed_at_unix_seconds": 1777900990,
+      "result": "已完成 v0.1.67 最终收束准备：提升版本、同步测试期望、补充 v0 聚合归档，并通过格式化、完整测试、差异检查、validate、preflight 和开放错误查询。",
+      "prompt": "已压缩：任务 coord-018-finalize-v067 已完成。完成摘要：已完成 v0.1.67 最终收束准备：提升版本、同步测试期望、补充 v0 聚合归档，并通过格式化、完整测试、差异检查、validate、preflight 和开放错误查询。。执行边界保留在 title、description、write_scope、acceptance 和 result 字段中。"
     }
   ],
   "events": [
-    {
-      "order": 113,
-      "timestamp_unix_seconds": 1777894466,
-      "action": "claim",
-      "worker_id": "ai-1",
-      "task_id": "coord-013-local-archive",
-      "message": "任务已被工作线程领取。"
-    },
-    {
-      "order": 114,
-      "timestamp_unix_seconds": 1777894528,
-      "action": "complete",
-      "worker_id": "ai-1",
-      "task_id": "coord-013-local-archive",
-      "message": "已将分阶段 PR 流程、任务板压缩、任务板阻断、本地验证结果和未推送状态写入 v0 major 聚合归档。"
-    },
-    {
-      "order": 115,
-      "timestamp_unix_seconds": 1777894536,
-      "action": "compact",
-      "message": "协作任务板已压缩：压缩已完成任务提示词 1 个，移除旧事件 4 条，压缩前事件 24 条。"
-    },
-    {
-      "order": 116,
-      "timestamp_unix_seconds": 1777923921,
-      "action": "retarget",
-      "message": "协作队列追加最终 PR 收束任务，用于版本提升、统一 push、创建 PR、合并和删除远程分支。"
-    },
-    {
-      "order": 117,
-      "timestamp_unix_seconds": 1777895128,
-      "action": "claim",
-      "worker_id": "ai-1",
-      "task_id": "coord-014-finalize-pr",
-      "message": "任务已被工作线程领取。"
-    },
     {
       "order": 118,
       "timestamp_unix_seconds": 1777895315,
@@ -624,6 +627,41 @@
       "timestamp_unix_seconds": 1777900440,
       "action": "compact",
       "message": "协作任务板已压缩：压缩已完成任务提示词 1 个，移除旧事件 4 条，压缩前事件 24 条。"
+    },
+    {
+      "order": 134,
+      "timestamp_unix_seconds": 1777900769,
+      "action": "retarget",
+      "task_id": "coord-018-finalize-v067",
+      "message": "协作队列追加 v0.1.67 最终收束、统一 push 和 PR 创建任务。"
+    },
+    {
+      "order": 135,
+      "timestamp_unix_seconds": 1777900791,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-018-finalize-v067",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 136,
+      "timestamp_unix_seconds": 1777900985,
+      "action": "retarget",
+      "message": "协作队列已复用到版本 v0.1.67。"
+    },
+    {
+      "order": 137,
+      "timestamp_unix_seconds": 1777900990,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-018-finalize-v067",
+      "message": "已完成 v0.1.67 最终收束准备：提升版本、同步测试期望、补充 v0 聚合归档，并通过格式化、完整测试、差异检查、validate、preflight 和开放错误查询。"
+    },
+    {
+      "order": 138,
+      "timestamp_unix_seconds": 1777900995,
+      "action": "compact",
+      "message": "协作任务板已压缩：压缩已完成任务提示词 1 个，移除旧事件 5 条，压缩前事件 25 条。"
     }
   ]
 }
