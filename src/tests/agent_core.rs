@@ -1,4 +1,4 @@
-use super::*;
+﻿use super::*;
 
 #[test]
 fn agent_registry_standard_contains_core_agents() {
@@ -870,6 +870,7 @@ fn self_evolution_loop_records_failed_cycle_without_crashing() {
                 max_failures: 1,
                 timeout_ms: 1000,
                 resume: false,
+                git_pr: SelfEvolutionLoopGitPrRequest::default(),
             },
             |_app, _hint, _timeout_ms| {
                 Err(AiSelfUpgradeError::EmptyGoal {
@@ -890,6 +891,175 @@ fn self_evolution_loop_records_failed_cycle_without_crashing() {
     );
     assert!(report.record.file.exists());
     assert!(report.index_file.exists());
+
+    cleanup(&root);
+}
+
+#[test]
+fn self_evolution_loop_pr_finalize_requires_explicit_confirmation() {
+    let root = temp_root("self-loop-pr-confirmation");
+    let app = SelfForgeApp::new(&root);
+    app.supervisor()
+        .initialize_current_version()
+        .expect("bootstrap should succeed before self loop confirmation test");
+
+    let error = app
+        .run_self_evolution_loop_with_executor(
+            SelfEvolutionLoopRequest {
+                hint: "尝试自主 PR 收束".to_string(),
+                max_cycles: 1,
+                max_failures: 1,
+                timeout_ms: 1000,
+                resume: false,
+                git_pr: SelfEvolutionLoopGitPrRequest {
+                    mode: SelfEvolutionLoopGitPrMode::PullRequest,
+                    confirmed: false,
+                    ..SelfEvolutionLoopGitPrRequest::default()
+                },
+            },
+            |_app, _hint, _timeout_ms| {
+                panic!("未确认 PR 收束时不应执行自我升级");
+            },
+        )
+        .expect_err("PR finalize must require explicit confirmation");
+
+    assert!(matches!(
+        error,
+        SelfEvolutionLoopError::InvalidRequest(ref message)
+            if message.contains("--confirm-finalize")
+    ));
+
+    cleanup(&root);
+}
+
+#[test]
+fn self_evolution_loop_records_can_be_listed_and_loaded() {
+    let root = temp_root("self-loop-record-query");
+    let app = SelfForgeApp::new(&root);
+    app.supervisor()
+        .initialize_current_version()
+        .expect("bootstrap should succeed before self loop query test");
+
+    let report = app
+        .run_self_evolution_loop_with_executor(
+            SelfEvolutionLoopRequest {
+                hint: "生成可查询记录".to_string(),
+                max_cycles: 1,
+                max_failures: 1,
+                timeout_ms: 1000,
+                resume: false,
+                git_pr: SelfEvolutionLoopGitPrRequest::default(),
+            },
+            |_app, _hint, _timeout_ms| {
+                Err(AiSelfUpgradeError::EmptyGoal {
+                    response_preview: "空响应".to_string(),
+                })
+            },
+        )
+        .expect("failed self loop should still persist a record");
+
+    let records = app
+        .self_evolution_loop_records(CURRENT_VERSION, 10)
+        .expect("self loop records should be listed");
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].id, report.record.id);
+    assert_eq!(records[0].status, SelfEvolutionLoopStatus::Stopped);
+    assert_eq!(records[0].git_pr_mode, SelfEvolutionLoopGitPrMode::Disabled);
+
+    let loaded = app
+        .self_evolution_loop_record(CURRENT_VERSION, &report.record.id)
+        .expect("self loop record should load by id");
+    assert_eq!(loaded.id, report.record.id);
+    assert_eq!(loaded.steps.len(), 1);
+
+    cleanup(&root);
+}
+
+#[test]
+fn self_evolution_loop_resume_marks_interrupted_step_failed() {
+    let root = temp_root("self-loop-resume-interrupted");
+    let app = SelfForgeApp::new(&root);
+    app.supervisor()
+        .initialize_current_version()
+        .expect("bootstrap should succeed before self loop resume test");
+    let records_dir = root
+        .join("workspaces")
+        .join("v0")
+        .join("artifacts")
+        .join("agents")
+        .join("self-evolution-loops");
+    fs::create_dir_all(&records_dir).expect("test should create self loop records dir");
+    let record_file = records_dir.join("self-loop-interrupted.json");
+    let interrupted = SelfEvolutionLoopRecord {
+        id: "self-loop-interrupted".to_string(),
+        version: CURRENT_VERSION.to_string(),
+        status: SelfEvolutionLoopStatus::Running,
+        created_at_unix_seconds: 1,
+        updated_at_unix_seconds: 2,
+        hint: "恢复中断循环".to_string(),
+        max_cycles: 2,
+        max_failures: 2,
+        timeout_ms: 1000,
+        completed_cycles: 0,
+        failed_cycles: 0,
+        consecutive_failures: 0,
+        resumed: false,
+        git_pr: SelfEvolutionLoopGitPrRequest::default(),
+        git_pr_events: Vec::new(),
+        pr_url: None,
+        last_error: None,
+        steps: vec![SelfEvolutionLoopStepRecord {
+            cycle: 1,
+            status: SelfEvolutionLoopStepStatus::Running,
+            started_at_unix_seconds: 1,
+            completed_at_unix_seconds: None,
+            stable_version_before: CURRENT_VERSION.to_string(),
+            stable_version_after: None,
+            audit_id: None,
+            summary_id: None,
+            error: None,
+        }],
+        file: record_file.clone(),
+    };
+    fs::write(
+        &record_file,
+        serde_json::to_string_pretty(&interrupted).expect("record should serialize"),
+    )
+    .expect("test should write interrupted record");
+
+    let report = app
+        .run_self_evolution_loop_with_executor(
+            SelfEvolutionLoopRequest {
+                hint: "新的提示会被已有记录覆盖".to_string(),
+                max_cycles: 1,
+                max_failures: 1,
+                timeout_ms: 1000,
+                resume: true,
+                git_pr: SelfEvolutionLoopGitPrRequest::default(),
+            },
+            |_app, _hint, _timeout_ms| {
+                Err(AiSelfUpgradeError::EmptyGoal {
+                    response_preview: "恢复后仍失败".to_string(),
+                })
+            },
+        )
+        .expect("resume should persist interrupted step as a failure");
+
+    assert!(report.resumed);
+    assert_eq!(report.record.id, "self-loop-interrupted");
+    assert_eq!(
+        report.record.steps[0].status,
+        SelfEvolutionLoopStepStatus::Failed
+    );
+    assert!(
+        report.record.steps[0]
+            .error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("中断")
+    );
+    assert_eq!(report.record.failed_cycles, 2);
+    assert_eq!(report.record.status, SelfEvolutionLoopStatus::Stopped);
 
     cleanup(&root);
 }
@@ -2497,7 +2667,7 @@ fn agent_advance_prepares_candidate_and_completes_session() {
     assert_eq!(report.minimal_loop.stable_version, CURRENT_VERSION);
     assert_eq!(
         report.minimal_loop.candidate_version.as_deref(),
-        Some("v0.1.70")
+        Some("v0.1.71")
     );
     assert_eq!(report.session.status, AgentSessionStatus::Completed);
     assert!(
@@ -2510,7 +2680,7 @@ fn agent_advance_prepares_candidate_and_completes_session() {
 
     let state = ForgeState::load(&root).expect("state should remain readable");
     assert_eq!(state.current_version, CURRENT_VERSION);
-    assert_eq!(state.candidate_version.as_deref(), Some("v0.1.70"));
+    assert_eq!(state.candidate_version.as_deref(), Some("v0.1.71"));
     let sessions = app
         .agent_sessions(CURRENT_VERSION, 10)
         .expect("completed agent session should be listed");
@@ -2541,16 +2711,16 @@ fn agent_advance_promotes_existing_candidate_and_prepares_next() {
         MinimalLoopOutcome::PromotedAndPrepared
     );
     assert_eq!(report.minimal_loop.starting_version, CURRENT_VERSION);
-    assert_eq!(report.minimal_loop.stable_version, "v0.1.70");
+    assert_eq!(report.minimal_loop.stable_version, "v0.1.71");
     assert_eq!(
         report.minimal_loop.candidate_version.as_deref(),
-        Some("v0.1.71")
+        Some("v0.1.72")
     );
     assert_eq!(report.session.status, AgentSessionStatus::Completed);
 
     let state = ForgeState::load(&root).expect("state should remain readable");
-    assert_eq!(state.current_version, "v0.1.70");
-    assert_eq!(state.candidate_version.as_deref(), Some("v0.1.71"));
+    assert_eq!(state.current_version, "v0.1.71");
+    assert_eq!(state.candidate_version.as_deref(), Some("v0.1.72"));
 
     cleanup(&root);
 }
@@ -2632,12 +2802,12 @@ fn agent_evolve_prepares_candidate_runs_cycle_and_completes_session() {
 
     assert_eq!(
         report.prepared_candidate_version.as_deref(),
-        Some("v0.1.70")
+        Some("v0.1.71")
     );
     assert_eq!(report.cycle.previous_version, CURRENT_VERSION);
-    assert_eq!(report.cycle.candidate_version, "v0.1.70");
+    assert_eq!(report.cycle.candidate_version, "v0.1.71");
     assert_eq!(report.cycle.result, CycleResult::Promoted);
-    assert_eq!(report.cycle.state.current_version, "v0.1.70");
+    assert_eq!(report.cycle.state.current_version, "v0.1.71");
     assert_eq!(report.cycle.state.candidate_version, None);
     assert!(report.memory_compaction.is_some());
     assert_eq!(report.session.status, AgentSessionStatus::Completed);
@@ -2668,7 +2838,7 @@ fn agent_evolve_prepares_candidate_runs_cycle_and_completes_session() {
     );
 
     let state = ForgeState::load(&root).expect("state should remain readable");
-    assert_eq!(state.current_version, "v0.1.70");
+    assert_eq!(state.current_version, "v0.1.71");
     assert_eq!(state.candidate_version, None);
     let sessions = app
         .agent_sessions(CURRENT_VERSION, 10)
@@ -2692,10 +2862,10 @@ fn agent_session_list_all_major_finds_evolve_session_after_promotion() {
         .agent_evolve("提升后仍可审计 Agent 会话")
         .expect("agent evolve should promote a candidate");
 
-    assert_eq!(report.cycle.state.current_version, "v0.1.70");
+    assert_eq!(report.cycle.state.current_version, "v0.1.71");
 
     let promoted_version_only = app
-        .agent_sessions("v0.1.70", 10)
+        .agent_sessions("v0.1.71", 10)
         .expect("promoted version scoped session list should be readable");
     assert!(
         promoted_version_only.is_empty(),
@@ -2703,7 +2873,7 @@ fn agent_session_list_all_major_finds_evolve_session_after_promotion() {
     );
 
     let all = app
-        .agent_sessions_all("v0.1.70", 10)
+        .agent_sessions_all("v0.1.71", 10)
         .expect("all major session list should find previous patch session");
     assert_eq!(all.len(), 1);
     assert_eq!(all[0].id, report.session.id);
@@ -2731,9 +2901,9 @@ fn agent_evolve_cycles_existing_candidate_without_preparing_another() {
 
     assert_eq!(report.prepared_candidate_version, None);
     assert_eq!(report.cycle.previous_version, CURRENT_VERSION);
-    assert_eq!(report.cycle.candidate_version, "v0.1.70");
+    assert_eq!(report.cycle.candidate_version, "v0.1.71");
     assert_eq!(report.cycle.result, CycleResult::Promoted);
-    assert_eq!(report.cycle.state.current_version, "v0.1.70");
+    assert_eq!(report.cycle.state.current_version, "v0.1.71");
     assert_eq!(report.cycle.state.candidate_version, None);
     assert_eq!(report.session.status, AgentSessionStatus::Completed);
 

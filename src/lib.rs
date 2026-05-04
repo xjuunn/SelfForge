@@ -1,4 +1,4 @@
-pub mod app;
+﻿pub mod app;
 pub mod documentation;
 pub mod evolution;
 pub mod layout;
@@ -23,7 +23,7 @@ pub use version::{
     version_major_file_name, version_major_key,
 };
 
-pub const CURRENT_VERSION: &str = "v0.1.69";
+pub const CURRENT_VERSION: &str = "v0.1.70";
 
 pub use app::{
     AgentCapability, AgentDefinition, AgentError, AgentEvolutionError, AgentEvolutionReport,
@@ -82,9 +82,11 @@ pub use app::{
     ErrorResolutionReport, MemoryCompactionError, MemoryCompactionReport, MemoryContextEntry,
     MemoryContextError, MemoryContextReport, MemoryInsight, MemoryInsightReport, MinimalLoopError,
     MinimalLoopOutcome, MinimalLoopReport, PreflightReport, SelfEvolutionLoopError,
-    SelfEvolutionLoopRecord, SelfEvolutionLoopReport, SelfEvolutionLoopRequest,
-    SelfEvolutionLoopStatus, SelfEvolutionLoopStepRecord, SelfEvolutionLoopStepStatus,
-    SelfForgeApp, normalize_ai_self_upgrade_goal,
+    SelfEvolutionLoopGitPrEvent, SelfEvolutionLoopGitPrEventStatus, SelfEvolutionLoopGitPrMode,
+    SelfEvolutionLoopGitPrRequest, SelfEvolutionLoopRecord, SelfEvolutionLoopReport,
+    SelfEvolutionLoopRequest, SelfEvolutionLoopStatus, SelfEvolutionLoopStepRecord,
+    SelfEvolutionLoopStepStatus, SelfEvolutionLoopSummary, SelfForgeApp,
+    normalize_ai_self_upgrade_goal,
 };
 
 #[cfg(test)]

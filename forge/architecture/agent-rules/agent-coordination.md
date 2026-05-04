@@ -102,3 +102,6 @@ agent-work-block TASK_ID --reason TEXT
 3. 循环必须复用 `agent-self-upgrade`、`preflight`、记忆经验、错误归档、Runtime 和版本状态机。
 4. 进程崩溃后使用 `agent-self-loop --resume` 恢复最近未完成循环；恢复时必须把上次运行中的步骤标记为失败。
 5. 禁止声称绝对不会崩溃；工程目标是失败可记录、崩溃可恢复、循环可停止。
+6. 需要每轮本地提交时显式使用 `agent-self-loop --commit-each-cycle`，循环会把 Git 步骤写入同一个循环记录。
+7. 需要无人值守 PR 收束时必须同时使用 `--finalize-pr --confirm-finalize`，并等待 required checks 后才能合并和删除远程任务分支。
+8. 循环记录查询使用 `agent-self-loops` 和 `agent-self-loop-record`；列表必须来自记录文件的最新状态，避免索引追加行造成重复展示。

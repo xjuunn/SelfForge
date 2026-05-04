@@ -10,6 +10,13 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+mod git_pr;
+
+pub use git_pr::{
+    SelfEvolutionLoopGitPrEvent, SelfEvolutionLoopGitPrEventStatus, SelfEvolutionLoopGitPrMode,
+    SelfEvolutionLoopGitPrRequest,
+};
+
 const AGENT_ARTIFACT_DIRECTORY: &str = "agents";
 const SELF_EVOLUTION_LOOP_DIRECTORY: &str = "self-evolution-loops";
 const SELF_EVOLUTION_LOOP_INDEX_FILE: &str = "index.jsonl";
@@ -35,6 +42,8 @@ pub struct SelfEvolutionLoopRequest {
     pub max_failures: usize,
     pub timeout_ms: u64,
     pub resume: bool,
+    #[serde(default)]
+    pub git_pr: SelfEvolutionLoopGitPrRequest,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -65,6 +74,12 @@ pub struct SelfEvolutionLoopRecord {
     pub failed_cycles: usize,
     pub consecutive_failures: usize,
     pub resumed: bool,
+    #[serde(default)]
+    pub git_pr: SelfEvolutionLoopGitPrRequest,
+    #[serde(default)]
+    pub git_pr_events: Vec<SelfEvolutionLoopGitPrEvent>,
+    #[serde(default)]
+    pub pr_url: Option<String>,
     pub last_error: Option<String>,
     pub steps: Vec<SelfEvolutionLoopStepRecord>,
     pub file: PathBuf,
@@ -75,6 +90,20 @@ pub struct SelfEvolutionLoopReport {
     pub record: SelfEvolutionLoopRecord,
     pub index_file: PathBuf,
     pub resumed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SelfEvolutionLoopSummary {
+    pub id: String,
+    pub version: String,
+    pub status: SelfEvolutionLoopStatus,
+    pub updated_at_unix_seconds: u64,
+    pub completed_cycles: usize,
+    pub failed_cycles: usize,
+    pub consecutive_failures: usize,
+    pub git_pr_mode: SelfEvolutionLoopGitPrMode,
+    pub pr_url: Option<String>,
+    pub file: PathBuf,
 }
 
 #[derive(Debug)]
@@ -90,6 +119,11 @@ pub enum SelfEvolutionLoopError {
         path: PathBuf,
         source: serde_json::Error,
     },
+    NotFound {
+        version: String,
+        id: String,
+    },
+    GitPr(git_pr::SelfEvolutionLoopGitPrError),
 }
 
 impl SelfForgeApp {
@@ -128,6 +162,10 @@ impl SelfForgeApp {
             new_self_evolution_loop_record(&request, &state.current_version, &store)
         };
 
+        if resumed {
+            git_pr::recover_interrupted_git_pr_events(&mut record);
+        }
+        git_pr::prepare_git_pr_flow(self.root(), &store, &mut record)?;
         store.save(&mut record)?;
         while record.status == SelfEvolutionLoopStatus::Running
             && record.completed_cycles < record.max_cycles
@@ -154,16 +192,21 @@ impl SelfForgeApp {
             }));
             match result {
                 Ok(Ok(upgrade)) => {
-                    let step = record.steps.last_mut().expect("running step should exist");
-                    step.status = SelfEvolutionLoopStepStatus::Succeeded;
-                    step.completed_at_unix_seconds = Some(current_unix_seconds());
-                    step.stable_version_after =
-                        Some(upgrade.evolution.cycle.state.current_version.clone());
-                    step.audit_id = Some(upgrade.audit.id.clone());
-                    step.summary_id = Some(upgrade.summary.id.clone());
-                    record.completed_cycles += 1;
-                    record.consecutive_failures = 0;
-                    record.last_error = None;
+                    match complete_successful_self_evolution_step(
+                        self.root(),
+                        &store,
+                        &mut record,
+                        upgrade,
+                    ) {
+                        Ok(()) => {
+                            record.completed_cycles += 1;
+                            record.consecutive_failures = 0;
+                            record.last_error = None;
+                        }
+                        Err(error) => {
+                            record_failed_self_evolution_step(&mut record, error.to_string());
+                        }
+                    }
                 }
                 Ok(Err(error)) => {
                     record_failed_self_evolution_step(&mut record, error.to_string());
@@ -184,11 +227,37 @@ impl SelfForgeApp {
             store.save(&mut record)?;
         }
 
+        if record.status == SelfEvolutionLoopStatus::Succeeded {
+            if let Err(error) = git_pr::finalize_git_pr_flow(self, &store, &mut record) {
+                record.status = SelfEvolutionLoopStatus::Stopped;
+                record.last_error = Some(truncate_chars(&error.to_string(), 400));
+                store.save(&mut record)?;
+            }
+        }
+
         Ok(SelfEvolutionLoopReport {
             record,
             index_file: store.index_path,
             resumed,
         })
+    }
+
+    pub fn self_evolution_loop_records(
+        &self,
+        version: &str,
+        limit: usize,
+    ) -> Result<Vec<SelfEvolutionLoopSummary>, SelfEvolutionLoopError> {
+        let store = SelfEvolutionLoopStore::new(self.root().to_path_buf(), version)?;
+        store.list(limit)
+    }
+
+    pub fn self_evolution_loop_record(
+        &self,
+        version: &str,
+        id: &str,
+    ) -> Result<SelfEvolutionLoopRecord, SelfEvolutionLoopError> {
+        let store = SelfEvolutionLoopStore::new(self.root().to_path_buf(), version)?;
+        store.load(id)
     }
 }
 
@@ -226,6 +295,10 @@ impl fmt::Display for SelfEvolutionLoopError {
             SelfEvolutionLoopError::Json { path, source } => {
                 write!(formatter, "解析 {} 失败: {}", path.display(), source)
             }
+            SelfEvolutionLoopError::NotFound { version, id } => {
+                write!(formatter, "版本 {version} 未找到自我进化循环记录 {id}")
+            }
+            SelfEvolutionLoopError::GitPr(error) => write!(formatter, "{error}"),
         }
     }
 }
@@ -237,12 +310,16 @@ impl Error for SelfEvolutionLoopError {
             SelfEvolutionLoopError::Version(error) => Some(error),
             SelfEvolutionLoopError::Io { source, .. } => Some(source),
             SelfEvolutionLoopError::Json { source, .. } => Some(source),
-            SelfEvolutionLoopError::InvalidRequest(_) => None,
+            SelfEvolutionLoopError::GitPr(error) => Some(error),
+            SelfEvolutionLoopError::InvalidRequest(_) | SelfEvolutionLoopError::NotFound { .. } => {
+                None
+            }
         }
     }
 }
 
 struct SelfEvolutionLoopStore {
+    version: String,
     records_dir: PathBuf,
     index_path: PathBuf,
 }
@@ -258,6 +335,7 @@ impl SelfEvolutionLoopStore {
             .join(SELF_EVOLUTION_LOOP_DIRECTORY);
         let index_path = records_dir.join(SELF_EVOLUTION_LOOP_INDEX_FILE);
         Ok(Self {
+            version: version.to_string(),
             records_dir,
             index_path,
         })
@@ -291,15 +369,54 @@ impl SelfEvolutionLoopStore {
     fn load_latest_running(
         &self,
     ) -> Result<Option<SelfEvolutionLoopRecord>, SelfEvolutionLoopError> {
+        let mut records = self.load_records()?;
+        records.retain(|record| record.status == SelfEvolutionLoopStatus::Running);
+        records.sort_by(|left, right| {
+            right
+                .updated_at_unix_seconds
+                .cmp(&left.updated_at_unix_seconds)
+                .then_with(|| right.id.cmp(&left.id))
+        });
+        Ok(records.into_iter().next())
+    }
+
+    fn list(&self, limit: usize) -> Result<Vec<SelfEvolutionLoopSummary>, SelfEvolutionLoopError> {
+        let mut records = self.load_records()?;
+        records.sort_by(|left, right| {
+            right
+                .updated_at_unix_seconds
+                .cmp(&left.updated_at_unix_seconds)
+                .then_with(|| right.id.cmp(&left.id))
+        });
+        Ok(records
+            .into_iter()
+            .take(limit)
+            .map(|record| record.summary())
+            .collect())
+    }
+
+    fn load(&self, id: &str) -> Result<SelfEvolutionLoopRecord, SelfEvolutionLoopError> {
+        validate_loop_record_id(id)?;
+        let path = self.records_dir.join(format!("{id}.json"));
+        if !path.exists() {
+            return Err(SelfEvolutionLoopError::NotFound {
+                version: self.version.clone(),
+                id: id.to_string(),
+            });
+        }
+        self.load_record_file(path)
+    }
+
+    fn load_records(&self) -> Result<Vec<SelfEvolutionLoopRecord>, SelfEvolutionLoopError> {
         if !self.records_dir.exists() {
-            return Ok(None);
+            return Ok(Vec::new());
         }
         let entries =
             fs::read_dir(&self.records_dir).map_err(|source| SelfEvolutionLoopError::Io {
                 path: self.records_dir.clone(),
                 source,
             })?;
-        let mut latest: Option<SelfEvolutionLoopRecord> = None;
+        let mut records = Vec::new();
         for entry in entries {
             let entry = entry.map_err(|source| SelfEvolutionLoopError::Io {
                 path: self.records_dir.clone(),
@@ -309,27 +426,20 @@ impl SelfEvolutionLoopStore {
             if path.extension().and_then(|value| value.to_str()) != Some("json") {
                 continue;
             }
-            let text = fs::read_to_string(&path).map_err(|source| SelfEvolutionLoopError::Io {
-                path: path.clone(),
-                source,
-            })?;
-            let record: SelfEvolutionLoopRecord =
-                serde_json::from_str(&text).map_err(|source| SelfEvolutionLoopError::Json {
-                    path: path.clone(),
-                    source,
-                })?;
-            if record.status != SelfEvolutionLoopStatus::Running {
-                continue;
-            }
-            if latest
-                .as_ref()
-                .map(|current| record.updated_at_unix_seconds > current.updated_at_unix_seconds)
-                .unwrap_or(true)
-            {
-                latest = Some(record);
-            }
+            records.push(self.load_record_file(path)?);
         }
-        Ok(latest)
+        Ok(records)
+    }
+
+    fn load_record_file(
+        &self,
+        path: PathBuf,
+    ) -> Result<SelfEvolutionLoopRecord, SelfEvolutionLoopError> {
+        let text = fs::read_to_string(&path).map_err(|source| SelfEvolutionLoopError::Io {
+            path: path.clone(),
+            source,
+        })?;
+        serde_json::from_str(&text).map_err(|source| SelfEvolutionLoopError::Json { path, source })
     }
 
     fn index_entry(&self, record: &SelfEvolutionLoopRecord) -> SelfEvolutionLoopIndexEntry {
@@ -358,6 +468,23 @@ struct SelfEvolutionLoopIndexEntry {
     file: PathBuf,
 }
 
+impl SelfEvolutionLoopRecord {
+    pub fn summary(&self) -> SelfEvolutionLoopSummary {
+        SelfEvolutionLoopSummary {
+            id: self.id.clone(),
+            version: self.version.clone(),
+            status: self.status,
+            updated_at_unix_seconds: self.updated_at_unix_seconds,
+            completed_cycles: self.completed_cycles,
+            failed_cycles: self.failed_cycles,
+            consecutive_failures: self.consecutive_failures,
+            git_pr_mode: self.git_pr.mode,
+            pr_url: self.pr_url.clone(),
+            file: self.file.clone(),
+        }
+    }
+}
+
 fn new_self_evolution_loop_record(
     request: &SelfEvolutionLoopRequest,
     version: &str,
@@ -379,6 +506,9 @@ fn new_self_evolution_loop_record(
         failed_cycles: 0,
         consecutive_failures: 0,
         resumed: false,
+        git_pr: request.git_pr.clone(),
+        git_pr_events: Vec::new(),
+        pr_url: None,
         last_error: None,
         steps: Vec::new(),
         file: store.records_dir.join(format!("{id}.json")),
@@ -403,6 +533,27 @@ fn recover_interrupted_steps(record: &mut SelfEvolutionLoopRecord, max_failures:
             record.status = SelfEvolutionLoopStatus::Stopped;
         }
     }
+}
+
+fn complete_successful_self_evolution_step(
+    root: &std::path::Path,
+    store: &SelfEvolutionLoopStore,
+    record: &mut SelfEvolutionLoopRecord,
+    upgrade: AiSelfUpgradeReport,
+) -> Result<(), git_pr::SelfEvolutionLoopGitPrError> {
+    let cycle = {
+        let step = record.steps.last_mut().expect("running step should exist");
+        step.status = SelfEvolutionLoopStepStatus::Succeeded;
+        step.completed_at_unix_seconds = Some(current_unix_seconds());
+        step.stable_version_after = Some(upgrade.evolution.cycle.state.current_version.clone());
+        step.audit_id = Some(upgrade.audit.id.clone());
+        step.summary_id = Some(upgrade.summary.id.clone());
+        step.cycle
+    };
+    store
+        .save(record)
+        .map_err(|error| git_pr::SelfEvolutionLoopGitPrError::Record(error.to_string()))?;
+    git_pr::commit_successful_cycle(root, store, record, cycle)
 }
 
 fn record_failed_self_evolution_step(record: &mut SelfEvolutionLoopRecord, error: String) {
@@ -436,7 +587,54 @@ fn validate_self_evolution_loop_request(
             "--timeout-ms 必须大于 0".to_string(),
         ));
     }
+    if request.git_pr.mode == SelfEvolutionLoopGitPrMode::PullRequest && !request.git_pr.confirmed {
+        return Err(SelfEvolutionLoopError::InvalidRequest(
+            "PR 自主收束必须显式传入 --confirm-finalize。".to_string(),
+        ));
+    }
+    if request.git_pr.mode == SelfEvolutionLoopGitPrMode::PullRequest && !request.git_pr.wait_checks
+    {
+        return Err(SelfEvolutionLoopError::InvalidRequest(
+            "PR 自主合并必须等待 required checks，禁止跳过检查。".to_string(),
+        ));
+    }
+    if request.git_pr.mode == SelfEvolutionLoopGitPrMode::PullRequest
+        && !request.git_pr.issue_ref.contains("#1")
+    {
+        return Err(SelfEvolutionLoopError::InvalidRequest(
+            "PR 自主收束必须关联 Issue #1。".to_string(),
+        ));
+    }
+    if request.git_pr.command_timeout_ms == 0 {
+        return Err(SelfEvolutionLoopError::InvalidRequest(
+            "--git-timeout-ms 必须大于 0".to_string(),
+        ));
+    }
+    if request.git_pr.check_timeout_ms == 0 {
+        return Err(SelfEvolutionLoopError::InvalidRequest(
+            "--check-timeout-ms 必须大于 0".to_string(),
+        ));
+    }
+    if request.git_pr.check_interval_seconds == 0 {
+        return Err(SelfEvolutionLoopError::InvalidRequest(
+            "--check-interval-seconds 必须大于 0".to_string(),
+        ));
+    }
     Ok(())
+}
+
+fn validate_loop_record_id(id: &str) -> Result<(), SelfEvolutionLoopError> {
+    let valid = !id.trim().is_empty()
+        && id.chars().all(|character| {
+            character.is_ascii_alphanumeric() || character == '-' || character == '_'
+        });
+    if valid {
+        Ok(())
+    } else {
+        Err(SelfEvolutionLoopError::InvalidRequest(format!(
+            "自我进化循环记录编号非法：{id}"
+        )))
+    }
 }
 
 fn append_text(path: &PathBuf, text: &str) -> Result<(), SelfEvolutionLoopError> {

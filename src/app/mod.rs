@@ -75,7 +75,8 @@ pub use minimal_loop::{
     SelfForgeApp, normalize_ai_self_upgrade_goal,
 };
 pub use self_evolution_loop::{
-    SelfEvolutionLoopError, SelfEvolutionLoopRecord, SelfEvolutionLoopReport,
-    SelfEvolutionLoopRequest, SelfEvolutionLoopStatus, SelfEvolutionLoopStepRecord,
-    SelfEvolutionLoopStepStatus,
+    SelfEvolutionLoopError, SelfEvolutionLoopGitPrEvent, SelfEvolutionLoopGitPrEventStatus,
+    SelfEvolutionLoopGitPrMode, SelfEvolutionLoopGitPrRequest, SelfEvolutionLoopRecord,
+    SelfEvolutionLoopReport, SelfEvolutionLoopRequest, SelfEvolutionLoopStatus,
+    SelfEvolutionLoopStepRecord, SelfEvolutionLoopStepStatus, SelfEvolutionLoopSummary,
 };

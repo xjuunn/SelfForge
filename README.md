@@ -1,10 +1,10 @@
-# SelfForge
+﻿# SelfForge
 
 SelfForge 是一个受控自进化软件系统，目标是让版本生成、验证、记录、提升和回滚形成可审计闭环。
 
 # 当前状态
 
-- 当前版本：`v0.1.69`
+- 当前版本：`v0.1.70`
 - 核心语言：Rust
 - 状态文件：`state/state.json`
 - 归档目录：`forge/`
@@ -53,7 +53,11 @@ cargo run -- agent-patch-source-task-draft SUMMARY_RECORD_ID
 cargo run -- agent-patch-source-task-audit TASK_DRAFT_ID
 cargo run -- agent-self-upgrade "目标提示"
 cargo run -- agent-self-loop --max-cycles 1 --max-failures 1 "目标提示"
+cargo run -- agent-self-loop --commit-each-cycle --max-cycles 3 --max-failures 2 "目标提示"
+cargo run -- agent-self-loop --finalize-pr --confirm-finalize --branch codex/任务编号 --task TASK_ID --worker ai-1 "目标提示"
 cargo run -- agent-self-loop --resume
+cargo run -- agent-self-loops --current --limit 10
+cargo run -- agent-self-loop-record RECORD_ID
 cargo run -- advance "目标"
 cargo run -- cycle
 cargo run -- errors --current --open
