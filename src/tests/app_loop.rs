@@ -1,4 +1,5 @@
 use super::*;
+use std::process::Command;
 
 #[test]
 fn app_advance_prepares_candidate_when_none_exists() {
@@ -223,4 +224,92 @@ fn app_preflight_reports_open_errors() {
     assert_eq!(state.candidate_version, None);
 
     cleanup(&root);
+}
+
+#[test]
+fn branch_check_blocks_writing_on_master() {
+    let root = temp_root("branch-check-master");
+    let app = SelfForgeApp::new(&root);
+
+    app.supervisor()
+        .initialize_current_version()
+        .expect("bootstrap should succeed before branch check");
+    init_git_fixture(&root);
+
+    let report = app
+        .branch_check(CURRENT_VERSION, None, None, "master")
+        .expect("branch check should read git state");
+
+    assert_eq!(report.current_branch, "master");
+    assert!(report.on_base_branch);
+    assert!(!report.can_write);
+    assert!(
+        report
+            .blockers
+            .iter()
+            .any(|blocker| blocker.contains("禁止直接写入"))
+    );
+
+    cleanup(&root);
+}
+
+#[test]
+fn branch_check_allows_claimed_task_with_only_queue_changes() {
+    let root = temp_root("branch-check-claimed");
+    let app = SelfForgeApp::new(&root);
+
+    app.supervisor()
+        .initialize_current_version()
+        .expect("bootstrap should succeed before branch check");
+    init_git_fixture(&root);
+    run_git(&root, &["switch", "-c", "codex/coord-002-application"]);
+    app.init_agent_work_queue(CURRENT_VERSION, "验证分支检查", 3)
+        .expect("work queue should initialize");
+    let claim = app
+        .claim_agent_work_with_lease(CURRENT_VERSION, "ai-1", Some("builder"), Some(7200))
+        .expect("builder should claim application task");
+
+    assert_eq!(claim.task.id, "coord-002-application");
+
+    let report = app
+        .branch_check(
+            CURRENT_VERSION,
+            Some("ai-1"),
+            Some("coord-002-application"),
+            "master",
+        )
+        .expect("branch check should inspect claimed task");
+
+    assert_eq!(report.current_branch, "codex/coord-002-application");
+    assert_eq!(report.task_matches_worker, Some(true));
+    assert_eq!(report.task_matches_branch, Some(true));
+    assert!(report.unexpected_changes.is_empty());
+    assert!(report.can_write);
+
+    cleanup(&root);
+}
+
+fn init_git_fixture(root: &Path) {
+    run_git(root, &["init", "-b", "master"]);
+    run_git(root, &["config", "user.name", "SelfForge Test"]);
+    run_git(
+        root,
+        &["config", "user.email", "self-forge-test@example.invalid"],
+    );
+    run_git(root, &["add", "."]);
+    run_git(root, &["commit", "-m", "test: 初始化测试仓库"]);
+}
+
+fn run_git(root: &Path, args: &[&str]) {
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(root)
+        .output()
+        .expect("git command should spawn");
+    assert!(
+        output.status.success(),
+        "git {:?} failed: {}",
+        args,
+        String::from_utf8_lossy(&output.stderr)
+    );
 }

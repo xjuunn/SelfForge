@@ -1,7 +1,8 @@
 use self_forge::{
     AgentStepExecutionRequest, AgentToolInvocation, AgentToolInvocationInput, AgentWorkQueueReport,
-    AgentWorkTaskStatus, CURRENT_VERSION, CycleResult, ErrorArchive, ErrorListQuery, ForgeState,
-    MinimalLoopOutcome, RunQuery, SelfForgeApp, Supervisor, VersionBump,
+    AgentWorkTaskStatus, BranchCheckReport, CURRENT_VERSION, CycleResult, ErrorArchive,
+    ErrorListQuery, ForgeState, MinimalLoopOutcome, RunQuery, SelfForgeApp, Supervisor,
+    VersionBump,
 };
 use std::env;
 use std::error::Error;
@@ -48,6 +49,7 @@ fn main() {
             )
         })),
         "preflight" => preflight(&app),
+        "branch-check" => branch_check(&app, args.collect()),
         "memory-context" => memory_context(&app, args.collect()),
         "memory-insights" => memory_insights(&app, args.collect()),
         "memory-compact" => memory_compact(&app, args.collect()),
@@ -436,6 +438,92 @@ fn preflight(app: &SelfForgeApp) -> Result<String, Box<dyn Error>> {
             can_advance
         )
     }))
+}
+
+fn branch_check(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Box<dyn Error>> {
+    let command = parse_branch_check_args(arguments)?;
+    boxed(
+        app.branch_check(
+            &command.version,
+            command.worker_id.as_deref(),
+            command.task_id.as_deref(),
+            &command.base_branch,
+        )
+        .map(format_branch_check_report),
+    )
+}
+
+fn format_branch_check_report(report: BranchCheckReport) -> String {
+    let can_write = if report.can_write { "是" } else { "否" };
+    let base_resolved = if report.base_resolved { "是" } else { "否" };
+    let on_base = if report.on_base_branch { "是" } else { "否" };
+    let queue_exists = if report.queue_exists { "是" } else { "否" };
+    let behind = report
+        .behind_base
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "未知".to_string());
+    let ahead = report
+        .ahead_of_base
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "未知".to_string());
+    let mut lines = vec![format!(
+        "SelfForge 分支检查 版本 {} 当前分支 {} 基础分支 {} 在基础分支 {} 基础可读 {} 落后 {} 领先 {} 非任务板改动 {} 可写入 {}",
+        report.version,
+        report.current_branch,
+        report.base_branch,
+        on_base,
+        base_resolved,
+        behind,
+        ahead,
+        report.unexpected_changes.len(),
+        can_write
+    )];
+
+    if let Some(path) = report.queue_path.as_ref() {
+        lines.push(format!(
+            "协作任务板 {} 存在 {} 目标 {}",
+            path.display(),
+            queue_exists,
+            report.queue_goal.as_deref().unwrap_or("无")
+        ));
+    } else {
+        lines.push(format!("协作任务板 存在 {queue_exists}"));
+    }
+    if report.worker_id.is_some() || report.task_id.is_some() {
+        lines.push(format!(
+            "任务校验 worker {} task {} 状态 {} 领取 {} worker匹配 {} 分支匹配 {}",
+            report.worker_id.as_deref().unwrap_or("未指定"),
+            report.task_id.as_deref().unwrap_or("未指定"),
+            report.task_status.as_deref().unwrap_or("未知"),
+            report.task_claimed_by.as_deref().unwrap_or("无"),
+            option_bool_text(report.task_matches_worker),
+            option_bool_text(report.task_matches_branch)
+        ));
+    }
+    if !report.changed_paths.is_empty() {
+        lines.push(format!("未提交路径: {}", report.changed_paths.join("、")));
+    }
+    if !report.unexpected_changes.is_empty() {
+        lines.push(format!(
+            "阻断改动: {}",
+            report.unexpected_changes.join("、")
+        ));
+    }
+    for warning in report.warnings {
+        lines.push(format!("警告: {warning}"));
+    }
+    for blocker in report.blockers {
+        lines.push(format!("阻断: {blocker}"));
+    }
+    lines.join("\n")
+}
+
+fn option_bool_text(value: Option<bool>) -> &'static str {
+    match value {
+        Some(true) => "是",
+        Some(false) => "否",
+        None => "未检查",
+    }
 }
 
 fn memory_context(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Box<dyn Error>> {
@@ -5248,6 +5336,13 @@ struct AgentWorkReapArgs {
     text: String,
 }
 
+struct BranchCheckArgs {
+    version: String,
+    worker_id: Option<String>,
+    task_id: Option<String>,
+    base_branch: String,
+}
+
 struct AgentToolRunArgs {
     agent_id: String,
     tool_id: String,
@@ -5757,6 +5852,64 @@ fn parse_agent_work_version_args(
     }
 
     Ok(AgentWorkVersionArgs { version })
+}
+
+fn parse_branch_check_args(arguments: Vec<String>) -> Result<BranchCheckArgs, Box<dyn Error>> {
+    let state = ForgeState::load(env::current_dir()?)?;
+    let mut version = state.current_version.clone();
+    let mut worker_id = None;
+    let mut task_id = None;
+    let mut base_branch = "master".to_string();
+    let mut index = 0;
+
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "--current" => {
+                version = state.current_version.clone();
+                index += 1;
+            }
+            "--candidate" => {
+                version = state.candidate_version.clone().ok_or("当前没有候选版本")?;
+                index += 1;
+            }
+            "--version" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--version 需要版本号".into());
+                };
+                version = value.clone();
+                index += 2;
+            }
+            "--worker" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--worker 需要线程标识".into());
+                };
+                worker_id = Some(value.clone());
+                index += 2;
+            }
+            "--task" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--task 需要任务标识".into());
+                };
+                task_id = Some(value.clone());
+                index += 2;
+            }
+            "--base" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--base 需要基础分支名".into());
+                };
+                base_branch = value.clone();
+                index += 2;
+            }
+            other => return Err(format!("未知 branch-check 参数: {other}").into()),
+        }
+    }
+
+    Ok(BranchCheckArgs {
+        version,
+        worker_id,
+        task_id,
+        base_branch,
+    })
 }
 
 fn parse_agent_work_claim_args(
@@ -6626,6 +6779,7 @@ fn parse_agent_verify_args(arguments: Vec<String>) -> Result<AgentVerifyArgs, Bo
 fn help_text() -> &'static str {
     "SelfForge commands:
 init, validate, status, preflight
+branch-check [--current|--candidate|--version VERSION] [--worker ID] [--task TASK_ID] [--base BRANCH]
 memory-context [--current|--candidate|--version VERSION] [--limit N]
 memory-insights [--current|--candidate|--version VERSION] [--limit N]
 memory-compact [--current|--candidate|--version VERSION] [--keep N]
