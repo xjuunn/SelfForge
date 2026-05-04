@@ -1,8 +1,8 @@
 use self_forge::{
-    AgentStepExecutionRequest, AgentToolInvocation, AgentToolInvocationInput, AgentWorkQueueReport,
-    AgentWorkTaskStatus, BranchCheckReport, CURRENT_VERSION, CycleResult, ErrorArchive,
-    ErrorListQuery, ForgeState, MinimalLoopOutcome, RunQuery, SelfForgeApp, Supervisor,
-    VersionBump,
+    AgentStepExecutionRequest, AgentToolInvocation, AgentToolInvocationInput,
+    AgentWorkFinalizeCheckReport, AgentWorkQueueReport, AgentWorkTaskStatus, BranchCheckReport,
+    CURRENT_VERSION, CycleResult, ErrorArchive, ErrorListQuery, ForgeState, MinimalLoopOutcome,
+    RunQuery, SelfForgeApp, Supervisor, VersionBump,
 };
 use std::env;
 use std::error::Error;
@@ -65,6 +65,7 @@ fn main() {
         "agent-work-reap" => agent_work_reap(&app, args.collect()),
         "agent-work-compact" => agent_work_compact(&app, args.collect()),
         "agent-work-block" => agent_work_block(&app, args.collect()),
+        "agent-work-finalize-check" => agent_work_finalize_check(&app, args.collect()),
         "agent-tool-run" => agent_tool_run(&app, args.collect()),
         "agent-step" => agent_step(&app, args.collect()),
         "agent-steps" => agent_steps(&app, args.collect()),
@@ -825,6 +826,17 @@ fn agent_work_status(app: &SelfForgeApp, arguments: Vec<String>) -> Result<Strin
     }))
 }
 
+fn agent_work_finalize_check(
+    app: &SelfForgeApp,
+    arguments: Vec<String>,
+) -> Result<String, Box<dyn Error>> {
+    let command = parse_agent_work_version_args(arguments, "agent-work-finalize-check")?;
+    boxed(
+        app.agent_work_finalize_check(&command.version)
+            .map(format_agent_work_finalize_check_report),
+    )
+}
+
 fn agent_work_claim(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Box<dyn Error>> {
     let command = parse_agent_work_claim_args(arguments)?;
     boxed(
@@ -1040,6 +1052,40 @@ fn format_agent_work_lease(task: &self_forge::AgentWorkTask) -> String {
         }
         None => "无".to_string(),
     }
+}
+
+fn format_agent_work_finalize_check_report(report: AgentWorkFinalizeCheckReport) -> String {
+    let can_finalize = if report.can_finalize { "是" } else { "否" };
+    let mut lines = vec![format!(
+        "SelfForge 协作任务组收束检查 版本 {} 可收束 {} 文件 {}",
+        report.version,
+        can_finalize,
+        report.queue_path.display()
+    )];
+    lines.push(format!("目标 {}", report.goal));
+    lines.push(format!(
+        "任务统计 总数 {} 待领取 {} 已领取 {} 已完成 {} 已阻断 {} 开放错误 {}",
+        report.task_count,
+        report.pending_count,
+        report.claimed_count,
+        report.completed_count,
+        report.blocked_count,
+        report.open_errors.len()
+    ));
+    if report.blockers.is_empty() {
+        lines.push("阻断项 无".to_string());
+    } else {
+        for blocker in &report.blockers {
+            lines.push(format!("阻断项 {blocker}"));
+        }
+    }
+    for entry in report.open_errors.iter().take(5) {
+        lines.push(format!(
+            "开放错误 {} 已解决 {}",
+            entry.run_id, entry.resolved
+        ));
+    }
+    lines.join("\n")
 }
 
 fn current_unix_seconds() -> u64 {
@@ -6956,6 +7002,7 @@ ai-config, ai-request [--dry-run] [--timeout-ms N] [prompt]
 agents, agent-tools [--current|--candidate|--version VERSION] [--init]
 agent-work-init [--current|--candidate|--version VERSION] [--threads N] [--reset-completed] [goal]
 agent-work-status [--current|--candidate|--version VERSION]
+agent-work-finalize-check [--current|--candidate|--version VERSION]
 agent-work-claim [--current|--candidate|--version VERSION] [--worker ID] [--agent AGENT_ID] [--lease-seconds N]
 agent-work-complete [--current|--candidate|--version VERSION] TASK_ID [--worker ID] [--summary TEXT]
 agent-work-release [--current|--candidate|--version VERSION] TASK_ID [--worker ID] [--reason TEXT]

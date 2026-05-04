@@ -54,12 +54,7 @@ impl AgentWorkCoordinator {
             if layout.queue_path.exists() {
                 let mut queue = read_queue(&layout.queue_path)?;
                 if reset_completed {
-                    if !queue.tasks.is_empty()
-                        && queue
-                            .tasks
-                            .iter()
-                            .all(|task| task.status == AgentWorkTaskStatus::Completed)
-                    {
+                    if !queue.tasks.is_empty() && queue.tasks.iter().all(is_terminal_task) {
                         let previous_goal = queue.goal.clone();
                         let previous_events = queue.events;
                         let mut restarted = create_queue(&version, &goal, thread_count);
@@ -806,6 +801,13 @@ fn claimable_task_indexes(queue: &AgentWorkQueue) -> Vec<usize> {
         .collect::<Vec<_>>();
     indexes.sort_by_key(|index| queue.tasks[*index].priority);
     indexes
+}
+
+fn is_terminal_task(task: &AgentWorkTask) -> bool {
+    matches!(
+        task.status,
+        AgentWorkTaskStatus::Completed | AgentWorkTaskStatus::Blocked
+    )
 }
 
 fn has_active_scope_conflict(queue: &AgentWorkQueue, task: &AgentWorkTask) -> bool {

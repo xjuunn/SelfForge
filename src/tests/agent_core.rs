@@ -785,6 +785,257 @@ fn agent_work_block_rejects_completed_task() {
 }
 
 #[test]
+fn agent_work_reset_completed_allows_blocked_terminal_tasks() {
+    let root = temp_root("agent-work-reset-terminal");
+    let app = SelfForgeApp::new(&root);
+
+    app.supervisor()
+        .initialize_current_version()
+        .expect("bootstrap should succeed before terminal reset test");
+    let init = app
+        .init_agent_work_queue(CURRENT_VERSION, "旧协作目标", 2)
+        .expect("work queue should initialize");
+    let mut queue: AgentWorkQueue =
+        serde_json::from_str(&fs::read_to_string(&init.queue_path).expect("queue readable"))
+            .expect("queue json should parse");
+    for (index, task) in queue.tasks.iter_mut().enumerate() {
+        if index == 0 {
+            task.status = AgentWorkTaskStatus::Blocked;
+            task.result = Some("旧任务不再适用".to_string());
+            task.claimed_by = None;
+            task.claimed_at_unix_seconds = None;
+            task.lease_expires_at_unix_seconds = None;
+            task.completed_at_unix_seconds = None;
+        } else {
+            task.status = AgentWorkTaskStatus::Completed;
+            task.result = Some("已完成".to_string());
+            task.claimed_by = Some("ai-1".to_string());
+            task.claimed_at_unix_seconds = Some(1);
+            task.lease_expires_at_unix_seconds = None;
+            task.completed_at_unix_seconds = Some(2);
+        }
+    }
+    fs::write(
+        &init.queue_path,
+        serde_json::to_string_pretty(&queue).expect("queue should serialize"),
+    )
+    .expect("test should write terminal queue");
+
+    let report = app
+        .init_agent_work_queue_with_reset_completed(CURRENT_VERSION, "下一轮协作目标", 4, true)
+        .expect("terminal completed and blocked queue should restart");
+
+    assert!(report.created);
+    assert_eq!(report.queue.goal, "下一轮协作目标");
+    assert_eq!(report.queue.thread_count, 4);
+    assert!(
+        report
+            .queue
+            .tasks
+            .iter()
+            .all(|task| task.status == AgentWorkTaskStatus::Pending)
+    );
+    assert!(
+        report
+            .queue
+            .events
+            .iter()
+            .any(|event| event.action == "init")
+    );
+    assert_eq!(
+        report
+            .queue
+            .events
+            .last()
+            .map(|event| event.action.as_str()),
+        Some("restart")
+    );
+
+    cleanup(&root);
+}
+
+#[test]
+fn agent_work_reset_completed_rejects_active_tasks() {
+    let root = temp_root("agent-work-reset-active");
+    let app = SelfForgeApp::new(&root);
+
+    app.supervisor()
+        .initialize_current_version()
+        .expect("bootstrap should succeed before active reset test");
+    app.init_agent_work_queue(CURRENT_VERSION, "仍有活跃任务", 2)
+        .expect("work queue should initialize");
+    app.claim_agent_work(CURRENT_VERSION, "ai-1", Some("builder"))
+        .expect("task should be claimed before reset");
+
+    let error = app
+        .init_agent_work_queue_with_reset_completed(CURRENT_VERSION, "不应重开", 3, true)
+        .expect_err("active claimed queue must not restart");
+
+    assert!(matches!(error, AgentWorkError::QueueNotCompleted { .. }));
+
+    cleanup(&root);
+}
+
+#[test]
+fn agent_work_finalize_check_allows_terminal_queue_without_open_errors() {
+    let root = temp_root("agent-work-finalize-ready");
+    let app = SelfForgeApp::new(&root);
+
+    app.supervisor()
+        .initialize_current_version()
+        .expect("bootstrap should succeed before finalize check test");
+    let init = app
+        .init_agent_work_queue(CURRENT_VERSION, "准备收束任务组", 2)
+        .expect("work queue should initialize");
+    let mut queue: AgentWorkQueue =
+        serde_json::from_str(&fs::read_to_string(&init.queue_path).expect("queue readable"))
+            .expect("queue json should parse");
+    for (index, task) in queue.tasks.iter_mut().enumerate() {
+        task.status = if index == 0 {
+            AgentWorkTaskStatus::Blocked
+        } else {
+            AgentWorkTaskStatus::Completed
+        };
+        task.result = Some("终态任务".to_string());
+        task.claimed_by = if index == 0 {
+            None
+        } else {
+            Some("ai-1".to_string())
+        };
+        task.claimed_at_unix_seconds = None;
+        task.lease_expires_at_unix_seconds = None;
+        task.completed_at_unix_seconds = Some(2);
+    }
+    fs::write(
+        &init.queue_path,
+        serde_json::to_string_pretty(&queue).expect("queue should serialize"),
+    )
+    .expect("test should write terminal queue");
+
+    let report = app
+        .agent_work_finalize_check(CURRENT_VERSION)
+        .expect("terminal queue should be checked");
+
+    assert!(report.can_finalize);
+    assert_eq!(report.pending_count, 0);
+    assert_eq!(report.claimed_count, 0);
+    assert_eq!(report.blocked_count, 1);
+    assert_eq!(report.completed_count, report.task_count - 1);
+    assert!(report.open_errors.is_empty());
+    assert!(report.blockers.is_empty());
+
+    cleanup(&root);
+}
+
+#[test]
+fn agent_work_finalize_check_blocks_pending_and_claimed_tasks() {
+    let root = temp_root("agent-work-finalize-active");
+    let app = SelfForgeApp::new(&root);
+
+    app.supervisor()
+        .initialize_current_version()
+        .expect("bootstrap should succeed before finalize blocker test");
+    app.init_agent_work_queue(CURRENT_VERSION, "仍有活跃任务", 2)
+        .expect("work queue should initialize");
+
+    let pending_report = app
+        .agent_work_finalize_check(CURRENT_VERSION)
+        .expect("pending queue should be checked");
+    assert!(!pending_report.can_finalize);
+    assert!(pending_report.pending_count > 0);
+    assert!(
+        pending_report
+            .blockers
+            .iter()
+            .any(|blocker| blocker.contains("待领取"))
+    );
+
+    app.claim_agent_work(CURRENT_VERSION, "ai-1", Some("builder"))
+        .expect("task should be claimed before finalize check");
+    let claimed_report = app
+        .agent_work_finalize_check(CURRENT_VERSION)
+        .expect("claimed queue should be checked");
+    assert!(!claimed_report.can_finalize);
+    assert_eq!(claimed_report.claimed_count, 1);
+    assert!(
+        claimed_report
+            .blockers
+            .iter()
+            .any(|blocker| blocker.contains("已领取"))
+    );
+
+    cleanup(&root);
+}
+
+#[test]
+fn agent_work_finalize_check_blocks_open_errors() {
+    let root = temp_root("agent-work-finalize-open-errors");
+    let app = SelfForgeApp::new(&root);
+
+    app.supervisor()
+        .initialize_current_version()
+        .expect("bootstrap should succeed before finalize open error test");
+    let init = app
+        .init_agent_work_queue(CURRENT_VERSION, "错误阻断收束", 1)
+        .expect("work queue should initialize");
+    let mut queue: AgentWorkQueue =
+        serde_json::from_str(&fs::read_to_string(&init.queue_path).expect("queue readable"))
+            .expect("queue json should parse");
+    for task in &mut queue.tasks {
+        task.status = AgentWorkTaskStatus::Completed;
+        task.result = Some("已完成".to_string());
+        task.claimed_by = Some("ai-1".to_string());
+        task.claimed_at_unix_seconds = None;
+        task.lease_expires_at_unix_seconds = None;
+        task.completed_at_unix_seconds = Some(2);
+    }
+    fs::write(
+        &init.queue_path,
+        serde_json::to_string_pretty(&queue).expect("queue should serialize"),
+    )
+    .expect("test should write completed queue");
+    let program = std::env::current_exe()
+        .expect("test executable path should be available")
+        .to_string_lossy()
+        .into_owned();
+    let failed = app
+        .supervisor()
+        .execute_in_workspace(
+            CURRENT_VERSION,
+            &program,
+            &["--self-forge-invalid-test-flag".to_string()],
+            5_000,
+        )
+        .expect("failed command should produce a run record");
+    let run_id = failed
+        .run_dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .expect("run directory should have a valid file name")
+        .to_string();
+    ErrorArchive::new(&root)
+        .record_failed_run(CURRENT_VERSION, Some(&run_id), "", "")
+        .expect("failed run should be archived before finalize check");
+
+    let report = app
+        .agent_work_finalize_check(CURRENT_VERSION)
+        .expect("open errors should be checked");
+
+    assert!(!report.can_finalize);
+    assert_eq!(report.pending_count, 0);
+    assert_eq!(report.claimed_count, 0);
+    assert_eq!(report.open_errors.len(), 1);
+    assert!(
+        report
+            .blockers
+            .iter()
+            .any(|blocker| blocker.contains("开放错误"))
+    );
+
+    cleanup(&root);
+}
+
+#[test]
 fn agent_work_queue_rejects_zero_threads() {
     let root = temp_root("agent-work-zero-thread");
     let app = SelfForgeApp::new(&root);
@@ -2206,7 +2457,7 @@ fn agent_advance_prepares_candidate_and_completes_session() {
     assert_eq!(report.minimal_loop.stable_version, CURRENT_VERSION);
     assert_eq!(
         report.minimal_loop.candidate_version.as_deref(),
-        Some("v0.1.67")
+        Some("v0.1.68")
     );
     assert_eq!(report.session.status, AgentSessionStatus::Completed);
     assert!(
@@ -2219,7 +2470,7 @@ fn agent_advance_prepares_candidate_and_completes_session() {
 
     let state = ForgeState::load(&root).expect("state should remain readable");
     assert_eq!(state.current_version, CURRENT_VERSION);
-    assert_eq!(state.candidate_version.as_deref(), Some("v0.1.67"));
+    assert_eq!(state.candidate_version.as_deref(), Some("v0.1.68"));
     let sessions = app
         .agent_sessions(CURRENT_VERSION, 10)
         .expect("completed agent session should be listed");
@@ -2250,16 +2501,16 @@ fn agent_advance_promotes_existing_candidate_and_prepares_next() {
         MinimalLoopOutcome::PromotedAndPrepared
     );
     assert_eq!(report.minimal_loop.starting_version, CURRENT_VERSION);
-    assert_eq!(report.minimal_loop.stable_version, "v0.1.67");
+    assert_eq!(report.minimal_loop.stable_version, "v0.1.68");
     assert_eq!(
         report.minimal_loop.candidate_version.as_deref(),
-        Some("v0.1.68")
+        Some("v0.1.69")
     );
     assert_eq!(report.session.status, AgentSessionStatus::Completed);
 
     let state = ForgeState::load(&root).expect("state should remain readable");
-    assert_eq!(state.current_version, "v0.1.67");
-    assert_eq!(state.candidate_version.as_deref(), Some("v0.1.68"));
+    assert_eq!(state.current_version, "v0.1.68");
+    assert_eq!(state.candidate_version.as_deref(), Some("v0.1.69"));
 
     cleanup(&root);
 }
@@ -2341,12 +2592,12 @@ fn agent_evolve_prepares_candidate_runs_cycle_and_completes_session() {
 
     assert_eq!(
         report.prepared_candidate_version.as_deref(),
-        Some("v0.1.67")
+        Some("v0.1.68")
     );
     assert_eq!(report.cycle.previous_version, CURRENT_VERSION);
-    assert_eq!(report.cycle.candidate_version, "v0.1.67");
+    assert_eq!(report.cycle.candidate_version, "v0.1.68");
     assert_eq!(report.cycle.result, CycleResult::Promoted);
-    assert_eq!(report.cycle.state.current_version, "v0.1.67");
+    assert_eq!(report.cycle.state.current_version, "v0.1.68");
     assert_eq!(report.cycle.state.candidate_version, None);
     assert!(report.memory_compaction.is_some());
     assert_eq!(report.session.status, AgentSessionStatus::Completed);
@@ -2377,7 +2628,7 @@ fn agent_evolve_prepares_candidate_runs_cycle_and_completes_session() {
     );
 
     let state = ForgeState::load(&root).expect("state should remain readable");
-    assert_eq!(state.current_version, "v0.1.67");
+    assert_eq!(state.current_version, "v0.1.68");
     assert_eq!(state.candidate_version, None);
     let sessions = app
         .agent_sessions(CURRENT_VERSION, 10)
@@ -2401,10 +2652,10 @@ fn agent_session_list_all_major_finds_evolve_session_after_promotion() {
         .agent_evolve("提升后仍可审计 Agent 会话")
         .expect("agent evolve should promote a candidate");
 
-    assert_eq!(report.cycle.state.current_version, "v0.1.67");
+    assert_eq!(report.cycle.state.current_version, "v0.1.68");
 
     let promoted_version_only = app
-        .agent_sessions("v0.1.67", 10)
+        .agent_sessions("v0.1.68", 10)
         .expect("promoted version scoped session list should be readable");
     assert!(
         promoted_version_only.is_empty(),
@@ -2412,7 +2663,7 @@ fn agent_session_list_all_major_finds_evolve_session_after_promotion() {
     );
 
     let all = app
-        .agent_sessions_all("v0.1.67", 10)
+        .agent_sessions_all("v0.1.68", 10)
         .expect("all major session list should find previous patch session");
     assert_eq!(all.len(), 1);
     assert_eq!(all[0].id, report.session.id);
@@ -2440,9 +2691,9 @@ fn agent_evolve_cycles_existing_candidate_without_preparing_another() {
 
     assert_eq!(report.prepared_candidate_version, None);
     assert_eq!(report.cycle.previous_version, CURRENT_VERSION);
-    assert_eq!(report.cycle.candidate_version, "v0.1.67");
+    assert_eq!(report.cycle.candidate_version, "v0.1.68");
     assert_eq!(report.cycle.result, CycleResult::Promoted);
-    assert_eq!(report.cycle.state.current_version, "v0.1.67");
+    assert_eq!(report.cycle.state.current_version, "v0.1.68");
     assert_eq!(report.cycle.state.candidate_version, None);
     assert_eq!(report.session.status, AgentSessionStatus::Completed);
 

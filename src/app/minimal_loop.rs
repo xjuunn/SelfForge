@@ -106,6 +106,21 @@ pub struct PreflightReport {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentWorkFinalizeCheckReport {
+    pub version: String,
+    pub queue_path: PathBuf,
+    pub goal: String,
+    pub task_count: usize,
+    pub pending_count: usize,
+    pub claimed_count: usize,
+    pub completed_count: usize,
+    pub blocked_count: usize,
+    pub open_errors: Vec<ArchivedErrorEntry>,
+    pub blockers: Vec<String>,
+    pub can_finalize: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BranchCheckReport {
     pub version: String,
     pub current_branch: String,
@@ -601,6 +616,12 @@ pub enum AgentStepExecutionError {
 pub enum AgentStepRunError {
     InvalidStepLimit,
     Step(AgentStepExecutionError),
+}
+
+#[derive(Debug)]
+pub enum AgentWorkFinalizeCheckError {
+    WorkQueue(AgentWorkError),
+    ErrorArchive(ErrorArchiveError),
 }
 
 impl SelfForgeApp {
@@ -2897,6 +2918,47 @@ impl SelfForgeApp {
 
     pub fn agent_work_status(&self, version: &str) -> Result<AgentWorkQueueReport, AgentWorkError> {
         AgentWorkCoordinator::new(&self.root).status(version)
+    }
+
+    pub fn agent_work_finalize_check(
+        &self,
+        version: &str,
+    ) -> Result<AgentWorkFinalizeCheckReport, AgentWorkFinalizeCheckError> {
+        let report = AgentWorkCoordinator::new(&self.root).status(version)?;
+        let pending_count = count_agent_work_tasks(&report, AgentWorkTaskStatus::Pending);
+        let claimed_count = count_agent_work_tasks(&report, AgentWorkTaskStatus::Claimed);
+        let completed_count = count_agent_work_tasks(&report, AgentWorkTaskStatus::Completed);
+        let blocked_count = count_agent_work_tasks(&report, AgentWorkTaskStatus::Blocked);
+        let open_errors = ErrorArchive::new(&self.root)
+            .list_run_errors(version, ErrorListQuery::open(PREFLIGHT_OPEN_ERROR_LIMIT))?;
+
+        let mut blockers = Vec::new();
+        if report.queue.tasks.is_empty() {
+            blockers.push("任务板没有任务，不能确认任务组已经收束。".to_string());
+        }
+        if pending_count > 0 {
+            blockers.push(format!("仍有 {pending_count} 个待领取任务。"));
+        }
+        if claimed_count > 0 {
+            blockers.push(format!("仍有 {claimed_count} 个已领取任务。"));
+        }
+        if !open_errors.is_empty() {
+            blockers.push(format!("仍有 {} 条开放错误。", open_errors.len()));
+        }
+
+        Ok(AgentWorkFinalizeCheckReport {
+            version: version.to_string(),
+            queue_path: report.queue_path,
+            goal: report.queue.goal,
+            task_count: report.queue.tasks.len(),
+            pending_count,
+            claimed_count,
+            completed_count,
+            blocked_count,
+            open_errors,
+            can_finalize: blockers.is_empty(),
+            blockers,
+        })
     }
 
     pub fn compact_agent_work_queue(
@@ -5450,6 +5512,15 @@ fn branch_name_for_task(task_id: &str) -> String {
     }
 }
 
+fn count_agent_work_tasks(report: &AgentWorkQueueReport, status: AgentWorkTaskStatus) -> usize {
+    report
+        .queue
+        .tasks
+        .iter()
+        .filter(|task| task.status == status)
+        .count()
+}
+
 fn current_unix_seconds() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -7620,6 +7691,28 @@ impl Error for AgentStepRunError {
     }
 }
 
+impl fmt::Display for AgentWorkFinalizeCheckError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AgentWorkFinalizeCheckError::WorkQueue(error) => {
+                write!(formatter, "协作任务板收束检查失败：{error}")
+            }
+            AgentWorkFinalizeCheckError::ErrorArchive(error) => {
+                write!(formatter, "协作任务板收束检查读取错误归档失败：{error}")
+            }
+        }
+    }
+}
+
+impl Error for AgentWorkFinalizeCheckError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            AgentWorkFinalizeCheckError::WorkQueue(error) => Some(error),
+            AgentWorkFinalizeCheckError::ErrorArchive(error) => Some(error),
+        }
+    }
+}
+
 impl fmt::Display for AgentStepExecutionError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -7679,6 +7772,18 @@ impl From<AgentToolInvocationError> for AgentStepExecutionError {
 impl From<AgentWorkError> for AgentStepExecutionError {
     fn from(error: AgentWorkError) -> Self {
         AgentStepExecutionError::Work(error)
+    }
+}
+
+impl From<AgentWorkError> for AgentWorkFinalizeCheckError {
+    fn from(error: AgentWorkError) -> Self {
+        AgentWorkFinalizeCheckError::WorkQueue(error)
+    }
+}
+
+impl From<ErrorArchiveError> for AgentWorkFinalizeCheckError {
+    fn from(error: ErrorArchiveError) -> Self {
+        AgentWorkFinalizeCheckError::ErrorArchive(error)
     }
 }
 
