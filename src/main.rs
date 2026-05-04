@@ -1610,10 +1610,56 @@ fn agent_self_loop(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String,
     if command.dry_run {
         return Ok(format_agent_self_loop_preview(&command));
     }
-    boxed(
-        app.run_self_evolution_loop(command.request)
-            .map(format_agent_self_loop_report),
-    )
+    println!("SelfForge AI 过程 启动真实编码自我进化循环，阶段输出会实时显示。");
+    boxed(app.run_self_evolution_loop(command.request).map(|report| {
+        let mut output = format_agent_self_loop_report(report.clone());
+        append_agent_self_loop_coding_details(&mut output, &report);
+        output
+    }))
+}
+
+fn append_agent_self_loop_coding_details(
+    output: &mut String,
+    report: &self_forge::SelfEvolutionLoopReport,
+) {
+    for step in &report.record.steps {
+        if !step.phase_events.is_empty() {
+            output.push_str(&format!("\n轮次 {} AI 过程", step.cycle));
+            for event in &step.phase_events {
+                output.push_str(&format!("\n- {event}"));
+            }
+        }
+        let records = [
+            ("补丁草案", step.patch_draft_id.as_deref()),
+            ("补丁审计", step.patch_audit_id.as_deref()),
+            ("补丁预览", step.patch_preview_id.as_deref()),
+            ("候选应用", step.patch_application_id.as_deref()),
+            ("源码计划", step.patch_source_plan_id.as_deref()),
+            ("源码执行", step.patch_source_execution_id.as_deref()),
+            ("提升衔接", step.patch_source_promotion_id.as_deref()),
+            ("候选准备", step.patch_source_candidate_id.as_deref()),
+            ("版本循环", step.patch_source_cycle_id.as_deref()),
+            ("循环总结", step.patch_source_summary_id.as_deref()),
+        ];
+        let present_records = records
+            .iter()
+            .filter_map(|(label, id)| id.map(|id| format!("{label} {id}")))
+            .collect::<Vec<_>>();
+        if !present_records.is_empty() {
+            output.push_str(&format!(
+                "\n轮次 {} 记录 {}",
+                step.cycle,
+                present_records.join("；")
+            ));
+        }
+        if !step.changed_files.is_empty() {
+            output.push_str(&format!(
+                "\n轮次 {} 真实变更文件 {}",
+                step.cycle,
+                step.changed_files.join("；")
+            ));
+        }
+    }
 }
 
 fn agent_self_loops(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Box<dyn Error>> {

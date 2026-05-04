@@ -1,4 +1,12 @@
-use super::minimal_loop::{AiSelfUpgradeError, AiSelfUpgradeReport, SelfForgeApp};
+use super::agent::{
+    AiPatchApplicationStatus, AiPatchAuditStatus, AiPatchDraftStatus, AiPatchPreviewStatus,
+    AiPatchSourceCandidateStatus, AiPatchSourceCycleFollowUpStatus, AiPatchSourceCycleStatus,
+    AiPatchSourceExecutionStatus, AiPatchSourcePlanStatus, AiPatchSourcePromotionStatus,
+    AiPatchVerificationStatus,
+};
+use super::minimal_loop::SelfForgeApp;
+#[cfg(test)]
+use super::minimal_loop::{AiSelfUpgradeError, AiSelfUpgradeReport};
 use crate::state::{ForgeState, StateError};
 use crate::version::{VersionError, version_major_key};
 use serde::{Deserialize, Serialize};
@@ -7,7 +15,7 @@ use std::fmt;
 use std::fs;
 use std::io;
 use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 mod git_pr;
@@ -56,6 +64,30 @@ pub struct SelfEvolutionLoopStepRecord {
     pub stable_version_after: Option<String>,
     pub audit_id: Option<String>,
     pub summary_id: Option<String>,
+    #[serde(default)]
+    pub phase_events: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub patch_draft_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub patch_audit_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub patch_preview_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub patch_application_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub patch_source_plan_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub patch_source_execution_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub patch_source_promotion_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub patch_source_candidate_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub patch_source_cycle_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub patch_source_summary_id: Option<String>,
+    #[serde(default)]
+    pub changed_files: Vec<String>,
     pub error: Option<String>,
 }
 
@@ -126,16 +158,41 @@ pub enum SelfEvolutionLoopError {
     GitPr(git_pr::SelfEvolutionLoopGitPrError),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SelfEvolutionLoopCycleReport {
+    stable_version_after: String,
+    audit_id: Option<String>,
+    summary_id: Option<String>,
+    phase_events: Vec<String>,
+    patch_draft_id: Option<String>,
+    patch_audit_id: Option<String>,
+    patch_preview_id: Option<String>,
+    patch_application_id: Option<String>,
+    patch_source_plan_id: Option<String>,
+    patch_source_execution_id: Option<String>,
+    patch_source_promotion_id: Option<String>,
+    patch_source_candidate_id: Option<String>,
+    patch_source_cycle_id: Option<String>,
+    patch_source_summary_id: Option<String>,
+    changed_files: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SelfEvolutionLoopCycleError {
+    message: String,
+}
+
 impl SelfForgeApp {
     pub fn run_self_evolution_loop(
         &self,
         request: SelfEvolutionLoopRequest,
     ) -> Result<SelfEvolutionLoopReport, SelfEvolutionLoopError> {
-        self.run_self_evolution_loop_with_executor(request, |app, hint, timeout_ms| {
-            app.ai_self_upgrade(hint, timeout_ms)
+        self.run_self_evolution_loop_with_cycle_executor(request, |app, hint, timeout_ms| {
+            app.run_coding_self_evolution_cycle(hint, timeout_ms)
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn run_self_evolution_loop_with_executor<F>(
         &self,
         request: SelfEvolutionLoopRequest,
@@ -143,6 +200,25 @@ impl SelfForgeApp {
     ) -> Result<SelfEvolutionLoopReport, SelfEvolutionLoopError>
     where
         F: FnMut(&SelfForgeApp, &str, u64) -> Result<AiSelfUpgradeReport, AiSelfUpgradeError>,
+    {
+        self.run_self_evolution_loop_with_cycle_executor(request, |app, hint, timeout_ms| {
+            executor(app, hint, timeout_ms)
+                .map(SelfEvolutionLoopCycleReport::from_self_upgrade_report)
+                .map_err(SelfEvolutionLoopCycleError::from)
+        })
+    }
+
+    pub(crate) fn run_self_evolution_loop_with_cycle_executor<F>(
+        &self,
+        request: SelfEvolutionLoopRequest,
+        mut executor: F,
+    ) -> Result<SelfEvolutionLoopReport, SelfEvolutionLoopError>
+    where
+        F: FnMut(
+            &SelfForgeApp,
+            &str,
+            u64,
+        ) -> Result<SelfEvolutionLoopCycleReport, SelfEvolutionLoopCycleError>,
     {
         validate_self_evolution_loop_request(&request)?;
         let state = ForgeState::load(self.root()).map_err(SelfEvolutionLoopError::State)?;
@@ -183,6 +259,18 @@ impl SelfForgeApp {
                 stable_version_after: None,
                 audit_id: None,
                 summary_id: None,
+                phase_events: Vec::new(),
+                patch_draft_id: None,
+                patch_audit_id: None,
+                patch_preview_id: None,
+                patch_application_id: None,
+                patch_source_plan_id: None,
+                patch_source_execution_id: None,
+                patch_source_promotion_id: None,
+                patch_source_candidate_id: None,
+                patch_source_cycle_id: None,
+                patch_source_summary_id: None,
+                changed_files: Vec::new(),
                 error: None,
             });
             store.save(&mut record)?;
@@ -191,12 +279,12 @@ impl SelfForgeApp {
                 executor(self, &record.hint, record.timeout_ms)
             }));
             match result {
-                Ok(Ok(upgrade)) => {
+                Ok(Ok(cycle_report)) => {
                     match complete_successful_self_evolution_step(
                         self.root(),
                         &store,
                         &mut record,
-                        upgrade,
+                        cycle_report,
                     ) {
                         Ok(()) => {
                             record.completed_cycles += 1;
@@ -258,6 +346,316 @@ impl SelfForgeApp {
     ) -> Result<SelfEvolutionLoopRecord, SelfEvolutionLoopError> {
         let store = SelfEvolutionLoopStore::new(self.root().to_path_buf(), version)?;
         store.load(id)
+    }
+
+    pub(crate) fn run_coding_self_evolution_cycle(
+        &self,
+        hint: &str,
+        timeout_ms: u64,
+    ) -> Result<SelfEvolutionLoopCycleReport, SelfEvolutionLoopCycleError> {
+        let state = ForgeState::load(self.root())
+            .map_err(|error| SelfEvolutionLoopCycleError::new(error.to_string()))?;
+        let version = state.current_version.clone();
+        let mut events = Vec::new();
+        push_cycle_event(
+            &mut events,
+            format!("读取当前状态：稳定版本 {version}，准备执行真实编码循环。"),
+        );
+
+        let goal = build_coding_self_evolution_goal(self.root(), hint);
+        push_cycle_event(
+            &mut events,
+            "已读取项目文件结构、Agents.md 和 README.md，并写入本轮 AI 补丁目标上下文。"
+                .to_string(),
+        );
+
+        let draft = self.ai_patch_draft(&goal, timeout_ms).map_err(|error| {
+            SelfEvolutionLoopCycleError::new(format!("AI 补丁草案失败：{error}"))
+        })?;
+        push_cycle_event(
+            &mut events,
+            format!(
+                "AI 返回补丁草案：{}，状态 {:?}。",
+                draft.record.id, draft.record.status
+            ),
+        );
+        if draft.record.status != AiPatchDraftStatus::Succeeded {
+            return Err(SelfEvolutionLoopCycleError::new(
+                draft
+                    .record
+                    .error
+                    .clone()
+                    .unwrap_or_else(|| "AI 补丁草案未成功，停止本轮循环。".to_string()),
+            ));
+        }
+
+        let audit = self
+            .ai_patch_audit(&version, &draft.record.id)
+            .map_err(|error| {
+                SelfEvolutionLoopCycleError::new(format!("AI 补丁审计失败：{error}"))
+            })?;
+        push_cycle_event(
+            &mut events,
+            format!(
+                "完成补丁审计：{}，状态 {:?}。",
+                audit.record.id, audit.record.status
+            ),
+        );
+        if audit.record.status != AiPatchAuditStatus::Passed {
+            let message = audit
+                .record
+                .findings
+                .iter()
+                .map(|finding| finding.message.clone())
+                .collect::<Vec<_>>()
+                .join("；");
+            let message = if message.trim().is_empty() {
+                "AI 补丁审计未通过，禁止进入源码修改。".to_string()
+            } else {
+                message
+            };
+            return Err(SelfEvolutionLoopCycleError::new(message));
+        }
+
+        let preview = self
+            .ai_patch_preview(&version, &audit.record.id)
+            .map_err(|error| {
+                SelfEvolutionLoopCycleError::new(format!("AI 补丁预览失败：{error}"))
+            })?;
+        push_cycle_event(
+            &mut events,
+            format!(
+                "完成补丁预览：{}，状态 {:?}，变更 {} 个文件。",
+                preview.record.id,
+                preview.record.status,
+                preview.record.changes.len()
+            ),
+        );
+        if preview.record.status != AiPatchPreviewStatus::Previewed
+            || preview.record.changes.is_empty()
+        {
+            return Err(SelfEvolutionLoopCycleError::new(
+                preview
+                    .record
+                    .error
+                    .clone()
+                    .unwrap_or_else(|| "AI 补丁没有可预览的源码变更，禁止提升版本。".to_string()),
+            ));
+        }
+
+        let application = self
+            .ai_patch_apply(&version, &preview.record.id)
+            .map_err(|error| {
+                SelfEvolutionLoopCycleError::new(format!("AI 补丁应用失败：{error}"))
+            })?;
+        push_cycle_event(
+            &mut events,
+            format!(
+                "应用补丁到候选镜像：{}，状态 {:?}，文件 {} 个。",
+                application.record.id,
+                application.record.status,
+                application.record.files.len()
+            ),
+        );
+        if application.record.status != AiPatchApplicationStatus::Applied
+            || application.record.files.is_empty()
+        {
+            return Err(SelfEvolutionLoopCycleError::new(
+                application
+                    .record
+                    .error
+                    .clone()
+                    .unwrap_or_else(|| "AI 补丁未应用任何文件，禁止提升版本。".to_string()),
+            ));
+        }
+
+        let verification = self
+            .ai_patch_verify(&version, &application.record.id, timeout_ms)
+            .map_err(|error| {
+                SelfEvolutionLoopCycleError::new(format!("AI 补丁验证失败：{error}"))
+            })?;
+        push_cycle_event(
+            &mut events,
+            format!(
+                "候选镜像验证完成：状态 {:?}，执行命令 {} 条。",
+                verification.status, verification.executed_count
+            ),
+        );
+        if verification.status != AiPatchVerificationStatus::Passed {
+            return Err(SelfEvolutionLoopCycleError::new(
+                "AI 补丁验证未通过，禁止覆盖源码和提升版本。".to_string(),
+            ));
+        }
+
+        let source_plan = self
+            .ai_patch_source_plan(&version, &application.record.id)
+            .map_err(|error| {
+                SelfEvolutionLoopCycleError::new(format!("源码覆盖计划失败：{error}"))
+            })?;
+        push_cycle_event(
+            &mut events,
+            format!(
+                "源码覆盖计划完成：{}，状态 {:?}，文件 {} 个。",
+                source_plan.record.id,
+                source_plan.record.status,
+                source_plan.record.files.len()
+            ),
+        );
+        if source_plan.record.status != AiPatchSourcePlanStatus::Prepared
+            || source_plan.record.files.is_empty()
+        {
+            return Err(SelfEvolutionLoopCycleError::new(
+                source_plan
+                    .record
+                    .error
+                    .clone()
+                    .unwrap_or_else(|| "源码覆盖计划没有可执行文件，禁止提升版本。".to_string()),
+            ));
+        }
+
+        let source_execution = self
+            .ai_patch_source_execute(&version, &source_plan.record.id, timeout_ms)
+            .map_err(|error| {
+                SelfEvolutionLoopCycleError::new(format!("源码覆盖执行失败：{error}"))
+            })?;
+        let changed_files = source_execution
+            .record
+            .files
+            .iter()
+            .map(|file| file.source_path.clone())
+            .collect::<Vec<_>>();
+        push_cycle_event(
+            &mut events,
+            format!(
+                "源码覆盖执行完成：{}，状态 {:?}，验证 {:?}，文件 {} 个。",
+                source_execution.record.id,
+                source_execution.record.status,
+                source_execution.record.verification_status,
+                changed_files.len()
+            ),
+        );
+        if source_execution.record.status != AiPatchSourceExecutionStatus::Applied
+            || source_execution.record.verification_status != AiPatchVerificationStatus::Passed
+            || source_execution.record.rollback_performed
+            || changed_files.is_empty()
+        {
+            return Err(SelfEvolutionLoopCycleError::new(
+                source_execution.record.error.clone().unwrap_or_else(|| {
+                    "源码覆盖未通过验证或没有真实文件变更，禁止提升版本。".to_string()
+                }),
+            ));
+        }
+
+        let promotion = self
+            .ai_patch_source_promotion(&version, &source_execution.record.id)
+            .map_err(|error| {
+                SelfEvolutionLoopCycleError::new(format!("源码提升衔接失败：{error}"))
+            })?;
+        push_cycle_event(
+            &mut events,
+            format!(
+                "源码提升衔接完成：{}，状态 {:?}。",
+                promotion.record.id, promotion.record.status
+            ),
+        );
+        if promotion.record.status != AiPatchSourcePromotionStatus::Ready {
+            return Err(SelfEvolutionLoopCycleError::new(
+                promotion
+                    .record
+                    .error
+                    .clone()
+                    .unwrap_or_else(|| "源码提升衔接未就绪，禁止准备候选版本。".to_string()),
+            ));
+        }
+
+        let candidate = self
+            .ai_patch_source_candidate(&version, &promotion.record.id)
+            .map_err(|error| {
+                SelfEvolutionLoopCycleError::new(format!("候选版本准备失败：{error}"))
+            })?;
+        push_cycle_event(
+            &mut events,
+            format!(
+                "候选版本准备完成：{}，状态 {:?}，候选 {}。",
+                candidate.record.id, candidate.record.status, candidate.record.candidate_version
+            ),
+        );
+        if !matches!(
+            candidate.record.status,
+            AiPatchSourceCandidateStatus::Prepared | AiPatchSourceCandidateStatus::Reused
+        ) {
+            return Err(SelfEvolutionLoopCycleError::new(
+                candidate
+                    .record
+                    .error
+                    .clone()
+                    .unwrap_or_else(|| "候选版本未准备完成，禁止执行版本循环。".to_string()),
+            ));
+        }
+
+        let cycle = self
+            .ai_patch_source_cycle(&version, &candidate.record.id)
+            .map_err(|error| {
+                SelfEvolutionLoopCycleError::new(format!("候选版本循环失败：{error}"))
+            })?;
+        push_cycle_event(
+            &mut events,
+            format!(
+                "候选版本循环完成：{}，状态 {:?}，稳定版本 {} -> {}。",
+                cycle.record.id,
+                cycle.record.status,
+                cycle.record.stable_version_before,
+                cycle.record.stable_version_after
+            ),
+        );
+        if cycle.record.status != AiPatchSourceCycleStatus::Promoted {
+            return Err(SelfEvolutionLoopCycleError::new(
+                cycle
+                    .record
+                    .error
+                    .clone()
+                    .or_else(|| cycle.record.failure.clone())
+                    .unwrap_or_else(|| "候选版本未提升，停止本轮循环。".to_string()),
+            ));
+        }
+
+        let summary = self
+            .ai_patch_source_cycle_summary(&version, &cycle.record.id)
+            .map_err(|error| SelfEvolutionLoopCycleError::new(format!("循环总结失败：{error}")))?;
+        push_cycle_event(
+            &mut events,
+            format!(
+                "循环总结完成：{}，状态 {:?}，下一任务建议已记录。",
+                summary.record.id, summary.record.status
+            ),
+        );
+        if summary.record.status != AiPatchSourceCycleFollowUpStatus::Promoted {
+            return Err(SelfEvolutionLoopCycleError::new(
+                summary
+                    .record
+                    .failure
+                    .clone()
+                    .unwrap_or_else(|| "循环总结未确认提升结果。".to_string()),
+            ));
+        }
+
+        Ok(SelfEvolutionLoopCycleReport {
+            stable_version_after: cycle.record.stable_version_after.clone(),
+            audit_id: None,
+            summary_id: None,
+            phase_events: events,
+            patch_draft_id: Some(draft.record.id),
+            patch_audit_id: Some(audit.record.id),
+            patch_preview_id: Some(preview.record.id),
+            patch_application_id: Some(application.record.id),
+            patch_source_plan_id: Some(source_plan.record.id),
+            patch_source_execution_id: Some(source_execution.record.id),
+            patch_source_promotion_id: Some(promotion.record.id),
+            patch_source_candidate_id: Some(candidate.record.id),
+            patch_source_cycle_id: Some(cycle.record.id),
+            patch_source_summary_id: Some(summary.record.id),
+            changed_files,
+        })
     }
 }
 
@@ -539,15 +937,27 @@ fn complete_successful_self_evolution_step(
     root: &std::path::Path,
     store: &SelfEvolutionLoopStore,
     record: &mut SelfEvolutionLoopRecord,
-    upgrade: AiSelfUpgradeReport,
+    cycle_report: SelfEvolutionLoopCycleReport,
 ) -> Result<(), git_pr::SelfEvolutionLoopGitPrError> {
     let cycle = {
         let step = record.steps.last_mut().expect("running step should exist");
         step.status = SelfEvolutionLoopStepStatus::Succeeded;
         step.completed_at_unix_seconds = Some(current_unix_seconds());
-        step.stable_version_after = Some(upgrade.evolution.cycle.state.current_version.clone());
-        step.audit_id = Some(upgrade.audit.id.clone());
-        step.summary_id = Some(upgrade.summary.id.clone());
+        step.stable_version_after = Some(cycle_report.stable_version_after.clone());
+        step.audit_id = cycle_report.audit_id.clone();
+        step.summary_id = cycle_report.summary_id.clone();
+        step.phase_events = cycle_report.phase_events.clone();
+        step.patch_draft_id = cycle_report.patch_draft_id.clone();
+        step.patch_audit_id = cycle_report.patch_audit_id.clone();
+        step.patch_preview_id = cycle_report.patch_preview_id.clone();
+        step.patch_application_id = cycle_report.patch_application_id.clone();
+        step.patch_source_plan_id = cycle_report.patch_source_plan_id.clone();
+        step.patch_source_execution_id = cycle_report.patch_source_execution_id.clone();
+        step.patch_source_promotion_id = cycle_report.patch_source_promotion_id.clone();
+        step.patch_source_candidate_id = cycle_report.patch_source_candidate_id.clone();
+        step.patch_source_cycle_id = cycle_report.patch_source_cycle_id.clone();
+        step.patch_source_summary_id = cycle_report.patch_source_summary_id.clone();
+        step.changed_files = cycle_report.changed_files.clone();
         step.cycle
     };
     store
@@ -567,6 +977,52 @@ fn record_failed_self_evolution_step(record: &mut SelfEvolutionLoopRecord, error
     record.failed_cycles += 1;
     record.consecutive_failures += 1;
     record.last_error = Some(truncate_chars(&error, 400));
+}
+
+#[cfg(test)]
+impl SelfEvolutionLoopCycleReport {
+    fn from_self_upgrade_report(report: AiSelfUpgradeReport) -> Self {
+        Self {
+            stable_version_after: report.evolution.cycle.state.current_version.clone(),
+            audit_id: Some(report.audit.id.clone()),
+            summary_id: Some(report.summary.id.clone()),
+            phase_events: vec!["兼容测试执行器：已完成旧版 AI 自我升级目标决策流程。".to_string()],
+            patch_draft_id: None,
+            patch_audit_id: None,
+            patch_preview_id: None,
+            patch_application_id: None,
+            patch_source_plan_id: None,
+            patch_source_execution_id: None,
+            patch_source_promotion_id: None,
+            patch_source_candidate_id: None,
+            patch_source_cycle_id: None,
+            patch_source_summary_id: None,
+            changed_files: Vec::new(),
+        }
+    }
+}
+
+impl SelfEvolutionLoopCycleError {
+    fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+        }
+    }
+}
+
+impl fmt::Display for SelfEvolutionLoopCycleError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+impl Error for SelfEvolutionLoopCycleError {}
+
+#[cfg(test)]
+impl From<AiSelfUpgradeError> for SelfEvolutionLoopCycleError {
+    fn from(error: AiSelfUpgradeError) -> Self {
+        Self::new(error.to_string())
+    }
 }
 
 fn validate_self_evolution_loop_request(
@@ -658,6 +1114,103 @@ fn append_text(path: &PathBuf, text: &str) -> Result<(), SelfEvolutionLoopError>
             path: path.clone(),
             source,
         })
+}
+
+fn build_coding_self_evolution_goal(root: &Path, hint: &str) -> String {
+    let normalized_hint = if hint.trim().is_empty() {
+        "继续实现一个小而可验证的 AI coding 常用能力"
+    } else {
+        hint.trim()
+    };
+    let agents = read_context_file(root, "Agents.md", 8_000)
+        .or_else(|| read_context_file(root, "AGENTS.md", 8_000))
+        .unwrap_or_else(|| "未找到 Agents.md。".to_string());
+    let readme = read_context_file(root, "README.md", 8_000)
+        .unwrap_or_else(|| "未找到 README.md。".to_string());
+    let structure = collect_project_structure(root, 220);
+
+    format!(
+        "用户目标：{normalized_hint}\n\n\
+         本轮必须像编码智能体一样执行真实源码改动，不允许只生成目标、不允许只推进状态版本。\n\
+         必须先基于以下项目上下文规划，再输出可审计的补丁草案；补丁应保持小步、可验证、可回滚。\n\
+         只有当补丁包含真实源码文件变更、候选镜像验证通过、源码覆盖验证通过后，系统才允许准备和提升下一个版本。\n\n\
+         # 已读取项目文件结构\n{structure}\n\n\
+         # 已读取 Agents.md\n{agents}\n\n\
+         # 已读取 README.md\n{readme}\n\n\
+         # 本轮实现要求\n\
+         - 优先补齐 AI coding 常用能力，例如项目上下文读取、代码检索、差异审查、测试建议、补丁生成、补丁验证或循环恢复。\n\
+         - 需要修改 Rust 源码和必要测试；禁止只修改 forge 归档或 state 状态。\n\
+         - 不要修改 `.env`、密钥、target 目录或 Git 元数据。\n\
+         - 输出代码草案时必须包含目标文件路径和完整替换内容，便于后续补丁流水线应用。\n"
+    )
+}
+
+fn read_context_file(root: &Path, relative: &str, max_chars: usize) -> Option<String> {
+    let path = root.join(relative);
+    let text = fs::read_to_string(path).ok()?;
+    Some(truncate_chars(&text, max_chars))
+}
+
+fn collect_project_structure(root: &Path, limit: usize) -> String {
+    let mut result = Vec::new();
+    let mut stack = vec![PathBuf::new()];
+    while let Some(relative) = stack.pop() {
+        if result.len() >= limit {
+            break;
+        }
+        let directory = root.join(&relative);
+        let Ok(entries) = fs::read_dir(&directory) else {
+            continue;
+        };
+        let mut children = entries
+            .filter_map(Result::ok)
+            .filter_map(|entry| {
+                let name = entry.file_name().to_string_lossy().into_owned();
+                if should_skip_structure_entry(&relative, &name) {
+                    return None;
+                }
+                let child_relative = relative.join(&name);
+                let is_dir = entry.file_type().ok()?.is_dir();
+                Some((child_relative, is_dir))
+            })
+            .collect::<Vec<_>>();
+        children.sort_by(|left, right| left.0.cmp(&right.0));
+        for (child, is_dir) in children.into_iter().rev() {
+            if result.len() >= limit {
+                break;
+            }
+            let suffix = if is_dir { "/" } else { "" };
+            result.push(format!("- {}{suffix}", child.display()));
+            if is_dir {
+                stack.push(child);
+            }
+        }
+    }
+    if result.is_empty() {
+        "未能读取项目结构。".to_string()
+    } else {
+        result.join("\n")
+    }
+}
+
+fn should_skip_structure_entry(parent: &Path, name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    if matches!(
+        lower.as_str(),
+        ".git" | "target" | ".env" | ".env.local" | ".env.production"
+    ) {
+        return true;
+    }
+    if parent.as_os_str().is_empty() {
+        return false;
+    }
+    let parent_text = parent.to_string_lossy().replace('\\', "/");
+    parent_text.starts_with("target") || parent_text.starts_with(".git")
+}
+
+fn push_cycle_event(events: &mut Vec<String>, message: String) {
+    eprintln!("SelfForge AI 过程 {message}");
+    events.push(message);
 }
 
 fn current_unix_seconds() -> u64 {

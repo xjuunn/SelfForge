@@ -44,6 +44,8 @@ cargo run -- agent-self-loops --current --limit 10
 
 协作任务、Agent 会话、补丁草案、源码覆盖、自我升级、自我进化循环、版本提升和回滚都依赖当前任务板状态、真实记录编号或最终收束确认。执行这些流程时先运行 `cargo run -- help` 查看完整命令，再用 `agent-work-status`、`agent-sessions`、`agent-patch-drafts`、`agent-patch-audits`、`agent-patch-applications`、`agent-self-upgrades`、`agent-self-loops` 等查询命令取得真实编号。真实 AI 请求使用 `ai-request` 时必须确认环境变量中的密钥可用；普通巡检使用 `ai-request --dry-run`。
 
+执行真实自我进化编码循环使用 `cargo run -- agent-self-loop "目标"`。该命令会读取项目文件结构、`Agents.md` 和 `README.md`，再走 AI 补丁草案、审计、预览、候选镜像应用、验证、源码覆盖、候选准备和版本循环；只有存在真实源码变更且验证通过时才会提升版本。终端会实时输出 `SelfForge AI 过程 ...` 阶段信息；不会输出模型隐藏思考，只输出可审计的阶段状态、AI 可见结果摘要和验证结论。
+
 `agent-self-loop --commit-each-cycle` 只允许创建本地阶段提交；`agent-self-loop --finalize-pr --confirm-finalize` 才允许统一 push、创建 PR、等待 required checks、合并并删除远程任务分支。最终收束前必须先通过 `agent-work-finalize-check`。
 
 # AI 技能加载
