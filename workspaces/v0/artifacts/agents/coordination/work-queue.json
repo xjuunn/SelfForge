@@ -1,10 +1,10 @@
 {
   "version": "v0.1.65",
-  "goal": "增加分支命名建议",
+  "goal": "改为企业级 PR 合并流程",
   "thread_count": 3,
   "lease_duration_seconds": 3600,
-  "created_at_unix_seconds": 1777888867,
-  "updated_at_unix_seconds": 1777889158,
+  "created_at_unix_seconds": 1777889312,
+  "updated_at_unix_seconds": 1777889743,
   "conflict_policy": "同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。",
   "prompt_policy": "每个线程只执行领取到的任务，必须遵守写入范围、依赖关系、验收标准和归档规则。",
   "tasks": [
@@ -25,10 +25,10 @@
       ],
       "status": "Completed",
       "claimed_by": "ai-1",
-      "claimed_at_unix_seconds": 1777888873,
-      "completed_at_unix_seconds": 1777888894,
-      "result": "已在 Agents.md 补充 branch-check --suggest 的只读边界、分支名来源优先级和禁止创建分支规则。",
-      "prompt": "你是 SelfForge 多 AI 协作线程 `ai-1`。\n\n全局目标：增加分支命名建议\n当前任务：coord-001-architecture - 拆解协作架构和提示词边界\n职责 Agent：architect\n任务说明：梳理目标、协作规则、提示词约束、冲突策略和后续扩展点。\n\n必须遵守：\n1. 只完成当前已领取任务，禁止重复实现其他任务。\n2. 只修改写入范围：Agents.md，workspaces/v0/artifacts/agents/coordination/。\n3. 依赖任务：无。\n4. 验收标准：提示词必须说明只处理已领取任务；冲突处理必须明确释放或阻断流程。\n5. 租约到期时间 unix:1777896073，无法继续时必须主动释放任务。\n6. 如发现写入范围冲突、依赖缺失或无法完成，执行 `agent-work-release coord-001-architecture --worker ai-1 --reason 原因`。\n7. 完成后执行必要测试，并执行 `agent-work-complete coord-001-architecture --worker ai-1 --summary 摘要`。\n\n当前仍可领取任务：coord-002-application，coord-003-cli。\n冲突策略：同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。"
+      "claimed_at_unix_seconds": 1777889587,
+      "completed_at_unix_seconds": 1777889743,
+      "result": "已将 Agents.md 中直接合并 master 的流程改为企业级 Pull Request 闸门流程，并同步任务板目标为 PR 合并规范。",
+      "prompt": "你是 SelfForge 多 AI 协作线程 `ai-1`。\n\n全局目标：改为企业级 PR 合并流程\n当前任务：coord-001-architecture - 拆解协作架构和提示词边界\n职责 Agent：architect\n任务说明：梳理目标、协作规则、提示词约束、冲突策略和后续扩展点。\n\n必须遵守：\n1. 只完成当前已领取任务，禁止重复实现其他任务。\n2. 只修改写入范围：Agents.md，workspaces/v0/artifacts/agents/coordination/。\n3. 依赖任务：无。\n4. 验收标准：提示词必须说明只处理已领取任务；冲突处理必须明确释放或阻断流程。\n5. 租约到期时间 unix:1777893187，无法继续时必须主动释放任务。\n6. 如发现写入范围冲突、依赖缺失或无法完成，执行 `agent-work-release coord-001-architecture --worker ai-1 --reason 原因`。\n7. 完成后执行必要测试，并执行 `agent-work-complete coord-001-architecture --worker ai-1 --summary 摘要`。\n\n当前仍可领取任务：coord-002-application，coord-003-cli。\n冲突策略：同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。"
     },
     {
       "id": "coord-002-application",
@@ -46,12 +46,8 @@
         "队列必须写入 major 工作区 artifacts/agents/coordination。",
         "领取必须防止重复任务和写入范围冲突。"
       ],
-      "status": "Completed",
-      "claimed_by": "ai-1",
-      "claimed_at_unix_seconds": 1777888903,
-      "completed_at_unix_seconds": 1777889055,
-      "result": "已在 branch_check 报告中增加 suggested_branch 和来源字段，并实现基于任务编号、worker 已领取任务或任务板下一任务的分支建议。",
-      "prompt": "你是 SelfForge 多 AI 协作线程 `ai-1`。\n\n全局目标：增加分支命名建议\n当前任务：coord-002-application - 实现应用层协作队列\n职责 Agent：builder\n任务说明：实现任务板持久化、领取、完成、释放和冲突检测。\n\n必须遵守：\n1. 只完成当前已领取任务，禁止重复实现其他任务。\n2. 只修改写入范围：src/app/agent/，src/app/minimal_loop.rs，src/app/mod.rs。\n3. 依赖任务：无。\n4. 验收标准：队列必须写入 major 工作区 artifacts/agents/coordination；领取必须防止重复任务和写入范围冲突。\n5. 租约到期时间 unix:1777896103，无法继续时必须主动释放任务。\n6. 如发现写入范围冲突、依赖缺失或无法完成，执行 `agent-work-release coord-002-application --worker ai-1 --reason 原因`。\n7. 完成后执行必要测试，并执行 `agent-work-complete coord-002-application --worker ai-1 --summary 摘要`。\n\n当前仍可领取任务：coord-003-cli。\n冲突策略：同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。"
+      "status": "Pending",
+      "prompt": "你是 SelfForge 多 AI 协作任务的候选执行者。\n\n全局目标：改为企业级 PR 合并流程\n任务编号：coord-002-application\n任务标题：实现应用层协作队列\n职责 Agent：builder\n\n任务描述：实现任务板持久化、领取、完成、释放和冲突检测。\n\n写入范围：src/app/agent/，src/app/minimal_loop.rs，src/app/mod.rs\n\n验收标准：队列必须写入 major 工作区 artifacts/agents/coordination；领取必须防止重复任务和写入范围冲突\n\n协作规则：先领取任务，再修改代码；只处理领取到的任务；不得修改其他任务的写入范围；发现冲突时释放任务并记录原因。"
     },
     {
       "id": "coord-003-cli",
@@ -68,12 +64,8 @@
         "CLI 只能解析参数和展示应用层结果。",
         "领取命令必须输出当前任务提示词。"
       ],
-      "status": "Completed",
-      "claimed_by": "ai-1",
-      "claimed_at_unix_seconds": 1777889061,
-      "completed_at_unix_seconds": 1777889067,
-      "result": "已接入 branch-check --suggest 参数、中文输出建议分支和 README 示例。",
-      "prompt": "你是 SelfForge 多 AI 协作线程 `ai-1`。\n\n全局目标：增加分支命名建议\n当前任务：coord-003-cli - 实现协作命令入口\n职责 Agent：builder\n任务说明：提供初始化、状态查询、领取、完成和释放命令。\n\n必须遵守：\n1. 只完成当前已领取任务，禁止重复实现其他任务。\n2. 只修改写入范围：src/main.rs，README.md。\n3. 依赖任务：无。\n4. 验收标准：CLI 只能解析参数和展示应用层结果；领取命令必须输出当前任务提示词。\n5. 租约到期时间 unix:1777896261，无法继续时必须主动释放任务。\n6. 如发现写入范围冲突、依赖缺失或无法完成，执行 `agent-work-release coord-003-cli --worker ai-1 --reason 原因`。\n7. 完成后执行必要测试，并执行 `agent-work-complete coord-003-cli --worker ai-1 --summary 摘要`。\n\n当前仍可领取任务：无。\n冲突策略：同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。"
+      "status": "Pending",
+      "prompt": "你是 SelfForge 多 AI 协作任务的候选执行者。\n\n全局目标：改为企业级 PR 合并流程\n任务编号：coord-003-cli\n任务标题：实现协作命令入口\n职责 Agent：builder\n\n任务描述：提供初始化、状态查询、领取、完成和释放命令。\n\n写入范围：src/main.rs，README.md\n\n验收标准：CLI 只能解析参数和展示应用层结果；领取命令必须输出当前任务提示词\n\n协作规则：先领取任务，再修改代码；只处理领取到的任务；不得修改其他任务的写入范围；发现冲突时释放任务并记录原因。"
     },
     {
       "id": "coord-004-tests",
@@ -92,12 +84,8 @@
         "必须包含单元、边界和错误测试。",
         "测试必须验证重复领取被阻止。"
       ],
-      "status": "Completed",
-      "claimed_by": "ai-1",
-      "claimed_at_unix_seconds": 1777889071,
-      "completed_at_unix_seconds": 1777889076,
-      "result": "已新增 branch-check --suggest 定向测试并执行 cargo test branch_check，3 个测试全部通过。",
-      "prompt": "你是 SelfForge 多 AI 协作线程 `ai-1`。\n\n全局目标：增加分支命名建议\n当前任务：coord-004-tests - 补充协作队列测试\n职责 Agent：verifier\n任务说明：覆盖单线程领取、多线程不重复领取、依赖阻断、冲突范围和错误完成。\n\n必须遵守：\n1. 只完成当前已领取任务，禁止重复实现其他任务。\n2. 只修改写入范围：src/lib.rs。\n3. 依赖任务：coord-002-application，coord-003-cli。\n4. 验收标准：必须包含单元、边界和错误测试；测试必须验证重复领取被阻止。\n5. 租约到期时间 unix:1777896271，无法继续时必须主动释放任务。\n6. 如发现写入范围冲突、依赖缺失或无法完成，执行 `agent-work-release coord-004-tests --worker ai-1 --reason 原因`。\n7. 完成后执行必要测试，并执行 `agent-work-complete coord-004-tests --worker ai-1 --summary 摘要`。\n\n当前仍可领取任务：无。\n冲突策略：同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。"
+      "status": "Pending",
+      "prompt": "你是 SelfForge 多 AI 协作任务的候选执行者。\n\n全局目标：改为企业级 PR 合并流程\n任务编号：coord-004-tests\n任务标题：补充协作队列测试\n职责 Agent：verifier\n\n任务描述：覆盖单线程领取、多线程不重复领取、依赖阻断、冲突范围和错误完成。\n\n写入范围：src/lib.rs\n\n验收标准：必须包含单元、边界和错误测试；测试必须验证重复领取被阻止\n\n协作规则：先领取任务，再修改代码；只处理领取到的任务；不得修改其他任务的写入范围；发现冲突时释放任务并记录原因。"
     },
     {
       "id": "coord-005-review-archive",
@@ -121,12 +109,8 @@
         "归档必须为中文。",
         "不得创建小版本独立归档文件。"
       ],
-      "status": "Completed",
-      "claimed_by": "ai-1",
-      "claimed_at_unix_seconds": 1777889101,
-      "completed_at_unix_seconds": 1777889158,
-      "result": "已将 branch-check --suggest 分支命名建议、测试结果和无开放错误结论写入 v0 major 聚合归档。",
-      "prompt": "你是 SelfForge 多 AI 协作线程 `ai-1`。\n\n全局目标：增加分支命名建议\n当前任务：coord-005-review-archive - 审查并写入中文归档\n职责 Agent：archivist\n任务说明：审查协作队列规则，补充任务、记忆、版本和错误归档。\n\n必须遵守：\n1. 只完成当前已领取任务，禁止重复实现其他任务。\n2. 只修改写入范围：forge/tasks/v0.md，forge/memory/v0.md，forge/errors/v0.md，forge/versions/v0.md。\n3. 依赖任务：coord-001-architecture，coord-002-application，coord-003-cli，coord-004-tests。\n4. 验收标准：归档必须为中文；不得创建小版本独立归档文件。\n5. 租约到期时间 unix:1777896301，无法继续时必须主动释放任务。\n6. 如发现写入范围冲突、依赖缺失或无法完成，执行 `agent-work-release coord-005-review-archive --worker ai-1 --reason 原因`。\n7. 完成后执行必要测试，并执行 `agent-work-complete coord-005-review-archive --worker ai-1 --summary 摘要`。\n\n当前仍可领取任务：无。\n冲突策略：同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。"
+      "status": "Pending",
+      "prompt": "你是 SelfForge 多 AI 协作任务的候选执行者。\n\n全局目标：改为企业级 PR 合并流程\n任务编号：coord-005-review-archive\n任务标题：审查并写入中文归档\n职责 Agent：archivist\n\n任务描述：审查协作队列规则，补充任务、记忆、版本和错误归档。\n\n写入范围：forge/tasks/v0.md，forge/memory/v0.md，forge/errors/v0.md，forge/versions/v0.md\n\n验收标准：归档必须为中文；不得创建小版本独立归档文件\n\n协作规则：先领取任务，再修改代码；只处理领取到的任务；不得修改其他任务的写入范围；发现冲突时释放任务并记录原因。"
     }
   ],
   "events": [
@@ -723,6 +707,28 @@
       "worker_id": "ai-1",
       "task_id": "coord-005-review-archive",
       "message": "已将 branch-check --suggest 分支命名建议、测试结果和无开放错误结论写入 v0 major 聚合归档。"
+    },
+    {
+      "order": 82,
+      "timestamp_unix_seconds": 1777889312,
+      "action": "restart",
+      "message": "协作队列已从完成状态重开。上一目标：增加分支命名建议。新目标：改为企业级 PR 合并流程。"
+    },
+    {
+      "order": 83,
+      "timestamp_unix_seconds": 1777889587,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-001-architecture",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 84,
+      "timestamp_unix_seconds": 1777889743,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-001-architecture",
+      "message": "已将 Agents.md 中直接合并 master 的流程改为企业级 Pull Request 闸门流程，并同步任务板目标为 PR 合并规范。"
     }
   ]
 }
