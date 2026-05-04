@@ -785,6 +785,98 @@ fn agent_work_block_rejects_completed_task() {
 }
 
 #[test]
+fn agent_work_reset_completed_allows_blocked_terminal_tasks() {
+    let root = temp_root("agent-work-reset-terminal");
+    let app = SelfForgeApp::new(&root);
+
+    app.supervisor()
+        .initialize_current_version()
+        .expect("bootstrap should succeed before terminal reset test");
+    let init = app
+        .init_agent_work_queue(CURRENT_VERSION, "旧协作目标", 2)
+        .expect("work queue should initialize");
+    let mut queue: AgentWorkQueue =
+        serde_json::from_str(&fs::read_to_string(&init.queue_path).expect("queue readable"))
+            .expect("queue json should parse");
+    for (index, task) in queue.tasks.iter_mut().enumerate() {
+        if index == 0 {
+            task.status = AgentWorkTaskStatus::Blocked;
+            task.result = Some("旧任务不再适用".to_string());
+            task.claimed_by = None;
+            task.claimed_at_unix_seconds = None;
+            task.lease_expires_at_unix_seconds = None;
+            task.completed_at_unix_seconds = None;
+        } else {
+            task.status = AgentWorkTaskStatus::Completed;
+            task.result = Some("已完成".to_string());
+            task.claimed_by = Some("ai-1".to_string());
+            task.claimed_at_unix_seconds = Some(1);
+            task.lease_expires_at_unix_seconds = None;
+            task.completed_at_unix_seconds = Some(2);
+        }
+    }
+    fs::write(
+        &init.queue_path,
+        serde_json::to_string_pretty(&queue).expect("queue should serialize"),
+    )
+    .expect("test should write terminal queue");
+
+    let report = app
+        .init_agent_work_queue_with_reset_completed(CURRENT_VERSION, "下一轮协作目标", 4, true)
+        .expect("terminal completed and blocked queue should restart");
+
+    assert!(report.created);
+    assert_eq!(report.queue.goal, "下一轮协作目标");
+    assert_eq!(report.queue.thread_count, 4);
+    assert!(
+        report
+            .queue
+            .tasks
+            .iter()
+            .all(|task| task.status == AgentWorkTaskStatus::Pending)
+    );
+    assert!(
+        report
+            .queue
+            .events
+            .iter()
+            .any(|event| event.action == "init")
+    );
+    assert_eq!(
+        report
+            .queue
+            .events
+            .last()
+            .map(|event| event.action.as_str()),
+        Some("restart")
+    );
+
+    cleanup(&root);
+}
+
+#[test]
+fn agent_work_reset_completed_rejects_active_tasks() {
+    let root = temp_root("agent-work-reset-active");
+    let app = SelfForgeApp::new(&root);
+
+    app.supervisor()
+        .initialize_current_version()
+        .expect("bootstrap should succeed before active reset test");
+    app.init_agent_work_queue(CURRENT_VERSION, "仍有活跃任务", 2)
+        .expect("work queue should initialize");
+    app.claim_agent_work(CURRENT_VERSION, "ai-1", Some("builder"))
+        .expect("task should be claimed before reset");
+
+    let error = app
+        .init_agent_work_queue_with_reset_completed(CURRENT_VERSION, "不应重开", 3, true)
+        .expect_err("active claimed queue must not restart");
+
+    assert!(matches!(error, AgentWorkError::QueueNotCompleted { .. }));
+
+    cleanup(&root);
+}
+
+#[test]
 fn agent_work_queue_rejects_zero_threads() {
     let root = temp_root("agent-work-zero-thread");
     let app = SelfForgeApp::new(&root);

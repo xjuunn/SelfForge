@@ -21,6 +21,13 @@ agent-work-compact --keep-events N
 agent-work-block TASK_ID --reason TEXT
 ```
 
+# 任务板重开
+
+1. 新一轮相关任务组开始前，优先复用当前 major 的同一个 `work-queue.json`。
+2. 当旧队列没有待领取和已领取任务，且任务状态只包含已完成或已阻断时，可以使用 `agent-work-init --reset-completed` 重开下一轮协作。
+3. 存在待领取或已领取任务时禁止重开，必须先完成、释放、阻断或清理过期领取。
+4. 重开必须保留历史事件并追加 `restart` 事件，便于审计上一轮目标和新目标。
+
 # 任务板压缩
 
 1. 任务板是热调度文件，不是永久归档文件。

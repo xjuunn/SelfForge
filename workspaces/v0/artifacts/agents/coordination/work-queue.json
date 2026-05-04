@@ -4,7 +4,7 @@
   "thread_count": 3,
   "lease_duration_seconds": 3600,
   "created_at_unix_seconds": 1777889312,
-  "updated_at_unix_seconds": 1777895539,
+  "updated_at_unix_seconds": 1777896106,
   "conflict_policy": "同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。",
   "prompt_policy": "每个线程只执行领取到的任务，必须遵守写入范围、依赖关系、验收标准和归档规则。",
   "tasks": [
@@ -371,37 +371,42 @@
       "completed_at_unix_seconds": 1777895531,
       "result": "已完成 v0.1.66 最终收束：版本提升、测试夹具同步、v0 聚合归档、完整本地验证，准备统一 push 并创建 PR。",
       "prompt": "已压缩：任务 coord-014-finalize-pr 已完成。完成摘要：已完成 v0.1.66 最终收束：版本提升、测试夹具同步、v0 聚合归档、完整本地验证，准备统一 push 并创建 PR。。执行边界保留在 title、description、write_scope、acceptance 和 result 字段中。"
+    },
+    {
+      "id": "coord-015-terminal-queue-reset",
+      "title": "允许终态任务板重开下一轮协作",
+      "description": "修复 agent-work-init --reset-completed 的终态判断，使只有已完成和已阻断任务、且没有待领取或已领取任务的队列可以被安全重开。",
+      "preferred_agent_id": "builder",
+      "priority": 21,
+      "depends_on": [
+        "coord-014-finalize-pr"
+      ],
+      "write_scope": [
+        "src/app/agent/coordination.rs",
+        "src/tests/agent_core.rs",
+        "README.md",
+        "forge/architecture/agent-rules/agent-coordination.md",
+        "forge/tasks/v0.md",
+        "forge/memory/v0.md",
+        "forge/errors/v0.md",
+        "forge/versions/v0.md",
+        "workspaces/v0/artifacts/agents/coordination/"
+      ],
+      "acceptance": [
+        "agent-work-init --reset-completed 应允许仅包含 Completed 和 Blocked 的终态队列重开。",
+        "仍然禁止存在 Pending 或 Claimed 任务的队列被重开。",
+        "重开后必须保留历史事件并追加 restart 事件。",
+        "必须补充测试和中文文档归档。"
+      ],
+      "status": "Completed",
+      "claimed_by": "ai-1",
+      "claimed_at_unix_seconds": 1777895872,
+      "completed_at_unix_seconds": 1777896100,
+      "result": "已修复终态任务板重开判断：Completed 和 Blocked 混合终态可通过 --reset-completed 重开，Pending 或 Claimed 活跃任务仍拒绝重开，并补充测试、文档和归档。",
+      "prompt": "已压缩：任务 coord-015-terminal-queue-reset 已完成。完成摘要：已修复终态任务板重开判断：Completed 和 Blocked 混合终态可通过 --reset-completed 重开，Pending 或 Claimed 活跃任务仍拒绝重开，并补充测试、文档和归档。。执行边界保留在 title、description、write_scope、acceptance 和 result 字段中。"
     }
   ],
   "events": [
-    {
-      "order": 101,
-      "timestamp_unix_seconds": 1777893719,
-      "action": "claim",
-      "worker_id": "ai-1",
-      "task_id": "coord-011-work-queue-compact",
-      "message": "任务已被工作线程领取。"
-    },
-    {
-      "order": 102,
-      "timestamp_unix_seconds": 1777893958,
-      "action": "complete",
-      "worker_id": "ai-1",
-      "task_id": "coord-011-work-queue-compact",
-      "message": "已新增 agent-work-compact 受控压缩命令，保留任务状态和摘要，压缩已完成任务提示词并裁剪旧事件，同时补充测试和中文文档。"
-    },
-    {
-      "order": 103,
-      "timestamp_unix_seconds": 1777893963,
-      "action": "compact",
-      "message": "协作任务板已压缩：压缩已完成任务提示词 7 个，移除旧事件 82 条，压缩前事件 102 条。"
-    },
-    {
-      "order": 104,
-      "timestamp_unix_seconds": 1777922918,
-      "action": "retarget",
-      "message": "协作队列追加旧任务阻断命令实现任务，避免过期待领取任务误导后续 AI。"
-    },
     {
       "order": 105,
       "timestamp_unix_seconds": 1777894146,
@@ -520,6 +525,34 @@
       "timestamp_unix_seconds": 1777895539,
       "action": "compact",
       "message": "协作任务板已压缩：压缩已完成任务提示词 1 个，移除旧事件 6 条，压缩前事件 26 条。"
+    },
+    {
+      "order": 122,
+      "timestamp_unix_seconds": 1777924669,
+      "action": "retarget",
+      "message": "协作队列追加终态任务板重开修复任务，处理 Completed 和 Blocked 混合终态无法重开的问题。"
+    },
+    {
+      "order": 123,
+      "timestamp_unix_seconds": 1777895872,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-015-terminal-queue-reset",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 124,
+      "timestamp_unix_seconds": 1777896100,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-015-terminal-queue-reset",
+      "message": "已修复终态任务板重开判断：Completed 和 Blocked 混合终态可通过 --reset-completed 重开，Pending 或 Claimed 活跃任务仍拒绝重开，并补充测试、文档和归档。"
+    },
+    {
+      "order": 125,
+      "timestamp_unix_seconds": 1777896106,
+      "action": "compact",
+      "message": "协作任务板已压缩：压缩已完成任务提示词 1 个，移除旧事件 4 条，压缩前事件 24 条。"
     }
   ]
 }
