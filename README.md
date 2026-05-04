@@ -43,7 +43,7 @@ cargo run -- agent-self-loops --current --limit 10
 
 # AI 技能加载
 
-Agent 技能索引写入 `workspaces/v0/artifacts/agents/skills/skill-index.json`。`agent-skills` 只读取技能元数据，不读取技能正文；`agent-skill-select` 根据目标、标签、触发词和能力召回少量技能，并受 `--limit` 与 `--token-budget` 限制。这样即使技能数量达到几百个，默认上下文也只携带轻量索引和少量相关技能正文。`agent-self-upgrade --dry-run` 会展示技能索引、候选、选择、正文和 token 统计；实际自我升级提示词会包含按需技能上下文，无索引时保持只使用当前状态和近期记忆。
+Agent 技能索引写入 `workspaces/v0/artifacts/agents/skills/skill-index.json`。`agent-skills` 只读取技能元数据，不读取技能正文；`agent-skill-select` 根据目标、标签、触发词和能力召回少量技能，并受 `--limit` 与 `--token-budget` 限制。这样即使技能数量达到几百个，默认上下文也只携带轻量索引和少量相关技能正文。`agent-self-upgrade --dry-run` 和 `agent-patch-draft --dry-run` 会展示技能索引、候选、选择、正文和 token 统计；实际自我升级和补丁草案提示词会包含按需技能上下文，无索引时保持只使用当前状态和近期记忆。
 
 # AI 配置
 

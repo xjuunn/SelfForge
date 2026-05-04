@@ -210,6 +210,7 @@ pub struct AiPatchDraftPreview {
     pub request: AiRequestSpec,
     pub preflight: PreflightReport,
     pub insights: MemoryInsightReport,
+    pub skills: AgentSkillSelectionReport,
     pub allowed_write_roots: Vec<String>,
     pub required_sections: Vec<String>,
 }
@@ -446,6 +447,7 @@ pub enum AiSelfUpgradeSummaryError {
 pub enum AiPatchDraftError {
     Preflight(MinimalLoopError),
     Memory(MemoryContextError),
+    Skill(AgentSkillError),
     Ai(AiExecutionError),
     Store(AiPatchDraftStoreError),
     TaskAudit(AiPatchSourceTaskAuditStoreError),
@@ -728,10 +730,18 @@ impl SelfForgeApp {
             normalize_optional_text(goal).unwrap_or_else(|| "生成下一轮 AI 补丁草案".to_string());
         let allowed_write_roots = patch_draft_allowed_write_roots(&preflight.current_version)?;
         let required_sections = patch_draft_required_sections();
+        let mut skill_request =
+            AgentSkillSelectionRequest::new(preflight.current_version.clone(), &goal);
+        skill_request.limit = 4;
+        skill_request.token_budget = 1_600;
+        let skills = self
+            .select_agent_skills(skill_request)
+            .map_err(AiPatchDraftError::Skill)?;
         let prompt = build_ai_patch_draft_prompt(
             &preflight,
             &target_version,
             &insights,
+            &skills,
             &goal,
             &allowed_write_roots,
             &required_sections,
@@ -753,6 +763,7 @@ impl SelfForgeApp {
             request,
             preflight,
             insights,
+            skills,
             allowed_write_roots,
             required_sections,
         })
@@ -4918,6 +4929,7 @@ fn build_ai_patch_draft_prompt(
     preflight: &PreflightReport,
     target_version: &str,
     insights: &MemoryInsightReport,
+    skills: &AgentSkillSelectionReport,
     goal: &str,
     allowed_write_roots: &[String],
     required_sections: &[String],
@@ -4945,6 +4957,8 @@ fn build_ai_patch_draft_prompt(
     for section in required_sections {
         prompt.push_str(&format!("- {section}\n"));
     }
+    prompt.push_str("\n# 按需技能上下文\n");
+    prompt.push_str(&format_agent_skill_context(skills));
     prompt.push_str("\n# 近期成功经验\n");
     prompt.push_str(&format_memory_insight_lines(
         &insights.success_experiences,
@@ -7150,6 +7164,9 @@ impl fmt::Display for AiPatchDraftError {
             AiPatchDraftError::Memory(error) => {
                 write!(formatter, "AI 补丁草案读取记忆失败：{error}")
             }
+            AiPatchDraftError::Skill(error) => {
+                write!(formatter, "AI 补丁草案读取按需技能失败：{error}")
+            }
             AiPatchDraftError::Ai(error) => write!(formatter, "AI 补丁草案请求失败：{error}"),
             AiPatchDraftError::Store(error) => {
                 write!(formatter, "AI 补丁草案记录失败：{error}")
@@ -7197,6 +7214,7 @@ impl Error for AiPatchDraftError {
         match self {
             AiPatchDraftError::Preflight(error) => Some(error),
             AiPatchDraftError::Memory(error) => Some(error),
+            AiPatchDraftError::Skill(error) => Some(error),
             AiPatchDraftError::Ai(error) => Some(error),
             AiPatchDraftError::Store(error) => Some(error),
             AiPatchDraftError::TaskAudit(error) => Some(error),

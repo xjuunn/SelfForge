@@ -1624,7 +1624,7 @@ fn agent_patch_draft(app: &SelfForgeApp, arguments: Vec<String>) -> Result<Strin
         };
         return boxed(preview.map(|preview| {
             format!(
-                "SelfForge AI 补丁草案预览 当前版本 {} 目标版本 {} 提供商 {} 模型 {} 协议 {} 来源审计 {} 记忆来源 {} 允许写入 {} 必要章节 {} 用户目标 {} 提示词字节 {}",
+                "SelfForge AI 补丁草案预览 当前版本 {} 目标版本 {} 提供商 {} 模型 {} 协议 {} 来源审计 {} 记忆来源 {} 技能索引 {} 技能候选 {} 技能选择 {} 技能正文 {} 技能 token {} 允许写入 {} 必要章节 {} 用户目标 {} 提示词字节 {}",
                 preview.current_version,
                 preview.target_version,
                 preview.request.provider_id,
@@ -1632,6 +1632,11 @@ fn agent_patch_draft(app: &SelfForgeApp, arguments: Vec<String>) -> Result<Strin
                 preview.request.protocol,
                 preview.source_task_audit_id.as_deref().unwrap_or("无"),
                 preview.insights.source_versions.len(),
+                preview.skills.index_skill_count,
+                preview.skills.candidate_skill_count,
+                preview.skills.selected_skill_count,
+                preview.skills.loaded_skill_count,
+                preview.skills.estimated_context_tokens,
                 preview.allowed_write_roots.join("、"),
                 preview.required_sections.join("、"),
                 preview.goal,

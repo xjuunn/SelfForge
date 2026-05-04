@@ -355,6 +355,66 @@ mod agent_skill_scaling_tests {
 
         fs::remove_dir_all(root).expect("测试目录应可清理");
     }
+
+    #[test]
+    fn ai_patch_draft_preview_includes_selected_skill_context() {
+        let root = temp_root("skill-patch-draft-context");
+        let app = bootstrap_app(&root);
+        fs::write(
+            root.join(".env"),
+            "SELFFORGE_AI_PROVIDER=deepseek\nDEEPSEEK_API_KEY=test-patch-skill-key\n",
+        )
+        .expect("测试应可写入 .env");
+        fs::write(
+            root.join("forge").join("memory").join("v0.md"),
+            format!(
+                "# v0 记忆记录\n\n## {CURRENT_VERSION}\n\n# 错误总结\n\n本轮没有未解决错误。\n\n# 评估\n\n系统已经具备按需技能索引。\n\n# 优化建议\n\n补丁草案应使用相关技能上下文。\n\n# 可复用经验\n\nAI 提示词必须受 token 预算约束。\n"
+            ),
+        )
+        .expect("测试应可写入记忆归档");
+        fs::create_dir_all(root.join("skills")).expect("测试应可创建技能正文目录");
+        fs::write(
+            root.join("skills").join("patch-draft.md"),
+            "# 补丁草案技能\n\n生成补丁草案时先列计划，再列测试草案和验证命令。",
+        )
+        .expect("测试应可写入技能正文");
+        write_skill_index(
+            &app,
+            &root,
+            vec![AgentSkillMetadata {
+                id: "patch-draft".to_string(),
+                name: "AI 补丁草案技能".to_string(),
+                summary: "帮助 AI 生成受控补丁草案。".to_string(),
+                tags: vec!["补丁草案".to_string(), "AI".to_string()],
+                triggers: vec!["补丁草案".to_string()],
+                capabilities: vec!["patch".to_string()],
+                content_path: Some("skills/patch-draft.md".to_string()),
+                priority: 10,
+                estimated_tokens: 90,
+                enabled: true,
+            }],
+        );
+
+        let preview = app
+            .ai_patch_draft_preview_with_lookup("生成 AI 补丁草案", |_| None)
+            .expect("补丁草案预览应可召回技能上下文");
+
+        assert_eq!(preview.skills.selected_skill_count, 1);
+        assert_eq!(preview.skills.loaded_skill_count, 1);
+        assert!(preview.prompt.contains("# 按需技能上下文"));
+        assert!(preview.prompt.contains("AI 补丁草案技能"));
+        assert!(preview.prompt.contains("先列计划，再列测试草案"));
+        assert!(preview.request.body.to_string().contains("AI 补丁草案技能"));
+        assert!(
+            !preview
+                .request
+                .body
+                .to_string()
+                .contains("test-patch-skill-key")
+        );
+
+        fs::remove_dir_all(root).expect("测试目录应可清理");
+    }
 }
 
 #[cfg(test)]
