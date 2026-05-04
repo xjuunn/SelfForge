@@ -6520,6 +6520,13 @@ fn parse_agent_tool_run_args(
                 limit: command.limit,
             }
         }
+        "code.diff" => {
+            let path = command.prompt.unwrap_or_else(|| ".".to_string());
+            AgentToolInvocationInput::CodeDiff {
+                path,
+                max_bytes: command.max_bytes,
+            }
+        }
         "code.read" => {
             let path = command
                 .prompt

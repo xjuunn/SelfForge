@@ -3,12 +3,15 @@ use std::fmt;
 use std::fs;
 use std::io::{self, Read};
 use std::path::{Component, Path, PathBuf};
+use std::process::Command;
 
 const DEFAULT_CODE_READ_BYTES: usize = 16 * 1024;
 const MAX_CODE_READ_BYTES: usize = 64 * 1024;
 const DEFAULT_CODE_SEARCH_LIMIT: usize = 20;
 const MAX_CODE_SEARCH_LIMIT: usize = 100;
 const CODE_SEARCH_FILE_BYTES: usize = 64 * 1024;
+const DEFAULT_CODE_DIFF_BYTES: usize = 16 * 1024;
+const MAX_CODE_DIFF_BYTES: usize = 64 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentCodeReadReport {
@@ -47,6 +50,15 @@ pub struct AgentCodeListEntry {
     pub bytes: u64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentCodeDiffReport {
+    pub path: String,
+    pub status_entries: Vec<String>,
+    pub diff_bytes: usize,
+    pub truncated: bool,
+    pub diff: String,
+}
+
 #[derive(Debug)]
 pub enum AgentCodeToolError {
     EmptyQuery,
@@ -60,6 +72,11 @@ pub enum AgentCodeToolError {
     Utf8 {
         path: PathBuf,
         source: std::string::FromUtf8Error,
+    },
+    Git {
+        args: Vec<String>,
+        code: Option<i32>,
+        stderr: String,
     },
 }
 
@@ -165,6 +182,49 @@ pub fn list_project_code_files(
         file_count: total_file_count,
         truncated,
         files,
+    })
+}
+
+pub fn inspect_project_code_diff(
+    root: impl AsRef<Path>,
+    path: impl AsRef<str>,
+    max_bytes: usize,
+) -> Result<AgentCodeDiffReport, AgentCodeToolError> {
+    let root = root.as_ref();
+    let requested = path.as_ref();
+    let resolved = resolve_project_path(root, requested)?;
+    if resolved.is_file() && is_sensitive_local_env_file(&resolved) {
+        return Err(AgentCodeToolError::InvalidPath { path: resolved });
+    }
+    let pathspec = git_pathspec(root, &resolved);
+    let status_output = run_git(
+        root,
+        &[
+            "status",
+            "--short",
+            "--untracked-files=all",
+            "--",
+            &pathspec,
+        ],
+    )?;
+    let status_entries = status_output
+        .lines()
+        .map(str::trim_end)
+        .filter(|line| !line.is_empty())
+        .filter(|line| !status_line_mentions_sensitive_file(line))
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+    let diff_output = run_git(root, &["diff", "--no-ext-diff", "--", &pathspec])?;
+    let filtered_diff = filter_sensitive_diff_sections(&diff_output);
+    let max_bytes = bounded_diff_bytes(max_bytes);
+    let (diff, diff_bytes, truncated) = truncate_text_to_bytes(filtered_diff, max_bytes)?;
+
+    Ok(AgentCodeDiffReport {
+        path: relative_path(root, &resolved),
+        status_entries,
+        diff_bytes,
+        truncated,
+        diff,
     })
 }
 
@@ -336,6 +396,71 @@ fn is_sensitive_local_env_file(path: &Path) -> bool {
         .is_some_and(|name| name == ".env" || (name.starts_with(".env.") && name != ".env.example"))
 }
 
+fn status_line_mentions_sensitive_file(line: &str) -> bool {
+    let payload = line.get(3..).unwrap_or(line);
+    payload
+        .split(" -> ")
+        .any(|path| is_sensitive_relative_path(path.trim_matches('"')))
+}
+
+fn filter_sensitive_diff_sections(diff: &str) -> String {
+    let mut output = String::new();
+    let mut keep_section = true;
+    for line in diff.lines() {
+        if let Some(rest) = line.strip_prefix("diff --git ") {
+            keep_section = !diff_header_mentions_sensitive_file(rest);
+        }
+        if keep_section {
+            output.push_str(line);
+            output.push('\n');
+        }
+    }
+    output
+}
+
+fn diff_header_mentions_sensitive_file(rest: &str) -> bool {
+    rest.split_whitespace().any(|part| {
+        part.strip_prefix("a/")
+            .or_else(|| part.strip_prefix("b/"))
+            .is_some_and(is_sensitive_relative_path)
+    })
+}
+
+fn is_sensitive_relative_path(value: &str) -> bool {
+    is_sensitive_local_env_file(Path::new(value))
+}
+
+fn git_pathspec(root: &Path, path: &Path) -> String {
+    let relative = relative_path(root, path);
+    if relative.is_empty() {
+        ".".to_string()
+    } else {
+        relative
+    }
+}
+
+fn run_git(root: &Path, args: &[&str]) -> Result<String, AgentCodeToolError> {
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(root)
+        .output()
+        .map_err(|source| AgentCodeToolError::Io {
+            path: root.to_path_buf(),
+            source,
+        })?;
+    if !output.status.success() {
+        return Err(AgentCodeToolError::Git {
+            args: args.iter().map(|arg| (*arg).to_string()).collect(),
+            code: output.status.code(),
+            stderr: String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        });
+    }
+    String::from_utf8(output.stdout).map_err(|source| AgentCodeToolError::Utf8 {
+        path: root.to_path_buf(),
+        source,
+    })
+}
+
 fn bounded_read_bytes(value: usize) -> usize {
     if value == 0 {
         DEFAULT_CODE_READ_BYTES
@@ -350,6 +475,32 @@ fn bounded_search_limit(value: usize) -> usize {
     } else {
         value.min(MAX_CODE_SEARCH_LIMIT)
     }
+}
+
+fn bounded_diff_bytes(value: usize) -> usize {
+    if value == 0 {
+        DEFAULT_CODE_DIFF_BYTES
+    } else {
+        value.min(MAX_CODE_DIFF_BYTES)
+    }
+}
+
+fn truncate_text_to_bytes(
+    content: String,
+    max_bytes: usize,
+) -> Result<(String, usize, bool), AgentCodeToolError> {
+    let mut buffer = content.into_bytes();
+    let truncated = buffer.len() > max_bytes;
+    if truncated {
+        buffer.truncate(max_bytes);
+        trim_utf8_boundary(&mut buffer);
+    }
+    let bytes = buffer.len();
+    let text = String::from_utf8(buffer).map_err(|source| AgentCodeToolError::Utf8 {
+        path: PathBuf::new(),
+        source,
+    })?;
+    Ok((text, bytes, truncated))
 }
 
 fn relative_path(root: &Path, path: &Path) -> String {
@@ -373,6 +524,13 @@ impl fmt::Display for AgentCodeToolError {
             AgentCodeToolError::Io { path, source } => {
                 write!(formatter, "{}: {}", path.display(), source)
             }
+            AgentCodeToolError::Git { args, code, stderr } => {
+                write!(
+                    formatter,
+                    "Git 只读命令失败 {:?} 退出 {:?}: {}",
+                    args, code, stderr
+                )
+            }
             AgentCodeToolError::Utf8 { path, source } => {
                 write!(
                     formatter,
@@ -390,7 +548,9 @@ impl Error for AgentCodeToolError {
         match self {
             AgentCodeToolError::Io { source, .. } => Some(source),
             AgentCodeToolError::Utf8 { source, .. } => Some(source),
-            AgentCodeToolError::EmptyQuery | AgentCodeToolError::InvalidPath { .. } => None,
+            AgentCodeToolError::EmptyQuery
+            | AgentCodeToolError::InvalidPath { .. }
+            | AgentCodeToolError::Git { .. } => None,
         }
     }
 }

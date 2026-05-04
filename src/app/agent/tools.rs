@@ -373,6 +373,18 @@ fn builtin_tools() -> Vec<AgentToolDefinition> {
             vec!["architect", "builder", "verifier", "reviewer"],
         ),
         AgentToolDefinition::builtin(
+            "code.diff",
+            "项目差异查看",
+            "查看项目 Git 工作区状态和有限差异内容，过滤本地敏感环境文件。",
+            "code",
+            vec![
+                AgentCapability::Implementation,
+                AgentCapability::Review,
+                AgentCapability::Testing,
+            ],
+            vec!["builder", "verifier", "reviewer"],
+        ),
+        AgentToolDefinition::builtin(
             "code.search",
             "项目代码搜索",
             "在项目根目录内搜索文本，跳过 target 和 .git，并返回有限匹配。",

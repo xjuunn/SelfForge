@@ -46,6 +46,10 @@ pub enum AgentToolInvocationInput {
         path: String,
         limit: usize,
     },
+    CodeDiff {
+        path: String,
+        max_bytes: usize,
+    },
     ForgeArchiveStatus,
 }
 

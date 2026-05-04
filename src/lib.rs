@@ -26,23 +26,24 @@ pub use version::{
 pub const CURRENT_VERSION: &str = "v0.1.71";
 
 pub use app::{
-    AgentCapability, AgentCodeListEntry, AgentCodeListReport, AgentCodeReadReport,
-    AgentCodeSearchMatch, AgentCodeSearchReport, AgentCodeToolError, AgentDefinition, AgentError,
-    AgentEvolutionError, AgentEvolutionReport, AgentPlan, AgentPlanReport, AgentPlanReportError,
-    AgentPlanStep, AgentRegistry, AgentRunError, AgentRunReference, AgentRunReport, AgentSession,
-    AgentSessionError, AgentSessionEvent, AgentSessionEventKind, AgentSessionMemoryInsight,
-    AgentSessionPlanContext, AgentSessionStatus, AgentSessionStep, AgentSessionStore,
-    AgentSessionSummary, AgentSessionWorkQueueContext, AgentSingleEvolutionReport, AgentSkillError,
-    AgentSkillIndex, AgentSkillIndexReport, AgentSkillMetadata, AgentSkillSelection,
-    AgentSkillSelectionReport, AgentSkillSelectionRequest, AgentStepExecutionError,
-    AgentStepExecutionReport, AgentStepExecutionRequest, AgentStepRunError, AgentStepRunReport,
-    AgentStepRunStop, AgentStepStatus, AgentToolAssignment, AgentToolBinding, AgentToolConfig,
-    AgentToolConfigInitReport, AgentToolDefinition, AgentToolError, AgentToolInvocation,
-    AgentToolInvocationError, AgentToolInvocationInput, AgentToolInvocationReport, AgentToolReport,
-    AgentVerificationReport, AgentWorkClaimReport, AgentWorkCompactionReport, AgentWorkCoordinator,
-    AgentWorkError, AgentWorkEvent, AgentWorkFinalizeCheckError, AgentWorkFinalizeCheckReport,
-    AgentWorkQueue, AgentWorkQueueReport, AgentWorkReapReport, AgentWorkTask, AgentWorkTaskStatus,
-    AiConfigError, AiConfigReport, AiExecutionError, AiExecutionReport, AiPatchApplicationError,
+    AgentCapability, AgentCodeDiffReport, AgentCodeListEntry, AgentCodeListReport,
+    AgentCodeReadReport, AgentCodeSearchMatch, AgentCodeSearchReport, AgentCodeToolError,
+    AgentDefinition, AgentError, AgentEvolutionError, AgentEvolutionReport, AgentPlan,
+    AgentPlanReport, AgentPlanReportError, AgentPlanStep, AgentRegistry, AgentRunError,
+    AgentRunReference, AgentRunReport, AgentSession, AgentSessionError, AgentSessionEvent,
+    AgentSessionEventKind, AgentSessionMemoryInsight, AgentSessionPlanContext, AgentSessionStatus,
+    AgentSessionStep, AgentSessionStore, AgentSessionSummary, AgentSessionWorkQueueContext,
+    AgentSingleEvolutionReport, AgentSkillError, AgentSkillIndex, AgentSkillIndexReport,
+    AgentSkillMetadata, AgentSkillSelection, AgentSkillSelectionReport, AgentSkillSelectionRequest,
+    AgentStepExecutionError, AgentStepExecutionReport, AgentStepExecutionRequest,
+    AgentStepRunError, AgentStepRunReport, AgentStepRunStop, AgentStepStatus, AgentToolAssignment,
+    AgentToolBinding, AgentToolConfig, AgentToolConfigInitReport, AgentToolDefinition,
+    AgentToolError, AgentToolInvocation, AgentToolInvocationError, AgentToolInvocationInput,
+    AgentToolInvocationReport, AgentToolReport, AgentVerificationReport, AgentWorkClaimReport,
+    AgentWorkCompactionReport, AgentWorkCoordinator, AgentWorkError, AgentWorkEvent,
+    AgentWorkFinalizeCheckError, AgentWorkFinalizeCheckReport, AgentWorkQueue,
+    AgentWorkQueueReport, AgentWorkReapReport, AgentWorkTask, AgentWorkTaskStatus, AiConfigError,
+    AiConfigReport, AiExecutionError, AiExecutionReport, AiPatchApplicationError,
     AiPatchApplicationFile, AiPatchApplicationRecord, AiPatchApplicationReport,
     AiPatchApplicationStatus, AiPatchApplicationStore, AiPatchApplicationStoreError,
     AiPatchApplicationSummary, AiPatchAuditError, AiPatchAuditFinding, AiPatchAuditFindingKind,
@@ -89,8 +90,8 @@ pub use app::{
     SelfEvolutionLoopGitPrRequest, SelfEvolutionLoopRecord, SelfEvolutionLoopReport,
     SelfEvolutionLoopRequest, SelfEvolutionLoopStatus, SelfEvolutionLoopStepRecord,
     SelfEvolutionLoopStepStatus, SelfEvolutionLoopSummary, SelfForgeApp,
-    format_agent_skill_context, list_project_code_files, normalize_ai_self_upgrade_goal,
-    read_project_code_file, search_project_code,
+    format_agent_skill_context, inspect_project_code_diff, list_project_code_files,
+    normalize_ai_self_upgrade_goal, read_project_code_file, search_project_code,
 };
 
 #[cfg(test)]
@@ -601,6 +602,7 @@ mod agent_code_tool_tests {
     use super::*;
     use std::fs;
     use std::path::PathBuf;
+    use std::process::Command;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn temp_root(name: &str) -> PathBuf {
@@ -619,6 +621,20 @@ mod agent_code_tool_tests {
         app
     }
 
+    fn run_git(root: &PathBuf, args: &[&str]) {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(root)
+            .output()
+            .expect("测试应可执行 Git 命令");
+        assert!(
+            output.status.success(),
+            "Git 命令应成功：{:?}\n{}",
+            args,
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
     #[test]
     fn agent_tools_assign_common_code_tools_to_coding_agents() {
         let root = temp_root("code-tool-assignments");
@@ -631,9 +647,12 @@ mod agent_code_tool_tests {
 
         assert!(builder.contains(&"code.search".to_string()));
         assert!(builder.contains(&"code.read".to_string()));
+        assert!(builder.contains(&"code.diff".to_string()));
         assert!(verifier.contains(&"code.read".to_string()));
+        assert!(verifier.contains(&"code.diff".to_string()));
         assert!(reviewer.contains(&"code.search".to_string()));
         assert!(reviewer.contains(&"code.read".to_string()));
+        assert!(reviewer.contains(&"code.diff".to_string()));
 
         fs::remove_dir_all(root).expect("测试目录应可清理");
     }
@@ -750,6 +769,70 @@ mod agent_code_tool_tests {
             })
             .expect_err("本地环境文件读取必须被拒绝");
         assert!(error.to_string().contains("不允许越过项目根目录"));
+
+        fs::remove_dir_all(root).expect("测试目录应可清理");
+    }
+
+    #[test]
+    fn agent_tool_invocation_reports_project_code_diff() {
+        let root = temp_root("code-tool-diff");
+        let app = bootstrap_app(&root);
+        run_git(&root, &["init"]);
+        run_git(&root, &["config", "user.email", "test@example.com"]);
+        run_git(&root, &["config", "user.name", "SelfForge Test"]);
+        run_git(&root, &["add", "."]);
+        run_git(&root, &["commit", "-m", "初始提交"]);
+
+        fs::write(root.join("README.md"), "# SelfForge\n\n变更标记\n")
+            .expect("测试应可修改 README");
+        fs::write(root.join(".env"), "OPENAI_API_KEY=secret\n").expect("测试应可写入本地环境文件");
+
+        let report = app
+            .invoke_agent_tool(AgentToolInvocation {
+                agent_id: "builder".to_string(),
+                tool_id: "code.diff".to_string(),
+                version: CURRENT_VERSION.to_string(),
+                input: AgentToolInvocationInput::CodeDiff {
+                    path: ".".to_string(),
+                    max_bytes: 2_000,
+                },
+            })
+            .expect("差异查看工具应可调用");
+
+        assert!(report.summary.contains("状态 1 条"));
+        assert!(report.summary.contains("截断 false"));
+        assert!(
+            report
+                .details
+                .iter()
+                .any(|detail| detail.contains("README.md"))
+        );
+        assert!(
+            report
+                .details
+                .iter()
+                .any(|detail| detail.contains("变更标记"))
+        );
+        assert!(!report.details.iter().any(|detail| detail.contains(".env")));
+        assert!(
+            !report
+                .details
+                .iter()
+                .any(|detail| detail.contains("secret"))
+        );
+
+        let truncated = app
+            .invoke_agent_tool(AgentToolInvocation {
+                agent_id: "builder".to_string(),
+                tool_id: "code.diff".to_string(),
+                version: CURRENT_VERSION.to_string(),
+                input: AgentToolInvocationInput::CodeDiff {
+                    path: "README.md".to_string(),
+                    max_bytes: 40,
+                },
+            })
+            .expect("差异查看工具应支持截断");
+        assert!(truncated.summary.contains("截断 true"));
 
         fs::remove_dir_all(root).expect("测试目录应可清理");
     }

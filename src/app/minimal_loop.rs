@@ -37,9 +37,9 @@ use super::agent::{
     AiSelfUpgradeAuditStore, AiSelfUpgradeAuditSummary, AiSelfUpgradeSummaryIndexEntry,
     AiSelfUpgradeSummaryRecord, AiSelfUpgradeSummaryStatus, AiSelfUpgradeSummaryStore,
     AiSelfUpgradeSummaryStoreError, apply_tools_to_plan, format_agent_skill_context,
-    initialize_agent_skill_index, initialize_agent_tool_config, list_project_code_files,
-    load_agent_skill_index, load_agent_tool_report, read_project_code_file, search_project_code,
-    select_agent_skills,
+    initialize_agent_skill_index, initialize_agent_tool_config, inspect_project_code_diff,
+    list_project_code_files, load_agent_skill_index, load_agent_tool_report,
+    read_project_code_file, search_project_code, select_agent_skills,
 };
 use super::ai_provider::{
     AiConfigError, AiConfigReport, AiExecutionError, AiExecutionReport, AiProviderRegistry,
@@ -3547,6 +3547,37 @@ impl SelfForgeApp {
                     expected: "CodeList".to_string(),
                 }),
             },
+            "code.diff" => match input {
+                AgentToolInvocationInput::CodeDiff { path, max_bytes } => {
+                    let report = inspect_project_code_diff(&self.root, &path, max_bytes)?;
+                    let mut details = report
+                        .status_entries
+                        .iter()
+                        .map(|entry| format!("状态 {}", entry))
+                        .collect::<Vec<_>>();
+                    if !report.diff.is_empty() {
+                        details.push(format!("差异:\n{}", report.diff));
+                    }
+                    Ok(AgentToolInvocationReport {
+                        agent_id,
+                        tool_id,
+                        version,
+                        summary: format!(
+                            "项目差异查看完成，路径 {}，状态 {} 条，diff 字节 {}，截断 {}。",
+                            report.path,
+                            report.status_entries.len(),
+                            report.diff_bytes,
+                            report.truncated
+                        ),
+                        details,
+                        run: None,
+                    })
+                }
+                _ => Err(AgentToolInvocationError::UnsupportedInput {
+                    tool_id,
+                    expected: "CodeDiff".to_string(),
+                }),
+            },
             "code.read" => match input {
                 AgentToolInvocationInput::CodeRead { path, max_bytes } => {
                     let report = read_project_code_file(&self.root, &path, max_bytes)?;
@@ -4527,6 +4558,23 @@ impl SelfForgeApp {
                     path,
                     limit: request.limit,
                 }
+            }
+            "code.diff" => {
+                let explicit_tool = request.tool_id.as_deref() == Some(tool_id);
+                let Some(path) = request.prompt.clone().or_else(|| {
+                    if explicit_tool {
+                        Some(".".to_string())
+                    } else {
+                        None
+                    }
+                }) else {
+                    return Err(AgentStepExecutionError::InputRequired {
+                        step_order: step.order,
+                        tool_id: tool_id.to_string(),
+                        input: "prompt".to_string(),
+                    });
+                };
+                AgentToolInvocationInput::CodeDiff { path, max_bytes: 0 }
             }
             "code.read" => {
                 let Some(prompt) = &request.prompt else {
