@@ -21,7 +21,9 @@ SelfForge 必须跨 Windows、macOS、Linux 运行，核心执行引擎使用 Ru
 5. 认知类记录必须写入当前 major 聚合归档，禁止为 patch 或 minor 新建独立归档文件。
 6. 提交前必须完成必要验证；PR 必须等待 required checks 通过后才能合并。
 7. API Key 只能来自环境变量或本地 `.env`，禁止写入源码、文档、日志、状态或运行记录。
-8. 发现冲突、越权写入、测试失败或开放错误时必须停止并记录原因，禁止静默继续。
+8. 相关任务组在本地分支内完成后统一推送，禁止每个小任务都 push；提交或 PR 必须关联 Issue #1。
+9. 每轮回复结尾必须包含任务进度和未完成任务列表。
+10. 发现冲突、越权写入、测试失败或开放错误时必须停止并记录原因，禁止静默继续。
 
 ---
 
@@ -34,8 +36,8 @@ SelfForge 必须跨 Windows、macOS、Linux 运行，核心执行引擎使用 Ru
 5. 初始化或更新任务板，然后领取任务：`cargo run -- agent-work-claim --worker ai-1 --agent <AGENT_ID>`。
 6. 修改当前任务允许的文件。
 7. 至少执行 `cargo fmt --check`、`cargo test`、`cargo run -- validate`、`cargo run -- preflight`、`cargo run -- errors --current --open`。
-8. 完成任务板任务并提交，提交标题必须包含版本号。
-9. 推送分支并创建 Pull Request。
+8. 完成当前相关任务组内所有任务，按需要本地提交，提交标题必须包含版本号。
+9. 任务组收束后统一推送分支并创建 Pull Request，提交正文或 PR 正文必须包含 `Refs #1`。
 10. PR 合并后同步 `master`，重新执行关键验证，删除本地任务分支。
 
 ---
