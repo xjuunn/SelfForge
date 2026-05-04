@@ -53,8 +53,8 @@ use super::memory::{
 };
 use crate::{
     CycleReport, CycleResult, EvolutionError, ExecutionError, ExecutionReport, ForgeError,
-    ForgeState, StateError, Supervisor, VersionError, next_version_after, version_major_file_name,
-    version_major_key,
+    ForgeState, RunQuery, StateError, Supervisor, VersionError, next_version_after,
+    version_major_file_name, version_major_key,
 };
 use std::error::Error;
 use std::fmt;
@@ -588,6 +588,7 @@ pub enum AgentRunError {
 pub enum AgentToolInvocationError {
     Tools(AgentToolError),
     Code(AgentCodeToolError),
+    Runtime(ExecutionError),
     Memory(MemoryContextError),
     Session(AgentSessionError),
     Run(AgentRunError),
@@ -3469,6 +3470,101 @@ impl SelfForgeApp {
                     expected: "RuntimeRun".to_string(),
                 }),
             },
+            "command.run" => match input {
+                AgentToolInvocationInput::CommandRun {
+                    target_version,
+                    program,
+                    args,
+                    timeout_ms,
+                } => {
+                    let execution = self.supervisor.execute_in_workspace(
+                        &target_version,
+                        &program,
+                        &args,
+                        timeout_ms,
+                    )?;
+                    let run = runtime_execution_reference(&self.root, &execution);
+                    let run_id = run
+                        .as_ref()
+                        .map(|reference| reference.run_id.clone())
+                        .unwrap_or_else(|| "未知运行编号".to_string());
+                    Ok(AgentToolInvocationReport {
+                        agent_id,
+                        tool_id,
+                        version,
+                        summary: format!(
+                            "命令运行 {run_id} 完成，目标版本 {}，退出码 {:?}，超时 {}。",
+                            execution.version, execution.exit_code, execution.timed_out
+                        ),
+                        details: vec![
+                            format!("程序 {}", execution.program),
+                            format!("参数 {}", format_command_args(&execution.args)),
+                            format!(
+                                "标准输出 {} 字节，标准错误 {} 字节。",
+                                execution.stdout.len(),
+                                execution.stderr.len()
+                            ),
+                            format!(
+                                "运行目录 {}",
+                                relative_path_text(&self.root, &execution.run_dir)
+                            ),
+                        ],
+                        run,
+                    })
+                }
+                _ => Err(AgentToolInvocationError::UnsupportedInput {
+                    tool_id,
+                    expected: "CommandRun".to_string(),
+                }),
+            },
+            "command.history" => match input {
+                AgentToolInvocationInput::CommandHistory {
+                    target_version,
+                    limit,
+                    failed_only,
+                    timed_out_only,
+                } => {
+                    let entries = self.supervisor.query_runs(
+                        &target_version,
+                        RunQuery {
+                            limit,
+                            failed_only,
+                            timed_out_only,
+                        },
+                    )?;
+                    Ok(AgentToolInvocationReport {
+                        agent_id,
+                        tool_id,
+                        version,
+                        summary: format!(
+                            "命令历史查询完成，目标版本 {}，返回运行记录 {} 条。",
+                            target_version,
+                            entries.len()
+                        ),
+                        details: entries
+                            .iter()
+                            .map(|entry| {
+                                format!(
+                                    "{} 程序 {} 参数 {} 退出 {:?} 超时 {} stdout {} 字节 stderr {} 字节 报告 {}",
+                                    entry.run_id,
+                                    entry.program,
+                                    format_command_args(&entry.args),
+                                    entry.exit_code,
+                                    entry.timed_out,
+                                    entry.stdout_bytes,
+                                    entry.stderr_bytes,
+                                    entry.report_file
+                                )
+                            })
+                            .collect(),
+                        run: None,
+                    })
+                }
+                _ => Err(AgentToolInvocationError::UnsupportedInput {
+                    tool_id,
+                    expected: "CommandHistory".to_string(),
+                }),
+            },
             "ai.request" => match input {
                 AgentToolInvocationInput::AiRequestPreview { prompt } => {
                     let spec = self.ai_request_preview(&prompt)?;
@@ -4606,6 +4702,34 @@ impl SelfForgeApp {
                     program: program.clone(),
                     args: request.args.clone(),
                     timeout_ms: request.timeout_ms,
+                }
+            }
+            "command.run" => {
+                let Some(program) = &request.program else {
+                    return Err(AgentStepExecutionError::InputRequired {
+                        step_order: step.order,
+                        tool_id: tool_id.to_string(),
+                        input: "PROGRAM".to_string(),
+                    });
+                };
+                AgentToolInvocationInput::CommandRun {
+                    target_version: request.target_version.clone(),
+                    program: program.clone(),
+                    args: request.args.clone(),
+                    timeout_ms: request.timeout_ms,
+                }
+            }
+            "command.history" => {
+                if request.tool_id.as_deref() != Some(tool_id) {
+                    return Err(AgentStepExecutionError::NoRunnableTool {
+                        step_order: step.order,
+                    });
+                }
+                AgentToolInvocationInput::CommandHistory {
+                    target_version: request.target_version.clone(),
+                    limit: request.limit,
+                    failed_only: false,
+                    timed_out_only: false,
                 }
             }
             "ai.request" => {
@@ -5748,6 +5872,40 @@ fn count_agent_work_tasks(report: &AgentWorkQueueReport, status: AgentWorkTaskSt
         .iter()
         .filter(|task| task.status == status)
         .count()
+}
+
+fn runtime_execution_reference(
+    root: &Path,
+    execution: &ExecutionReport,
+) -> Option<AgentRunReference> {
+    let run_id = execution
+        .run_dir
+        .file_name()
+        .and_then(|name| name.to_str())?
+        .to_string();
+    let report_path = execution.run_dir.join("report.json");
+    Some(AgentRunReference {
+        run_id,
+        version: execution.version.clone(),
+        report_file: relative_path_text(root, &report_path),
+        exit_code: execution.exit_code,
+        timed_out: execution.timed_out,
+    })
+}
+
+fn relative_path_text(root: &Path, path: &Path) -> String {
+    path.strip_prefix(root)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .replace('\\', "/")
+}
+
+fn format_command_args(args: &[String]) -> String {
+    if args.is_empty() {
+        "无".to_string()
+    } else {
+        args.join(" ")
+    }
 }
 
 fn current_unix_seconds() -> u64 {
@@ -7809,6 +7967,7 @@ impl fmt::Display for AgentToolInvocationError {
         match self {
             AgentToolInvocationError::Tools(error) => write!(formatter, "{error}"),
             AgentToolInvocationError::Code(error) => write!(formatter, "{error}"),
+            AgentToolInvocationError::Runtime(error) => write!(formatter, "{error}"),
             AgentToolInvocationError::Memory(error) => write!(formatter, "{error}"),
             AgentToolInvocationError::Session(error) => write!(formatter, "{error}"),
             AgentToolInvocationError::Run(error) => write!(formatter, "{error}"),
@@ -7834,6 +7993,7 @@ impl Error for AgentToolInvocationError {
         match self {
             AgentToolInvocationError::Tools(error) => Some(error),
             AgentToolInvocationError::Code(error) => Some(error),
+            AgentToolInvocationError::Runtime(error) => Some(error),
             AgentToolInvocationError::Memory(error) => Some(error),
             AgentToolInvocationError::Session(error) => Some(error),
             AgentToolInvocationError::Run(error) => Some(error),
@@ -7856,6 +8016,12 @@ impl From<AgentToolError> for AgentToolInvocationError {
 impl From<AgentCodeToolError> for AgentToolInvocationError {
     fn from(error: AgentCodeToolError) -> Self {
         AgentToolInvocationError::Code(error)
+    }
+}
+
+impl From<ExecutionError> for AgentToolInvocationError {
+    fn from(error: ExecutionError) -> Self {
+        AgentToolInvocationError::Runtime(error)
     }
 }
 

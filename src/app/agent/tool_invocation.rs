@@ -31,6 +31,18 @@ pub enum AgentToolInvocationInput {
         args: Vec<String>,
         timeout_ms: u64,
     },
+    CommandRun {
+        target_version: String,
+        program: String,
+        args: Vec<String>,
+        timeout_ms: u64,
+    },
+    CommandHistory {
+        target_version: String,
+        limit: usize,
+        failed_only: bool,
+        timed_out_only: bool,
+    },
     AiRequestPreview {
         prompt: String,
     },

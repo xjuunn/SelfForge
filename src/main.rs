@@ -5591,6 +5591,8 @@ struct AgentToolRunArgs {
     timeout_ms: u64,
     max_bytes: usize,
     prompt: Option<String>,
+    failed_only: bool,
+    timed_out_only: bool,
     command_start: Option<usize>,
     arguments: Vec<String>,
 }
@@ -6546,6 +6548,28 @@ fn parse_agent_tool_run_args(
                 timeout_ms: command.timeout_ms,
             }
         }
+        "command.run" => {
+            let start = command
+                .command_start
+                .ok_or("command.run 需要使用 -- 指定命令")?;
+            let program = command
+                .arguments
+                .get(start)
+                .ok_or("command.run 需要命令")?
+                .clone();
+            AgentToolInvocationInput::CommandRun {
+                target_version: command.target_version,
+                program,
+                args: command.arguments[start + 1..].to_vec(),
+                timeout_ms: command.timeout_ms,
+            }
+        }
+        "command.history" => AgentToolInvocationInput::CommandHistory {
+            target_version: command.target_version,
+            limit: command.limit,
+            failed_only: command.failed_only,
+            timed_out_only: command.timed_out_only,
+        },
         "ai.request" => {
             let prompt = command.prompt.ok_or("ai.request 需要 --prompt")?;
             AgentToolInvocationInput::AiRequestPreview { prompt }
@@ -6610,6 +6634,8 @@ fn parse_agent_tool_run_command(
     let mut timeout_ms = 30_000;
     let mut max_bytes = 0;
     let mut prompt = None;
+    let mut failed_only = false;
+    let mut timed_out_only = false;
     let mut command_start = None;
     let mut index = 0;
 
@@ -6672,6 +6698,14 @@ fn parse_agent_tool_run_command(
             }
             "--all" => {
                 all_major = true;
+                index += 1;
+            }
+            "--failed" => {
+                failed_only = true;
+                index += 1;
+            }
+            "--timed-out" => {
+                timed_out_only = true;
                 index += 1;
             }
             "--session" => {
@@ -6737,6 +6771,8 @@ fn parse_agent_tool_run_command(
         timeout_ms,
         max_bytes,
         prompt,
+        failed_only,
+        timed_out_only,
         command_start,
         arguments,
     })
@@ -7284,7 +7320,7 @@ agent-work-claim [--current|--candidate|--version VERSION] [--worker ID] [--agen
 agent-work-complete [--current|--candidate|--version VERSION] TASK_ID [--worker ID] [--summary TEXT]
 agent-work-release [--current|--candidate|--version VERSION] TASK_ID [--worker ID] [--reason TEXT]
 agent-work-reap [--current|--candidate|--version VERSION] [--reason TEXT]
-agent-tool-run TOOL_ID --agent AGENT_ID [--current|--candidate|--version VERSION] [--limit N] [--all] [--session SESSION_ID] [--session-version VERSION] [--step N] [--target-version VERSION] [--timeout-ms N] [--max-bytes N] [--prompt TEXT] [-- PROGRAM ARGS...]
+agent-tool-run TOOL_ID --agent AGENT_ID [--current|--candidate|--version VERSION] [--limit N] [--all] [--failed] [--timed-out] [--session SESSION_ID] [--session-version VERSION] [--step N] [--target-version VERSION] [--timeout-ms N] [--max-bytes N] [--prompt TEXT] [-- PROGRAM ARGS...]
 agent-step [--session-version VERSION] [--target-version VERSION] [--tool TOOL_ID] [--limit N] [--timeout-ms N] [--prompt TEXT] SESSION_ID [-- PROGRAM ARGS...]
 agent-steps [--session-version VERSION] [--target-version VERSION] [--limit N] [--timeout-ms N] [--max-steps N] SESSION_ID
 agent-plan [--current|--candidate|--version VERSION] [--limit N] [goal]
