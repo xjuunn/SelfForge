@@ -134,6 +134,9 @@ pub enum AgentWorkError {
     TaskNotFound {
         task_id: String,
     },
+    TaskAlreadyCompleted {
+        task_id: String,
+    },
     TaskNotClaimedByWorker {
         task_id: String,
         worker_id: String,
@@ -204,6 +207,9 @@ impl fmt::Display for AgentWorkError {
             AgentWorkError::TaskNotFound { task_id } => {
                 write!(formatter, "协作任务不存在：{task_id}")
             }
+            AgentWorkError::TaskAlreadyCompleted { task_id } => {
+                write!(formatter, "任务 {task_id} 已完成，禁止改为阻断状态")
+            }
             AgentWorkError::TaskNotClaimedByWorker { task_id, worker_id } => write!(
                 formatter,
                 "任务 {task_id} 未被工作线程 {worker_id} 领取，禁止完成或释放"
@@ -253,6 +259,7 @@ impl Error for AgentWorkError {
             | AgentWorkError::InvalidWorkerId { .. }
             | AgentWorkError::InvalidTaskId { .. }
             | AgentWorkError::TaskNotFound { .. }
+            | AgentWorkError::TaskAlreadyCompleted { .. }
             | AgentWorkError::TaskNotClaimedByWorker { .. }
             | AgentWorkError::NoAvailableTask { .. }
             | AgentWorkError::QueueNotCompleted { .. }

@@ -2907,6 +2907,15 @@ impl SelfForgeApp {
         AgentWorkCoordinator::new(&self.root).compact(version, keep_events)
     }
 
+    pub fn block_agent_work(
+        &self,
+        version: &str,
+        task_id: &str,
+        reason: &str,
+    ) -> Result<AgentWorkQueueReport, AgentWorkError> {
+        AgentWorkCoordinator::new(&self.root).block(version, task_id, reason)
+    }
+
     pub fn branch_check(
         &self,
         version: &str,

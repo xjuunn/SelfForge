@@ -4,7 +4,7 @@
   "thread_count": 3,
   "lease_duration_seconds": 3600,
   "created_at_unix_seconds": 1777889312,
-  "updated_at_unix_seconds": 1777893963,
+  "updated_at_unix_seconds": 1777894321,
   "conflict_policy": "同一时间禁止两个线程领取写入范围重叠的任务；冲突时释放任务并等待人工或调度层重新分配。",
   "prompt_policy": "每个线程只执行领取到的任务，必须遵守写入范围、依赖关系、验收标准和归档规则。",
   "tasks": [
@@ -186,6 +186,38 @@
       "prompt": "已压缩：任务 coord-011-work-queue-compact 已完成。完成摘要：已新增 agent-work-compact 受控压缩命令，保留任务状态和摘要，压缩已完成任务提示词并裁剪旧事件，同时补充测试和中文文档。。执行边界保留在 title、description、write_scope、acceptance 和 result 字段中。"
     },
     {
+      "id": "coord-012-work-queue-block",
+      "title": "实现旧协作任务阻断命令",
+      "description": "新增受控任务阻断能力，用于将过期或不再适用的待领取任务标记为已阻断，避免后续 AI 误领取旧任务。",
+      "preferred_agent_id": "builder",
+      "priority": 17,
+      "depends_on": [],
+      "write_scope": [
+        "src/app/agent/coordination.rs",
+        "src/app/agent/coordination/model.rs",
+        "src/app/minimal_loop.rs",
+        "src/app/mod.rs",
+        "src/main.rs",
+        "src/lib.rs",
+        "src/tests/agent_core.rs",
+        "README.md",
+        "forge/architecture/agent-rules/agent-coordination.md",
+        "workspaces/v0/artifacts/agents/coordination/"
+      ],
+      "acceptance": [
+        "新增 agent-work-block TASK_ID --reason TEXT 命令。",
+        "阻断必须保留任务、写入范围、验收标准和阻断原因。",
+        "已阻断任务不得再被领取。",
+        "必须补充测试和中文文档。"
+      ],
+      "status": "Completed",
+      "claimed_by": "ai-1",
+      "claimed_at_unix_seconds": 1777894146,
+      "completed_at_unix_seconds": 1777894316,
+      "result": "已新增 agent-work-block 受控阻断命令，并将 4 个旧默认待领取任务标记为已阻断，避免后续 AI 误领取。",
+      "prompt": "已压缩：任务 coord-012-work-queue-block 已完成。完成摘要：已新增 agent-work-block 受控阻断命令，并将 4 个旧默认待领取任务标记为已阻断，避免后续 AI 误领取。。执行边界保留在 title、description、write_scope、acceptance 和 result 字段中。"
+    },
+    {
       "id": "coord-002-application",
       "title": "实现应用层协作队列",
       "description": "实现任务板持久化、领取、完成、释放和冲突检测。",
@@ -201,8 +233,9 @@
         "队列必须写入 major 工作区 artifacts/agents/coordination。",
         "领取必须防止重复任务和写入范围冲突。"
       ],
-      "status": "Pending",
-      "prompt": "你是 SelfForge 多 AI 协作任务的候选执行者。\n\n全局目标：改为企业级 PR 合并流程\n任务编号：coord-002-application\n任务标题：实现应用层协作队列\n职责 Agent：builder\n\n任务描述：实现任务板持久化、领取、完成、释放和冲突检测。\n\n写入范围：src/app/agent/，src/app/minimal_loop.rs，src/app/mod.rs\n\n验收标准：队列必须写入 major 工作区 artifacts/agents/coordination；领取必须防止重复任务和写入范围冲突\n\n协作规则：先领取任务，再修改代码；只处理领取到的任务；不得修改其他任务的写入范围；发现冲突时释放任务并记录原因。"
+      "status": "Blocked",
+      "result": "旧默认任务来自早期协作队列实现目标，当前任务组已改为分阶段 PR 流程，避免误领取。",
+      "prompt": "已阻断：任务 coord-002-application 不再进入领取队列。阻断原因：旧默认任务来自早期协作队列实现目标，当前任务组已改为分阶段 PR 流程，避免误领取。。原始执行边界保留在 title、description、write_scope、acceptance 和 result 字段中。"
     },
     {
       "id": "coord-003-cli",
@@ -219,8 +252,9 @@
         "CLI 只能解析参数和展示应用层结果。",
         "领取命令必须输出当前任务提示词。"
       ],
-      "status": "Pending",
-      "prompt": "你是 SelfForge 多 AI 协作任务的候选执行者。\n\n全局目标：改为企业级 PR 合并流程\n任务编号：coord-003-cli\n任务标题：实现协作命令入口\n职责 Agent：builder\n\n任务描述：提供初始化、状态查询、领取、完成和释放命令。\n\n写入范围：src/main.rs，README.md\n\n验收标准：CLI 只能解析参数和展示应用层结果；领取命令必须输出当前任务提示词\n\n协作规则：先领取任务，再修改代码；只处理领取到的任务；不得修改其他任务的写入范围；发现冲突时释放任务并记录原因。"
+      "status": "Blocked",
+      "result": "旧默认任务来自早期协作队列 CLI 目标，当前任务组已改为分阶段 PR 流程，避免误领取。",
+      "prompt": "已阻断：任务 coord-003-cli 不再进入领取队列。阻断原因：旧默认任务来自早期协作队列 CLI 目标，当前任务组已改为分阶段 PR 流程，避免误领取。。原始执行边界保留在 title、description、write_scope、acceptance 和 result 字段中。"
     },
     {
       "id": "coord-004-tests",
@@ -239,8 +273,9 @@
         "必须包含单元、边界和错误测试。",
         "测试必须验证重复领取被阻止。"
       ],
-      "status": "Pending",
-      "prompt": "你是 SelfForge 多 AI 协作任务的候选执行者。\n\n全局目标：改为企业级 PR 合并流程\n任务编号：coord-004-tests\n任务标题：补充协作队列测试\n职责 Agent：verifier\n\n任务描述：覆盖单线程领取、多线程不重复领取、依赖阻断、冲突范围和错误完成。\n\n写入范围：src/lib.rs\n\n验收标准：必须包含单元、边界和错误测试；测试必须验证重复领取被阻止\n\n协作规则：先领取任务，再修改代码；只处理领取到的任务；不得修改其他任务的写入范围；发现冲突时释放任务并记录原因。"
+      "status": "Blocked",
+      "result": "旧默认测试任务依赖已阻断的早期实现任务，当前任务组已有独立测试覆盖，避免误领取。",
+      "prompt": "已阻断：任务 coord-004-tests 不再进入领取队列。阻断原因：旧默认测试任务依赖已阻断的早期实现任务，当前任务组已有独立测试覆盖，避免误领取。。原始执行边界保留在 title、description、write_scope、acceptance 和 result 字段中。"
     },
     {
       "id": "coord-005-review-archive",
@@ -264,71 +299,12 @@
         "归档必须为中文。",
         "不得创建小版本独立归档文件。"
       ],
-      "status": "Pending",
-      "prompt": "你是 SelfForge 多 AI 协作任务的候选执行者。\n\n全局目标：改为企业级 PR 合并流程\n任务编号：coord-005-review-archive\n任务标题：审查并写入中文归档\n职责 Agent：archivist\n\n任务描述：审查协作队列规则，补充任务、记忆、版本和错误归档。\n\n写入范围：forge/tasks/v0.md，forge/memory/v0.md，forge/errors/v0.md，forge/versions/v0.md\n\n验收标准：归档必须为中文；不得创建小版本独立归档文件\n\n协作规则：先领取任务，再修改代码；只处理领取到的任务；不得修改其他任务的写入范围；发现冲突时释放任务并记录原因。"
+      "status": "Blocked",
+      "result": "旧默认归档任务依赖已阻断的早期实现任务，当前任务组后续将单独收束归档，避免误领取。",
+      "prompt": "已阻断：任务 coord-005-review-archive 不再进入领取队列。阻断原因：旧默认归档任务依赖已阻断的早期实现任务，当前任务组后续将单独收束归档，避免误领取。。原始执行边界保留在 title、description、write_scope、acceptance 和 result 字段中。"
     }
   ],
   "events": [
-    {
-      "order": 83,
-      "timestamp_unix_seconds": 1777889587,
-      "action": "claim",
-      "worker_id": "ai-1",
-      "task_id": "coord-001-architecture",
-      "message": "任务已被工作线程领取。"
-    },
-    {
-      "order": 84,
-      "timestamp_unix_seconds": 1777889743,
-      "action": "complete",
-      "worker_id": "ai-1",
-      "task_id": "coord-001-architecture",
-      "message": "已将 Agents.md 中直接合并 master 的流程改为企业级 Pull Request 闸门流程，并同步任务板目标为 PR 合并规范。"
-    },
-    {
-      "order": 85,
-      "timestamp_unix_seconds": 1777919099,
-      "action": "retarget",
-      "message": "协作队列追加 PR 必跑 CI 验证任务，写入范围限定为 .github/workflows/ 和协作任务板。"
-    },
-    {
-      "order": 86,
-      "timestamp_unix_seconds": 1777890330,
-      "action": "claim",
-      "worker_id": "ai-1",
-      "task_id": "coord-006-ci-pr-checks",
-      "message": "任务已被工作线程领取。"
-    },
-    {
-      "order": 87,
-      "timestamp_unix_seconds": 1777890390,
-      "action": "complete",
-      "worker_id": "ai-1",
-      "task_id": "coord-006-ci-pr-checks",
-      "message": "已新增 GitHub Actions PR 验证工作流，覆盖 cargo fmt --check、cargo test、cargo run -- validate、cargo run -- preflight 和开放错误检查，并在本地完成验证。"
-    },
-    {
-      "order": 88,
-      "timestamp_unix_seconds": 1777920355,
-      "action": "retarget",
-      "message": "协作队列追加 AI 规则文档拆分任务，要求精简 Agents.md 并按主题拆分详细规则。"
-    },
-    {
-      "order": 89,
-      "timestamp_unix_seconds": 1777891584,
-      "action": "claim",
-      "worker_id": "ai-1",
-      "task_id": "coord-007-doc-split",
-      "message": "任务已被工作线程领取。"
-    },
-    {
-      "order": 90,
-      "timestamp_unix_seconds": 1777891718,
-      "action": "complete",
-      "worker_id": "ai-1",
-      "task_id": "coord-007-doc-split",
-      "message": "已将 Agents.md 精简为 58 行入口规则和按需阅读索引，并把详细 AI 规则拆分到 forge/architecture/agent-rules/ 下的主题文档。"
-    },
     {
       "order": 91,
       "timestamp_unix_seconds": 1777921262,
@@ -422,6 +398,62 @@
       "timestamp_unix_seconds": 1777893963,
       "action": "compact",
       "message": "协作任务板已压缩：压缩已完成任务提示词 7 个，移除旧事件 82 条，压缩前事件 102 条。"
+    },
+    {
+      "order": 104,
+      "timestamp_unix_seconds": 1777922918,
+      "action": "retarget",
+      "message": "协作队列追加旧任务阻断命令实现任务，避免过期待领取任务误导后续 AI。"
+    },
+    {
+      "order": 105,
+      "timestamp_unix_seconds": 1777894146,
+      "action": "claim",
+      "worker_id": "ai-1",
+      "task_id": "coord-012-work-queue-block",
+      "message": "任务已被工作线程领取。"
+    },
+    {
+      "order": 106,
+      "timestamp_unix_seconds": 1777894294,
+      "action": "block",
+      "task_id": "coord-002-application",
+      "message": "旧默认任务来自早期协作队列实现目标，当前任务组已改为分阶段 PR 流程，避免误领取。"
+    },
+    {
+      "order": 107,
+      "timestamp_unix_seconds": 1777894299,
+      "action": "block",
+      "task_id": "coord-003-cli",
+      "message": "旧默认任务来自早期协作队列 CLI 目标，当前任务组已改为分阶段 PR 流程，避免误领取。"
+    },
+    {
+      "order": 108,
+      "timestamp_unix_seconds": 1777894304,
+      "action": "block",
+      "task_id": "coord-004-tests",
+      "message": "旧默认测试任务依赖已阻断的早期实现任务，当前任务组已有独立测试覆盖，避免误领取。"
+    },
+    {
+      "order": 109,
+      "timestamp_unix_seconds": 1777894310,
+      "action": "block",
+      "task_id": "coord-005-review-archive",
+      "message": "旧默认归档任务依赖已阻断的早期实现任务，当前任务组后续将单独收束归档，避免误领取。"
+    },
+    {
+      "order": 110,
+      "timestamp_unix_seconds": 1777894316,
+      "action": "complete",
+      "worker_id": "ai-1",
+      "task_id": "coord-012-work-queue-block",
+      "message": "已新增 agent-work-block 受控阻断命令，并将 4 个旧默认待领取任务标记为已阻断，避免后续 AI 误领取。"
+    },
+    {
+      "order": 111,
+      "timestamp_unix_seconds": 1777894321,
+      "action": "compact",
+      "message": "协作任务板已压缩：压缩已完成任务提示词 1 个，移除旧事件 8 条，压缩前事件 28 条。"
     }
   ]
 }

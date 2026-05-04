@@ -335,6 +335,58 @@ impl AgentWorkCoordinator {
         })
     }
 
+    pub fn block(
+        &self,
+        version: &str,
+        task_id: &str,
+        reason: &str,
+    ) -> Result<AgentWorkQueueReport, AgentWorkError> {
+        validate_task_id(task_id)?;
+        let version = version.to_string();
+        let task_id = task_id.to_string();
+        let reason = default_summary(reason, "任务已阻断。");
+        self.with_lock(&version, |layout| {
+            if !layout.queue_path.exists() {
+                return Err(AgentWorkError::MissingQueue {
+                    version: version.clone(),
+                    path: layout.queue_path.clone(),
+                });
+            }
+            let mut queue = read_queue(&layout.queue_path)?;
+            let Some(index) = queue.tasks.iter().position(|task| task.id == task_id) else {
+                return Err(AgentWorkError::TaskNotFound {
+                    task_id: task_id.clone(),
+                });
+            };
+            if queue.tasks[index].status == AgentWorkTaskStatus::Completed {
+                return Err(AgentWorkError::TaskAlreadyCompleted {
+                    task_id: task_id.clone(),
+                });
+            }
+
+            let now = current_unix_seconds();
+            queue.updated_at_unix_seconds = now;
+            {
+                let task = &mut queue.tasks[index];
+                task.status = AgentWorkTaskStatus::Blocked;
+                task.claimed_by = None;
+                task.claimed_at_unix_seconds = None;
+                task.lease_expires_at_unix_seconds = None;
+                task.completed_at_unix_seconds = None;
+                task.result = Some(reason.clone());
+                task.prompt = blocked_task_prompt(task, &reason);
+            }
+            push_event(&mut queue, "block", None, Some(task_id.clone()), reason);
+            write_queue(&layout.queue_path, &queue)?;
+            Ok(AgentWorkQueueReport {
+                version: version.clone(),
+                queue_path: layout.queue_path.clone(),
+                created: false,
+                queue,
+            })
+        })
+    }
+
     pub fn complete(
         &self,
         version: &str,
@@ -804,6 +856,13 @@ fn compacted_task_prompt(task: &AgentWorkTask) -> String {
     format!(
         "已压缩：任务 {} 已完成。完成摘要：{}。执行边界保留在 title、description、write_scope、acceptance 和 result 字段中。",
         task.id, summary
+    )
+}
+
+fn blocked_task_prompt(task: &AgentWorkTask, reason: &str) -> String {
+    format!(
+        "已阻断：任务 {} 不再进入领取队列。阻断原因：{}。原始执行边界保留在 title、description、write_scope、acceptance 和 result 字段中。",
+        task.id, reason
     )
 }
 

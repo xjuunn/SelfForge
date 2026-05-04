@@ -64,6 +64,7 @@ fn main() {
         "agent-work-release" => agent_work_release(&app, args.collect()),
         "agent-work-reap" => agent_work_reap(&app, args.collect()),
         "agent-work-compact" => agent_work_compact(&app, args.collect()),
+        "agent-work-block" => agent_work_block(&app, args.collect()),
         "agent-tool-run" => agent_tool_run(&app, args.collect()),
         "agent-step" => agent_step(&app, args.collect()),
         "agent-steps" => agent_steps(&app, args.collect()),
@@ -957,6 +958,23 @@ fn agent_work_compact(
                     queue: report.queue,
                 };
                 append_agent_work_queue_lines(&mut lines, &queue_report);
+                lines.join("\n")
+            }),
+    )
+}
+
+fn agent_work_block(app: &SelfForgeApp, arguments: Vec<String>) -> Result<String, Box<dyn Error>> {
+    let command = parse_agent_work_block_args(arguments)?;
+    boxed(
+        app.block_agent_work(&command.version, &command.task_id, &command.text)
+            .map(|report| {
+                let mut lines = vec![format!(
+                    "SelfForge 协作任务已阻断 版本 {} 任务 {} 文件 {}",
+                    report.version,
+                    command.task_id,
+                    report.queue_path.display()
+                )];
+                append_agent_work_queue_lines(&mut lines, &report);
                 lines.join("\n")
             }),
     )
@@ -5378,6 +5396,12 @@ struct AgentWorkCompactArgs {
     keep_events: Option<usize>,
 }
 
+struct AgentWorkBlockArgs {
+    version: String,
+    task_id: String,
+    text: String,
+}
+
 struct BranchCheckArgs {
     version: String,
     worker_id: Option<String>,
@@ -6097,6 +6121,60 @@ fn parse_agent_work_compact_args(
     Ok(AgentWorkCompactArgs {
         version,
         keep_events,
+    })
+}
+
+fn parse_agent_work_block_args(
+    arguments: Vec<String>,
+) -> Result<AgentWorkBlockArgs, Box<dyn Error>> {
+    let state = ForgeState::load(env::current_dir()?)?;
+    let mut version = state.current_version.clone();
+    let mut task_id = None;
+    let mut text = String::new();
+    let mut index = 0;
+
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "--current" => {
+                version = state.current_version.clone();
+                index += 1;
+            }
+            "--candidate" => {
+                version = state.candidate_version.clone().ok_or("当前没有候选版本")?;
+                index += 1;
+            }
+            "--version" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--version 需要版本号".into());
+                };
+                version = value.clone();
+                index += 2;
+            }
+            "--reason" => {
+                let Some(value) = arguments.get(index + 1) else {
+                    return Err("--reason 需要阻断原因".into());
+                };
+                text = value.clone();
+                index += 2;
+            }
+            other if other.starts_with("--") => {
+                return Err(format!("未知 agent-work-block 参数: {other}").into());
+            }
+            value => {
+                if task_id.is_some() {
+                    return Err(format!("未知 agent-work-block 参数: {value}").into());
+                }
+                task_id = Some(value.to_string());
+                index += 1;
+            }
+        }
+    }
+
+    let task_id = task_id.ok_or("agent-work-block 需要任务编号")?;
+    Ok(AgentWorkBlockArgs {
+        version,
+        task_id,
+        text,
     })
 }
 

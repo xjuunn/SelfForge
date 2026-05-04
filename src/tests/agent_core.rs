@@ -720,6 +720,71 @@ fn agent_work_compact_rejects_zero_keep_events() {
 }
 
 #[test]
+fn agent_work_block_marks_pending_task_unclaimable() {
+    let root = temp_root("agent-work-block");
+    let app = SelfForgeApp::new(&root);
+
+    app.supervisor()
+        .initialize_current_version()
+        .expect("bootstrap should succeed before block test");
+    app.init_agent_work_queue(CURRENT_VERSION, "验证任务阻断", 2)
+        .expect("work queue should initialize");
+
+    let report = app
+        .block_agent_work(CURRENT_VERSION, "coord-002-application", "旧任务不再适用")
+        .expect("pending task should be blockable");
+    let blocked = report
+        .queue
+        .tasks
+        .iter()
+        .find(|task| task.id == "coord-002-application")
+        .expect("blocked task should remain");
+    assert_eq!(blocked.status, AgentWorkTaskStatus::Blocked);
+    assert_eq!(blocked.result.as_deref(), Some("旧任务不再适用"));
+    assert!(blocked.prompt.starts_with("已阻断："));
+    assert_eq!(
+        report
+            .queue
+            .events
+            .last()
+            .map(|event| event.action.as_str()),
+        Some("block")
+    );
+
+    let claim = app
+        .claim_agent_work(CURRENT_VERSION, "ai-1", Some("builder"))
+        .expect("builder should claim next non-blocked task");
+    assert_eq!(claim.task.id, "coord-003-cli");
+
+    cleanup(&root);
+}
+
+#[test]
+fn agent_work_block_rejects_completed_task() {
+    let root = temp_root("agent-work-block-completed");
+    let app = SelfForgeApp::new(&root);
+
+    app.supervisor()
+        .initialize_current_version()
+        .expect("bootstrap should succeed before completed block test");
+    app.init_agent_work_queue(CURRENT_VERSION, "验证已完成任务不可阻断", 1)
+        .expect("work queue should initialize");
+    let claim = app
+        .claim_agent_work(CURRENT_VERSION, "ai-1", Some("architect"))
+        .expect("task should be claimed");
+    app.complete_agent_work(CURRENT_VERSION, &claim.task.id, "ai-1", "任务完成")
+        .expect("task should complete");
+
+    let error = app
+        .block_agent_work(CURRENT_VERSION, &claim.task.id, "不应阻断已完成任务")
+        .expect_err("completed task must not be blocked");
+
+    assert!(matches!(error, AgentWorkError::TaskAlreadyCompleted { .. }));
+
+    cleanup(&root);
+}
+
+#[test]
 fn agent_work_queue_rejects_zero_threads() {
     let root = temp_root("agent-work-zero-thread");
     let app = SelfForgeApp::new(&root);
