@@ -228,6 +228,50 @@ mod agent_skill_scaling_tests {
     }
 
     #[test]
+    fn agent_skill_select_reads_bounded_content_prefix() {
+        let root = temp_root("skill-select-bounded-content");
+        let app = bootstrap_app(&root);
+        fs::create_dir_all(root.join("skills")).expect("测试应可创建技能正文目录");
+        fs::write(
+            root.join("skills").join("large.md"),
+            format!("# 大技能\n\n{}", "技".repeat(20_000)),
+        )
+        .expect("测试应可写入大技能正文");
+        write_skill_index(
+            &app,
+            &root,
+            vec![AgentSkillMetadata {
+                id: "large".to_string(),
+                name: "README 命令大技能".to_string(),
+                summary: "验证大技能正文只读取受控前缀。".to_string(),
+                tags: vec!["README".to_string()],
+                triggers: vec!["README 命令".to_string()],
+                capabilities: vec!["documentation".to_string()],
+                content_path: Some("skills/large.md".to_string()),
+                priority: 10,
+                estimated_tokens: 50,
+                enabled: true,
+            }],
+        );
+
+        let mut request = AgentSkillSelectionRequest::new(CURRENT_VERSION, "需要 README 命令能力");
+        request.limit = 1;
+        request.token_budget = 100;
+        let report = app.select_agent_skills(request).expect("技能召回应成功");
+        let content = report.skills[0]
+            .content
+            .as_ref()
+            .expect("入选技能应加载正文前缀");
+
+        assert_eq!(report.loaded_skill_count, 1);
+        assert!(content.contains("# 大技能"));
+        assert!(content.len() <= 16 * 1024);
+        assert!(content.chars().count() < 20_000);
+
+        fs::remove_dir_all(root).expect("测试目录应可清理");
+    }
+
+    #[test]
     fn agent_skill_select_normalizes_query_and_capabilities() {
         let root = temp_root("skill-select-query-normalization");
         let app = bootstrap_app(&root);

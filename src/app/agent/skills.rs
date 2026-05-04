@@ -4,13 +4,14 @@ use std::cmp::Reverse;
 use std::error::Error;
 use std::fmt;
 use std::fs;
-use std::io;
+use std::io::{self, Read};
 use std::path::{Component, Path, PathBuf};
 
 const SKILL_INDEX_FILE: &str = "skill-index.json";
 const DEFAULT_SKILL_LIMIT: usize = 5;
 const DEFAULT_TOKEN_BUDGET: usize = 2_000;
 const DEFAULT_SKILL_TOKEN_ESTIMATE: usize = 128;
+const MAX_SKILL_CONTENT_BYTES: usize = 16 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct AgentSkillIndex {
@@ -439,10 +440,38 @@ fn unique_reasons(reasons: Vec<&str>) -> Vec<&str> {
 
 fn read_skill_content(root: &Path, skill_id: &str, path: &str) -> Result<String, AgentSkillError> {
     let resolved = validate_relative_skill_path(root, skill_id, path)?;
-    fs::read_to_string(&resolved).map_err(|source| AgentSkillError::Io {
-        path: resolved,
+    read_skill_content_prefix(&resolved).map_err(|source| AgentSkillError::Io {
+        path: resolved.clone(),
         source,
     })
+}
+
+fn read_skill_content_prefix(path: &Path) -> io::Result<String> {
+    let mut file = fs::File::open(path)?;
+    let mut buffer = Vec::with_capacity(MAX_SKILL_CONTENT_BYTES + 4);
+    file.by_ref()
+        .take((MAX_SKILL_CONTENT_BYTES + 4) as u64)
+        .read_to_end(&mut buffer)?;
+    let truncated = buffer.len() > MAX_SKILL_CONTENT_BYTES;
+    if truncated {
+        buffer.truncate(MAX_SKILL_CONTENT_BYTES);
+    }
+    trim_to_utf8_boundary(&mut buffer, truncated)?;
+    String::from_utf8(buffer).map_err(|source| io::Error::new(io::ErrorKind::InvalidData, source))
+}
+
+fn trim_to_utf8_boundary(buffer: &mut Vec<u8>, truncated: bool) -> io::Result<()> {
+    loop {
+        match std::str::from_utf8(buffer) {
+            Ok(_) => return Ok(()),
+            Err(error) if truncated && error.error_len().is_none() => {
+                buffer.truncate(error.valid_up_to());
+            }
+            Err(error) => {
+                return Err(io::Error::new(io::ErrorKind::InvalidData, error));
+            }
+        }
+    }
 }
 
 fn validate_relative_skill_path(
