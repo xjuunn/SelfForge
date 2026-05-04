@@ -410,6 +410,19 @@ fn builtin_tools() -> Vec<AgentToolDefinition> {
             vec!["builder", "verifier", "reviewer"],
         ),
         AgentToolDefinition::builtin(
+            "code.outline",
+            "代码结构提纲",
+            "读取项目内单个代码文件的结构提纲，返回符号类型、名称、行号和预览。",
+            "code",
+            vec![
+                AgentCapability::Architecture,
+                AgentCapability::Implementation,
+                AgentCapability::Review,
+                AgentCapability::Testing,
+            ],
+            vec!["architect", "builder", "verifier", "reviewer"],
+        ),
+        AgentToolDefinition::builtin(
             "code.search",
             "项目代码搜索",
             "在项目根目录内搜索文本，跳过 target 和 .git，并返回有限匹配。",

@@ -6597,6 +6597,15 @@ fn parse_agent_tool_run_args(
                 max_bytes: command.max_bytes,
             }
         }
+        "code.outline" => {
+            let path = command
+                .prompt
+                .ok_or("code.outline 需要 --prompt 指定项目内代码文件路径")?;
+            AgentToolInvocationInput::CodeOutline {
+                path,
+                limit: command.limit,
+            }
+        }
         "code.read" => {
             let path = command
                 .prompt

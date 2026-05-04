@@ -23,27 +23,27 @@ pub use version::{
     version_major_file_name, version_major_key,
 };
 
-pub const CURRENT_VERSION: &str = "v0.1.72";
+pub const CURRENT_VERSION: &str = "v0.1.73";
 
 pub use app::{
     AgentCapability, AgentCodeDiffReport, AgentCodeListEntry, AgentCodeListReport,
-    AgentCodeReadReport, AgentCodeSearchMatch, AgentCodeSearchReport, AgentCodeToolError,
-    AgentDefinition, AgentError, AgentEvolutionError, AgentEvolutionReport, AgentPlan,
-    AgentPlanReport, AgentPlanReportError, AgentPlanStep, AgentRegistry, AgentRunError,
-    AgentRunReference, AgentRunReport, AgentSession, AgentSessionError, AgentSessionEvent,
-    AgentSessionEventKind, AgentSessionMemoryInsight, AgentSessionPlanContext, AgentSessionStatus,
-    AgentSessionStep, AgentSessionStore, AgentSessionSummary, AgentSessionWorkQueueContext,
-    AgentSingleEvolutionReport, AgentSkillError, AgentSkillIndex, AgentSkillIndexReport,
-    AgentSkillMetadata, AgentSkillSelection, AgentSkillSelectionReport, AgentSkillSelectionRequest,
-    AgentStepExecutionError, AgentStepExecutionReport, AgentStepExecutionRequest,
-    AgentStepRunError, AgentStepRunReport, AgentStepRunStop, AgentStepStatus, AgentToolAssignment,
-    AgentToolBinding, AgentToolConfig, AgentToolConfigInitReport, AgentToolDefinition,
-    AgentToolError, AgentToolInvocation, AgentToolInvocationError, AgentToolInvocationInput,
-    AgentToolInvocationReport, AgentToolReport, AgentVerificationReport, AgentWorkClaimReport,
-    AgentWorkCompactionReport, AgentWorkCoordinator, AgentWorkError, AgentWorkEvent,
-    AgentWorkFinalizeCheckError, AgentWorkFinalizeCheckReport, AgentWorkQueue,
-    AgentWorkQueueReport, AgentWorkReapReport, AgentWorkTask, AgentWorkTaskStatus, AiConfigError,
-    AiConfigReport, AiExecutionError, AiExecutionReport, AiPatchApplicationError,
+    AgentCodeOutlineItem, AgentCodeOutlineReport, AgentCodeReadReport, AgentCodeSearchMatch,
+    AgentCodeSearchReport, AgentCodeToolError, AgentDefinition, AgentError, AgentEvolutionError,
+    AgentEvolutionReport, AgentPlan, AgentPlanReport, AgentPlanReportError, AgentPlanStep,
+    AgentRegistry, AgentRunError, AgentRunReference, AgentRunReport, AgentSession,
+    AgentSessionError, AgentSessionEvent, AgentSessionEventKind, AgentSessionMemoryInsight,
+    AgentSessionPlanContext, AgentSessionStatus, AgentSessionStep, AgentSessionStore,
+    AgentSessionSummary, AgentSessionWorkQueueContext, AgentSingleEvolutionReport, AgentSkillError,
+    AgentSkillIndex, AgentSkillIndexReport, AgentSkillMetadata, AgentSkillSelection,
+    AgentSkillSelectionReport, AgentSkillSelectionRequest, AgentStepExecutionError,
+    AgentStepExecutionReport, AgentStepExecutionRequest, AgentStepRunError, AgentStepRunReport,
+    AgentStepRunStop, AgentStepStatus, AgentToolAssignment, AgentToolBinding, AgentToolConfig,
+    AgentToolConfigInitReport, AgentToolDefinition, AgentToolError, AgentToolInvocation,
+    AgentToolInvocationError, AgentToolInvocationInput, AgentToolInvocationReport, AgentToolReport,
+    AgentVerificationReport, AgentWorkClaimReport, AgentWorkCompactionReport, AgentWorkCoordinator,
+    AgentWorkError, AgentWorkEvent, AgentWorkFinalizeCheckError, AgentWorkFinalizeCheckReport,
+    AgentWorkQueue, AgentWorkQueueReport, AgentWorkReapReport, AgentWorkTask, AgentWorkTaskStatus,
+    AiConfigError, AiConfigReport, AiExecutionError, AiExecutionReport, AiPatchApplicationError,
     AiPatchApplicationFile, AiPatchApplicationRecord, AiPatchApplicationReport,
     AiPatchApplicationStatus, AiPatchApplicationStore, AiPatchApplicationStoreError,
     AiPatchApplicationSummary, AiPatchAuditError, AiPatchAuditFinding, AiPatchAuditFindingKind,
@@ -91,7 +91,8 @@ pub use app::{
     SelfEvolutionLoopRequest, SelfEvolutionLoopStatus, SelfEvolutionLoopStepRecord,
     SelfEvolutionLoopStepStatus, SelfEvolutionLoopSummary, SelfForgeApp,
     format_agent_skill_context, inspect_project_code_diff, list_project_code_files,
-    normalize_ai_self_upgrade_goal, read_project_code_file, search_project_code,
+    normalize_ai_self_upgrade_goal, outline_project_code, read_project_code_file,
+    search_project_code,
 };
 
 #[cfg(test)]
@@ -641,19 +642,24 @@ mod agent_code_tool_tests {
         let app = bootstrap_app(&root);
 
         let report = app.agent_tools(CURRENT_VERSION).expect("工具报告应可读取");
+        let architect = report.tool_ids_for_agent("architect");
         let builder = report.tool_ids_for_agent("builder");
         let verifier = report.tool_ids_for_agent("verifier");
         let reviewer = report.tool_ids_for_agent("reviewer");
 
+        assert!(architect.contains(&"code.outline".to_string()));
         assert!(builder.contains(&"code.search".to_string()));
         assert!(builder.contains(&"code.read".to_string()));
         assert!(builder.contains(&"code.diff".to_string()));
+        assert!(builder.contains(&"code.outline".to_string()));
         assert!(builder.contains(&"command.run".to_string()));
         assert!(builder.contains(&"command.history".to_string()));
+        assert!(verifier.contains(&"code.outline".to_string()));
         assert!(verifier.contains(&"code.read".to_string()));
         assert!(verifier.contains(&"code.diff".to_string()));
         assert!(verifier.contains(&"command.run".to_string()));
         assert!(verifier.contains(&"command.history".to_string()));
+        assert!(reviewer.contains(&"code.outline".to_string()));
         assert!(reviewer.contains(&"code.search".to_string()));
         assert!(reviewer.contains(&"code.read".to_string()));
         assert!(reviewer.contains(&"code.diff".to_string()));
@@ -839,6 +845,85 @@ mod agent_code_tool_tests {
             })
             .expect("差异查看工具应支持截断");
         assert!(truncated.summary.contains("截断 true"));
+
+        fs::remove_dir_all(root).expect("测试目录应可清理");
+    }
+
+    #[test]
+    fn agent_tool_invocation_outlines_project_code_file() {
+        let root = temp_root("code-tool-outline");
+        let app = bootstrap_app(&root);
+        fs::create_dir_all(root.join("src").join("app")).expect("测试应可创建代码目录");
+        fs::write(
+            root.join("src").join("app").join("outline.rs"),
+            "pub struct Demo {\n}\n\nimpl Demo {\n    pub fn run(&self) {}\n}\n\nfn helper() {}\n",
+        )
+        .expect("测试应可写入代码文件");
+
+        let report = app
+            .invoke_agent_tool(AgentToolInvocation {
+                agent_id: "reviewer".to_string(),
+                tool_id: "code.outline".to_string(),
+                version: CURRENT_VERSION.to_string(),
+                input: AgentToolInvocationInput::CodeOutline {
+                    path: "src/app/outline.rs".to_string(),
+                    limit: 2,
+                },
+            })
+            .expect("code.outline 应可读取项目内代码结构");
+
+        assert!(report.summary.contains("src/app/outline.rs"));
+        assert!(report.summary.contains("符号 4 个"));
+        assert!(report.summary.contains("返回 2 个"));
+        assert!(report.summary.contains("截断 true"));
+        assert!(report.details[0].contains("结构体 Demo"));
+        assert!(report.details[1].contains("实现 Demo"));
+        assert!(report.details[0].contains("src/app/outline.rs:1"));
+
+        fs::remove_dir_all(root).expect("测试目录应可清理");
+    }
+
+    #[test]
+    fn agent_tool_invocation_rejects_outline_workspace_escape() {
+        let root = temp_root("code-tool-outline-escape");
+        let app = bootstrap_app(&root);
+
+        let error = app
+            .invoke_agent_tool(AgentToolInvocation {
+                agent_id: "reviewer".to_string(),
+                tool_id: "code.outline".to_string(),
+                version: CURRENT_VERSION.to_string(),
+                input: AgentToolInvocationInput::CodeOutline {
+                    path: "../secret.rs".to_string(),
+                    limit: 10,
+                },
+            })
+            .expect_err("越界结构提纲读取必须被拒绝");
+
+        assert!(error.to_string().contains("不允许越过项目根目录"));
+
+        fs::remove_dir_all(root).expect("测试目录应可清理");
+    }
+
+    #[test]
+    fn agent_tool_invocation_rejects_outline_sensitive_env_file() {
+        let root = temp_root("code-tool-outline-sensitive");
+        let app = bootstrap_app(&root);
+        fs::write(root.join(".env"), "OPENAI_API_KEY=secret\n").expect("测试应可写入本地环境文件");
+
+        let error = app
+            .invoke_agent_tool(AgentToolInvocation {
+                agent_id: "reviewer".to_string(),
+                tool_id: "code.outline".to_string(),
+                version: CURRENT_VERSION.to_string(),
+                input: AgentToolInvocationInput::CodeOutline {
+                    path: ".env".to_string(),
+                    limit: 10,
+                },
+            })
+            .expect_err("本地环境文件结构提纲读取必须被拒绝");
+
+        assert!(error.to_string().contains("不允许越过项目根目录"));
 
         fs::remove_dir_all(root).expect("测试目录应可清理");
     }

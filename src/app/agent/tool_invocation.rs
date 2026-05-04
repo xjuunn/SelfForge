@@ -62,6 +62,10 @@ pub enum AgentToolInvocationInput {
         path: String,
         max_bytes: usize,
     },
+    CodeOutline {
+        path: String,
+        limit: usize,
+    },
     ForgeArchiveStatus,
 }
 

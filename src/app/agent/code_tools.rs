@@ -12,6 +12,7 @@ const MAX_CODE_SEARCH_LIMIT: usize = 100;
 const CODE_SEARCH_FILE_BYTES: usize = 64 * 1024;
 const DEFAULT_CODE_DIFF_BYTES: usize = 16 * 1024;
 const MAX_CODE_DIFF_BYTES: usize = 64 * 1024;
+const CODE_OUTLINE_FILE_BYTES: usize = 64 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentCodeReadReport {
@@ -57,6 +58,22 @@ pub struct AgentCodeDiffReport {
     pub diff_bytes: usize,
     pub truncated: bool,
     pub diff: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentCodeOutlineReport {
+    pub path: String,
+    pub symbol_count: usize,
+    pub truncated: bool,
+    pub items: Vec<AgentCodeOutlineItem>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentCodeOutlineItem {
+    pub line: usize,
+    pub kind: String,
+    pub name: String,
+    pub preview: String,
 }
 
 #[derive(Debug)]
@@ -228,6 +245,47 @@ pub fn inspect_project_code_diff(
     })
 }
 
+pub fn outline_project_code(
+    root: impl AsRef<Path>,
+    path: impl AsRef<str>,
+    limit: usize,
+) -> Result<AgentCodeOutlineReport, AgentCodeToolError> {
+    let root = root.as_ref();
+    let requested = path.as_ref();
+    let resolved = resolve_project_path(root, requested)?;
+    if !resolved.is_file() || is_sensitive_local_env_file(&resolved) {
+        return Err(AgentCodeToolError::InvalidPath { path: resolved });
+    }
+    let limit = bounded_search_limit(limit);
+    let (content, _, _) = read_text_prefix(&resolved, CODE_OUTLINE_FILE_BYTES)?;
+    let mut items = Vec::new();
+    let mut symbol_count = 0;
+    let mut truncated = false;
+    for (index, line) in content.lines().enumerate() {
+        let Some((kind, name)) = outline_symbol(line) else {
+            continue;
+        };
+        symbol_count += 1;
+        if items.len() < limit {
+            items.push(AgentCodeOutlineItem {
+                line: index + 1,
+                kind,
+                name,
+                preview: line.trim().chars().take(180).collect(),
+            });
+        } else {
+            truncated = true;
+        }
+    }
+
+    Ok(AgentCodeOutlineReport {
+        path: relative_path(root, &resolved),
+        symbol_count,
+        truncated,
+        items,
+    })
+}
+
 fn search_directory(
     root: &Path,
     directory: &Path,
@@ -321,6 +379,112 @@ fn search_file(
                 preview: line.trim().chars().take(180).collect(),
             });
         }
+    }
+}
+
+fn outline_symbol(line: &str) -> Option<(String, String)> {
+    let text = line.trim();
+    if text.is_empty()
+        || text.starts_with("//")
+        || text.starts_with('#')
+        || text.starts_with('*')
+        || text.starts_with("use ")
+        || text.starts_with("import ")
+    {
+        return None;
+    }
+    let text = strip_declaration_prefixes(text);
+    for (keyword, kind) in [
+        ("fn", "函数"),
+        ("struct", "结构体"),
+        ("enum", "枚举"),
+        ("trait", "特征"),
+        ("impl", "实现"),
+        ("mod", "模块"),
+        ("type", "类型"),
+        ("const", "常量"),
+        ("static", "静态"),
+        ("def", "函数"),
+        ("class", "类"),
+        ("function", "函数"),
+        ("interface", "接口"),
+    ] {
+        if let Some(rest) = keyword_rest(text, keyword)
+            && let Some(name) = outline_name(rest, keyword == "impl")
+        {
+            return Some((kind.to_string(), name));
+        }
+    }
+    if let Some(name) = arrow_function_name(text) {
+        return Some(("函数".to_string(), name));
+    }
+    None
+}
+
+fn strip_declaration_prefixes(mut text: &str) -> &str {
+    loop {
+        let trimmed = text.trim_start();
+        let Some((first, rest)) = trimmed.split_once(char::is_whitespace) else {
+            return trimmed;
+        };
+        if matches!(
+            first,
+            "pub" | "async" | "unsafe" | "export" | "default" | "open" | "private" | "protected"
+        ) || first.starts_with("pub(")
+        {
+            text = rest;
+            continue;
+        }
+        return trimmed;
+    }
+}
+
+fn keyword_rest<'a>(text: &'a str, keyword: &str) -> Option<&'a str> {
+    let rest = text.strip_prefix(keyword)?;
+    if rest.is_empty() || rest.starts_with(char::is_whitespace) || rest.starts_with('<') {
+        Some(rest.trim_start())
+    } else {
+        None
+    }
+}
+
+fn outline_name(rest: &str, allow_for: bool) -> Option<String> {
+    let mut name = String::new();
+    for ch in rest.chars() {
+        if ch.is_alphanumeric() || matches!(ch, '_' | ':' | '<' | '>' | '\'' | '&') {
+            name.push(ch);
+        } else {
+            break;
+        }
+    }
+    let name = name.trim_matches('&').trim().to_string();
+    if name.is_empty() {
+        return None;
+    }
+    if allow_for && name == "for" {
+        return None;
+    }
+    Some(name)
+}
+
+fn arrow_function_name(text: &str) -> Option<String> {
+    if !text.contains("=>") {
+        return None;
+    }
+    let text = strip_declaration_prefixes(text);
+    let rest = text
+        .strip_prefix("const ")
+        .or_else(|| text.strip_prefix("let "))
+        .or_else(|| text.strip_prefix("var "))?;
+    let name = rest
+        .split(|ch: char| ch.is_whitespace() || matches!(ch, '=' | ':' | '('))
+        .next()
+        .unwrap_or_default()
+        .trim();
+    if name.is_empty() {
+        None
+    } else {
+        Some(name.to_string())
     }
 }
 

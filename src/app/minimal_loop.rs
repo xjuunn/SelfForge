@@ -38,7 +38,7 @@ use super::agent::{
     AiSelfUpgradeSummaryRecord, AiSelfUpgradeSummaryStatus, AiSelfUpgradeSummaryStore,
     AiSelfUpgradeSummaryStoreError, apply_tools_to_plan, format_agent_skill_context,
     initialize_agent_skill_index, initialize_agent_tool_config, inspect_project_code_diff,
-    list_project_code_files, load_agent_skill_index, load_agent_tool_report,
+    list_project_code_files, load_agent_skill_index, load_agent_tool_report, outline_project_code,
     read_project_code_file, search_project_code, select_agent_skills,
 };
 use super::ai_provider::{
@@ -3674,6 +3674,38 @@ impl SelfForgeApp {
                     expected: "CodeDiff".to_string(),
                 }),
             },
+            "code.outline" => match input {
+                AgentToolInvocationInput::CodeOutline { path, limit } => {
+                    let report = outline_project_code(&self.root, &path, limit)?;
+                    Ok(AgentToolInvocationReport {
+                        agent_id,
+                        tool_id,
+                        version,
+                        summary: format!(
+                            "代码结构提纲完成，文件 {}，符号 {} 个，返回 {} 个，截断 {}。",
+                            report.path,
+                            report.symbol_count,
+                            report.items.len(),
+                            report.truncated
+                        ),
+                        details: report
+                            .items
+                            .iter()
+                            .map(|item| {
+                                format!(
+                                    "{}:{} {} {} {}",
+                                    report.path, item.line, item.kind, item.name, item.preview
+                                )
+                            })
+                            .collect(),
+                        run: None,
+                    })
+                }
+                _ => Err(AgentToolInvocationError::UnsupportedInput {
+                    tool_id,
+                    expected: "CodeOutline".to_string(),
+                }),
+            },
             "code.read" => match input {
                 AgentToolInvocationInput::CodeRead { path, max_bytes } => {
                     let report = read_project_code_file(&self.root, &path, max_bytes)?;
@@ -4671,6 +4703,19 @@ impl SelfForgeApp {
                     });
                 };
                 AgentToolInvocationInput::CodeDiff { path, max_bytes: 0 }
+            }
+            "code.outline" => {
+                let Some(prompt) = &request.prompt else {
+                    return Err(AgentStepExecutionError::InputRequired {
+                        step_order: step.order,
+                        tool_id: tool_id.to_string(),
+                        input: "prompt".to_string(),
+                    });
+                };
+                AgentToolInvocationInput::CodeOutline {
+                    path: prompt.clone(),
+                    limit: request.limit,
+                }
             }
             "code.read" => {
                 let Some(prompt) = &request.prompt else {

@@ -29,6 +29,7 @@ cargo run -- agents
 cargo run -- agent-tools
 cargo run -- agent-tool-run code.list --agent builder --limit 5 --prompt "src/app"
 cargo run -- agent-tool-run code.diff --agent builder --max-bytes 1200 --prompt "src/app/agent/code_tools.rs"
+cargo run -- agent-tool-run code.outline --agent builder --limit 20 --prompt "src/app/agent/code_tools.rs"
 cargo run -- agent-tool-run code.search --agent builder --limit 3 --prompt "AgentToolInvocation"
 cargo run -- agent-tool-run code.read --agent builder --max-bytes 1200 --prompt "src/app/agent/tools.rs"
 cargo run -- agent-tool-run command.run --agent builder --target-current --timeout-ms 30000 -- cargo --version
@@ -56,7 +57,7 @@ Agent 技能索引写入 `workspaces/v0/artifacts/agents/skills/skill-index.json
 
 # 编码智能体工具
 
-编码智能体常用工具通过 `agent-tool-run` 调用。`code.list` 列出项目根目录内的文件，跳过 `.git`、`target` 和本地敏感环境文件，并按 `--limit` 返回有限结果；`code.diff` 查看 Git 工作区状态和有限差异内容，过滤本地敏感环境文件，并用 `--max-bytes` 控制输出上限；`code.search` 在项目根目录内搜索文本，跳过 `.git`、`target` 和本地敏感环境文件，并按 `--limit` 返回有限匹配；`code.read` 读取项目内文件的受控文本前缀，拒绝绝对路径、`..` 越界路径和本地敏感环境文件，可用 `--max-bytes` 控制读取上限。`command.run` 无需 Agent 会话，使用 `-- PROGRAM ARGS...` 明确指定程序和参数，通过 Runtime 在目标 workspace 中执行并写入运行记录；它不做隐式 shell 包装，也不提供 Git 提交、暂存或还原能力。`command.history` 只读查询 Runtime 最近运行记录，支持 `--limit`、`--failed` 和 `--timed-out` 过滤，只返回运行摘要和报告路径，不读取 stdout 或 stderr 正文。写入类能力仍应通过协作任务板、补丁草案、审计和验证流程受控执行。
+编码智能体常用工具通过 `agent-tool-run` 调用。`code.list` 列出项目根目录内的文件，跳过 `.git`、`target` 和本地敏感环境文件，并按 `--limit` 返回有限结果；`code.diff` 查看 Git 工作区状态和有限差异内容，过滤本地敏感环境文件，并用 `--max-bytes` 控制输出上限；`code.outline` 读取项目内单个代码文件的结构提纲，返回符号类型、名称、行号和预览，并按 `--limit` 控制返回数量；`code.search` 在项目根目录内搜索文本，跳过 `.git`、`target` 和本地敏感环境文件，并按 `--limit` 返回有限匹配；`code.read` 读取项目内文件的受控文本前缀，拒绝绝对路径、`..` 越界路径和本地敏感环境文件，可用 `--max-bytes` 控制读取上限。`command.run` 无需 Agent 会话，使用 `-- PROGRAM ARGS...` 明确指定程序和参数，通过 Runtime 在目标 workspace 中执行并写入运行记录；它不做隐式 shell 包装，也不提供 Git 提交、暂存或还原能力。`command.history` 只读查询 Runtime 最近运行记录，支持 `--limit`、`--failed` 和 `--timed-out` 过滤，只返回运行摘要和报告路径，不读取 stdout 或 stderr 正文。写入类能力仍应通过协作任务板、补丁草案、审计和验证流程受控执行。
 
 # AI 配置
 
